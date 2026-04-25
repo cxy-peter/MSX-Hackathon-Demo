@@ -874,6 +874,8 @@ export default function App() {
   const activeMintTaskKey = mintRecipientKey && mintRecipientKey === connectedAddressKey ? mintTaskKey : '';
   const mintForCurrentAccountBusy = Boolean(activeMintTaskKey) && (isMinting || isConfirmingMint || mintConfirmed);
   const badgeMintCompleted = Boolean(address) && Boolean(hasMintedBadgeOnchain);
+  const walletQuestDone = isConnected;
+  const welcomeGateCompleted = badgeContractConfigured ? badgeMintCompleted : walletQuestDone;
   const walletTaskBadgeMinted = Boolean(address) && Boolean(walletBadgeOnchain);
   const riskTaskBadgeMinted = Boolean(address) && Boolean(riskBadgeOnchain);
   const quizTaskBadgeMinted = Boolean(address) && Boolean(quizBadgeOnchain);
@@ -886,7 +888,6 @@ export default function App() {
   const localProgressReady = Boolean(connectedAddressKey && progressAccountKey === connectedAddressKey);
   const riskTaskDone = (localProgressReady && (guideCompleted || viewedRiskCards.length >= 3)) || riskTaskBadgeMinted;
   const quizTaskDone = (localProgressReady && quizCompleted) || quizTaskBadgeMinted;
-  const walletQuestDone = isConnected;
   const flowConfig = onboardingFlows[userOrigin];
   const currentRoute = userOrigin === 'web2' ? flowConfig.choices[web2Intent] : flowConfig.choices[web3Intent];
   const fastTrackPaper = userOrigin === 'web3' && web3Intent === 'skip';
@@ -917,12 +918,18 @@ export default function App() {
       web3Intent
     }
   });
-  const completedBoxes = [walletQuestDone, badgeMintCompleted, riskTaskDone].filter(Boolean).length;
+  const completedBoxes = [walletQuestDone, welcomeGateCompleted, riskTaskDone].filter(Boolean).length;
   const paperTradingUnlocked = completedBoxes >= 3 || fastTrackPaper;
   const paperTradingLockedByTutorial = !paperTradingUnlocked;
   const effectiveChainId = chainId ?? liveChainId ?? null;
   const onSepolia = effectiveChainId === SEPOLIA_CHAIN_ID;
   const hasSepoliaGas = Boolean(sepoliaBalance?.value && sepoliaBalance.value > 0n);
+  const badgeDeploymentLabel = badgeContractConfigured
+    ? `Sepolia badge ${shortAddress(BADGE_CONTRACT_ADDRESS)}`
+    : 'Demo mode - onchain badge not connected';
+  const badgeDeploymentHelper = badgeContractConfigured
+    ? 'Vercel build detected the badge contract address, so judges can mint and verify the first badge on Sepolia.'
+    : 'The demo still works with wallet-based local progress. To enable judge-visible onchain minting, add VITE_BADGE_CONTRACT_ADDRESS in Vercel and redeploy.';
   const mintReady =
     isConnected &&
     onSepolia &&
@@ -936,7 +943,7 @@ export default function App() {
   const paperTradeCompleted = paperTradesCompleted > 0;
   const remainingPaperPrereqs = [
     walletQuestDone ? null : 'connect wallet',
-    badgeMintCompleted ? null : 'mint welcome badge',
+    welcomeGateCompleted ? null : badgeContractConfigured ? 'mint welcome badge' : 'connect wallet',
     riskTaskDone ? null : 'review risk cards'
   ].filter(Boolean);
   const paperUnlockChecklist = [
@@ -949,8 +956,14 @@ export default function App() {
     {
       id: 'mint',
       label: 'Welcome badge minted',
-      done: badgeMintCompleted,
-      helper: badgeMintCompleted ? 'The welcome badge is already minted for this wallet.' : 'Finish the Sepolia welcome mint in step 2 first.'
+      done: welcomeGateCompleted,
+      helper: badgeContractConfigured
+        ? badgeMintCompleted
+          ? 'The welcome badge is already minted for this wallet.'
+          : 'Finish the Sepolia welcome mint in step 2 first.'
+        : walletQuestDone
+          ? 'Onchain badge minting is not connected in this deployment, so the demo uses the connected wallet as the gate.'
+          : 'Connect a wallet to continue in demo mode.'
     },
     {
       id: 'risk',
@@ -1013,11 +1026,31 @@ export default function App() {
     },
     {
       id: 'mint',
-      title: badgeMintCompleted ? 'Welcome badge minted' : 'Mint welcome badge',
-      status: badgeMintCompleted ? 'Completed' : welcomeBadgeChecking ? 'Checking' : walletQuestDone ? 'To do' : 'Requires wallet',
+      title: badgeContractConfigured
+        ? badgeMintCompleted
+          ? 'Welcome badge minted'
+          : 'Mint welcome badge'
+        : walletQuestDone
+          ? 'Wallet linked for demo'
+          : 'Connect wallet for demo',
+      status: badgeContractConfigured
+        ? badgeMintCompleted
+          ? 'Completed'
+          : welcomeBadgeChecking
+            ? 'Checking'
+            : walletQuestDone
+              ? 'To do'
+              : 'Requires wallet'
+        : walletQuestDone
+          ? 'Demo ready'
+          : 'Requires wallet',
       reward: '+1000 PT',
       label: quests[1].reward,
-      hint: walletQuestDone ? 'Submit one Sepolia action after connect.' : 'Unlocks after wallet connection.'
+      hint: badgeContractConfigured
+        ? walletQuestDone
+          ? 'Submit one Sepolia action after connect.'
+          : 'Unlocks after wallet connection.'
+        : 'Onchain badge minting is optional for this deployment; wallet connection carries the demo state.'
     },
     {
       id: 'risk',
@@ -1074,10 +1107,10 @@ export default function App() {
 
   const mintStatusText = !isConnected
     ? 'Connect MetaMask first'
-    : !onSepolia
-      ? 'Switch to Sepolia'
+      : !onSepolia
+        ? 'Switch to Sepolia'
       : !badgeContractConfigured
-        ? 'Set VITE_BADGE_CONTRACT_ADDRESS'
+        ? 'Badge contract not connected'
         : badgeMintCompleted
           ? 'Welcome badge minted'
         : activeMintTaskKey === 'welcome' && mintConfirmed
@@ -1669,25 +1702,51 @@ export default function App() {
                       ))}
                     </div>
 
-                    <div className="mint-action-box inline-mint-action">
+                    <div className={`mint-action-box inline-mint-action ${badgeContractConfigured ? 'contract-live' : 'contract-demo'}`}>
                       <div>
-                        <div className="product-title">Mint Welcome Badge</div>
-                        <div className="muted">Sepolia ETH is testnet gas only. Use a faucet, then submit one mint transaction. Minimum paper trade later is {MIN_PAPER_TRADE} PT.</div>
+                        <div className="product-title">{badgeContractConfigured ? 'Mint Welcome Badge' : 'Demo wallet gate active'}</div>
+                        <div className="muted">
+                          {badgeContractConfigured
+                            ? `Sepolia ETH is testnet gas only. Use a faucet, then submit one mint transaction. Minimum paper trade later is ${MIN_PAPER_TRADE} PT.`
+                            : 'Onchain badge minting is disabled in this deployment, so the connected wallet unlocks demo progress without showing judges a setup error.'}
+                        </div>
                       </div>
                       <button className="secondary-btn" onClick={handleMintBadge} disabled={!walletQuestDone || !mintReady}>
-                        {mintReady ? 'Mint welcome badge on Sepolia' : mintStatusText}
+                        {badgeContractConfigured
+                          ? mintReady
+                            ? 'Mint welcome badge on Sepolia'
+                            : mintStatusText
+                          : walletQuestDone
+                            ? 'Demo gate active'
+                            : 'Connect wallet first'}
                       </button>
                     </div>
 
                     <div className="badge-mint-meta compact-meta">
+                      <div className={`guide-chip ${badgeContractConfigured ? 'contract-live' : 'contract-demo'}`}>
+                        <div className="k">Deployment</div>
+                        <div className="v">{badgeDeploymentLabel}</div>
+                      </div>
                       <div className="guide-chip">
                         <div className="k">Network</div>
                         <div className="v">{isConnected ? chainName(effectiveChainId) : 'Connect wallet first'}</div>
                       </div>
                       <div className="guide-chip">
                         <div className="k">Badge state</div>
-                        <div className="v">{badgeMintCompleted ? 'Completed' : 'Not minted yet'}</div>
+                        <div className="v">
+                          {badgeContractConfigured
+                            ? badgeMintCompleted
+                              ? 'Completed'
+                              : 'Not minted yet'
+                            : walletQuestDone
+                              ? 'Demo gate passed'
+                              : 'Waiting for wallet'}
+                        </div>
                       </div>
+                    </div>
+
+                    <div className={`env-hint ${badgeContractConfigured ? 'contract-live' : 'contract-demo'}`}>
+                      <strong>{badgeContractConfigured ? 'Judge signal:' : 'Deployment note:'}</strong> {badgeDeploymentHelper}
                     </div>
 
                     {mintHash ? (

@@ -4759,10 +4759,13 @@ function buildReplayAchievements({
       coverCopy: 'Paper usage verified',
       requirement: 'Carry over the same wallet that already finished the onboarding route.',
       reward: 'Confirms that the same wallet passed onboarding and actually used replay trading instead of only opening the page.',
+      inherited: onboardingReady,
       unlocked: onboardingReady && replayTradeUsed,
       detail: onboardingReady && replayTradeUsed
         ? 'This wallet already passed the inherited onboarding checks and has at least one replay buy or sell in the ledger.'
-        : 'Base Check should only unlock after the same wallet carries home-page onboarding into replay mode and then records its first replay trade.'
+        : onboardingReady
+          ? 'The home-page wallet and risk review already carried into Paper Trading. Place one replay buy or sell to finish Base Check.'
+          : 'Base Check should only unlock after the same wallet carries the home-page wallet and risk-review gate into replay mode, then records its first replay trade.'
     },
     {
       id: 7,
@@ -4873,10 +4876,24 @@ function getReplayAchievementTileStatus(achievement) {
     };
   }
 
+  if (achievement.claimStatusLabel === 'Reward route offline') {
+    return {
+      tone: 'ready',
+      text: 'Route offline'
+    };
+  }
+
   if (achievement.canClaimOnchain || achievement.claimStatusLabel === 'Wait to be minted' || achievement.unlocked) {
     return {
       tone: 'ready',
       text: 'Wait to be minted'
+    };
+  }
+
+  if (achievement.inherited) {
+    return {
+      tone: 'ready',
+      text: 'Inherited'
     };
   }
 
@@ -5325,17 +5342,6 @@ function PaperTradingInner() {
     }
   });
 
-  const { data: quizBadgeOnchain } = useReadContract({
-    address: badgeContractConfigured ? BADGE_CONTRACT_ADDRESS : undefined,
-    abi: welcomeBadgeAbi,
-    functionName: 'hasMintedTask',
-    args: address ? [address, BADGE_TYPES.quiz] : undefined,
-    chainId: SEPOLIA_CHAIN_ID,
-    query: {
-      enabled: Boolean(address) && badgeContractConfigured
-    }
-  });
-
   const replayClaimContracts = useMemo(() => {
     if (!address || !replayBadgeContractConfigured) return [];
 
@@ -5688,9 +5694,10 @@ function PaperTradingInner() {
     return () => window.clearTimeout(timer);
   }, [isPlaying, selectedProductId, selectedView]);
 
+  const welcomeGateCompleted = badgeContractConfigured ? Boolean(hasMintedBadgeOnchain) : Boolean(isConnected);
   const completedRewards = [
     isConnected,
-    hasMintedBadgeOnchain,
+    welcomeGateCompleted,
     progressState.guideCompleted,
     progressState.quizCompleted,
     progressState.paperTradesCompleted > 0
@@ -5892,12 +5899,10 @@ function PaperTradingInner() {
     Boolean(progressState.guideCompleted) ||
     (progressState.viewedRiskCards?.length || 0) >= 3 ||
     Boolean(riskBadgeOnchain);
-  const quizReady = Boolean(progressState.quizCompleted) || Boolean(quizBadgeOnchain);
   const onboardingReady =
     isConnected &&
-    Boolean(hasMintedBadgeOnchain) &&
-    guideReady &&
-    quizReady;
+    welcomeGateCompleted &&
+    guideReady;
   const closedTradeCount = paperState.trades.filter((trade) => trade.side === 'sell').length;
   const replayScoreValue = roundNumber(totalRealizedPnl + totalNetPnl, 2);
   const replayScorePercent = STARTING_PAPER_TOKENS > 0 ? roundNumber((replayScoreValue / STARTING_PAPER_TOKENS) * 100, 2) : 0;
@@ -6155,8 +6160,13 @@ function PaperTradingInner() {
           achievement.unlocked ||
           onchainState.onchainClaimed ||
           (achievement.id === 6 && leaderboardReplayClaimed);
+        const effectiveInherited =
+          Boolean(achievement.inherited) ||
+          effectiveUnlocked ||
+          onchainState.onchainClaimed;
         const resolvedAchievement = {
           ...achievement,
+          inherited: effectiveInherited,
           unlocked: effectiveUnlocked,
           ...onchainState
         };
@@ -6170,12 +6180,14 @@ function PaperTradingInner() {
             ? {
                 coverAccent: 'green',
                 coverKicker: 'MSX Replay Usage',
-                coverTitle: 'PAPER USAGE VERIFIED',
-                coverSubtitle: baseTradeSummary.timestamp
-                  ? `${formatReplayBadgeTimestamp(baseTradeSummary.timestamp)} / ${baseTradeSummary.shortLabel}`
-                  : 'Use the same wallet and record the first replay fill.',
+                coverTitle: effectiveUnlocked || onchainState.onchainClaimed ? 'PAPER USAGE VERIFIED' : 'HOME GATE INHERITED',
+                coverSubtitle: effectiveUnlocked || onchainState.onchainClaimed
+                  ? baseTradeSummary.timestamp
+                    ? `${formatReplayBadgeTimestamp(baseTradeSummary.timestamp)} / ${baseTradeSummary.shortLabel}`
+                    : 'Use the same wallet and record the first replay fill.'
+                  : 'Record one replay buy or sell to finish Base Check.',
                 coverFooterLines: [
-                  effectiveUnlocked ? 'Wallet route carried over' : 'Wallet route pending',
+                  effectiveInherited ? 'Wallet route carried over' : 'Wallet route pending',
                   replayTradeUsed || onchainState.onchainClaimed
                     ? `${paperState.trades.length} replay fill${paperState.trades.length === 1 ? '' : 's'} recorded`
                     : 'No replay fill recorded yet',
@@ -6261,8 +6273,8 @@ function PaperTradingInner() {
             onClick: openWalletModal,
             copy:
               onboardingReady || selectedRewardTask.onchainClaimed
-                ? 'This wallet already carries the welcome badge plus guide and quiz completion from the home page, including onchain task badges and reviewed risk cards.'
-                : 'Use the same wallet as the home page. Replay checks the welcome badge first, then accepts guide progress from reviewed risk cards or the risk badge, and quiz progress from the quiz badge or local pass state.'
+                ? 'This wallet already carries the home-page wallet gate plus risk-card review into Paper Trading.'
+                : 'Use the same wallet as the home page. Replay checks the welcome badge when the contract is configured; otherwise it accepts the local demo wallet gate, then inherits reviewed risk cards or the risk badge.'
           },
           {
             id: 'usage',
@@ -6395,14 +6407,20 @@ function PaperTradingInner() {
         : selectedRewardTask.claimStatusLabel === 'Reward route offline'
           ? {
               text: 'Reward route offline',
-              tone: 'todo',
+              tone: 'ready',
               copy: 'The wallet already satisfied the task, but the replay reward route is not configured yet.'
             }
-          : {
-              text: 'To do',
-              tone: 'todo',
-              copy: `This wallet has ${selectedRewardTaskCompletedChecklistCount}/${selectedRewardTaskChecklistTotal} core checks completed. Finish every row still marked To do to unlock the replay badge.`
-            };
+          : selectedRewardTask.id === 6 && selectedRewardTask.inherited
+            ? {
+                text: 'Inherited',
+                tone: 'ready',
+                copy: 'Home-page wallet and risk progress are already inherited here. Place one replay buy or sell to finish Base Check.'
+              }
+            : {
+                text: 'To do',
+                tone: 'todo',
+                copy: `This wallet has ${selectedRewardTaskCompletedChecklistCount}/${selectedRewardTaskChecklistTotal} core checks completed. Finish every row still marked To do to unlock the replay badge.`
+              };
   const unlockedReplayAchievementCount = replayAchievements.filter((achievement) => achievement.unlocked).length;
   const claimReadyReplayAchievementCount = replayAchievements.filter((achievement) => achievement.canClaimOnchain).length;
   const claimedReplayAchievementCount = replayAchievements.filter((achievement) => achievement.onchainClaimed).length;
@@ -12947,11 +12965,11 @@ function PaperTradingInner() {
                     }`}
                     onClick={() => handleToggleRewardTask(achievement.id)}
                   >
-                    {achievement.onchainClaimed ? (
+                    {tileStatus.tone !== 'todo' ? (
                       <div className={`tile-status-badge ${tileStatus.tone}`}>{tileStatus.text}</div>
                     ) : null}
                 <div className="learn-quest-ribbon">Task {achievement.taskNumber}</div>
-                {achievement.unlocked || achievement.onchainClaimed ? (
+                {achievement.unlocked || achievement.onchainClaimed || achievement.inherited ? (
                   <ReplayCollectibleCover
                     accent={achievement.coverAccent}
                     kicker={achievement.coverKicker}
