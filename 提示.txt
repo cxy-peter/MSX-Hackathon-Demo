@@ -1,0 +1,4 @@
+要装node.js
+https://nodejs.org/en/download
+node -v
+npm -v

@@ -1,0 +1,8 @@
+node_modules/
+.edge-debug/
+dist/
+build/
+.env
+.env.local
+*.log
+*.pdf

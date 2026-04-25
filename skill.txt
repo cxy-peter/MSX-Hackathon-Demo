@@ -1,0 +1,198 @@
+可以，下面这版你可以直接丢给 Codex 当项目 skill 概览。
+
+Skill summary：MSX Guided Investing / Risk Navigator Demo
+1. 项目目标
+
+做一个面向 MSX 场景 的前台产品，不是重做交易所，而是补上交易所目前更缺的中间层：
+
+面向 Web2 新手 的傻瓜入口
+面向 Web3 用户 的快捷分析入口
+Learn & Earn 任务引导
+Paper Trading 历史模拟盘
+RWA / tokenized stock / 理财产品 的风险评分与解释
+新产品 intake / listing intelligence，用于上架前筛查和上线后监控
+
+核心定位：
+
+Understand first. Simulate second. Invest third.
+
+2. 为什么要做这个
+
+现有 MSX / msx.finance 更偏：
+
+交易入口
+tokenized stock / ETF / 合约展示
+稳定币入金
+理财入口与社区叙事
+
+但对普通 Web2 用户来说，缺这些层：
+
+不知道从哪开始
+不懂产品差异
+不敢直接进实盘
+不会自己找风险变量
+看不懂链上/合约/权益结构
+理财页解释太薄，缺适当性分层和持续监控
+
+所以 demo 的重点不是“更多产品”，而是：
+
+让用户先被教育、再被推荐、再被模拟训练、最后再转化。
+
+3. 产品结构
+
+整个 demo 分成 6 个模块。
+
+A. Welcome / Dual Entry
+
+首页双入口：
+
+I’m new here / 我第一次接触
+I know Web3 / 我直接看产品
+
+作用：
+
+Web2 用户进入 onboarding
+Web3 用户直接进分析/产品/模拟盘
+B. Learn & Earn
+
+任务式 onboarding，参考 quest / airdrop / reward 逻辑，但更偏投资教育：
+
+示例任务：
+
+连接钱包
+阅读 3 条风险提示
+看懂 2 个典型产品
+完成一次模拟买入
+完成一次小测试
+
+奖励形式：
+
+points
+paper capital boost
+fee coupon
+badge
+whitelist style unlock
+C. Discover / Product Cards
+
+不是让用户先选复杂分类，而是直接展示少量典型产品：
+
+稳健收益型
+股票敞口型
+高波动高风险型
+
+每个卡片展示：
+
+产品一句话解释
+风险等级
+收益来源
+最坏情况
+是否适合新手
+1,000 USDT 情景示例
+D. Paper Trading
+
+用历史或伪历史数据做模拟盘，让用户练习：
+
+买 tokenized stock
+买 ETF exposure
+买收益型理财产品
+看盈亏、回撤、风险提示
+
+目标不是高精度量化回测，而是：
+
+让用户体验操作后果和产品差异。
+
+E. Analyzer / Risk Scoring
+
+输入一个真实产品或模拟的新产品，输出：
+
+总评分
+风险等级
+子分数
+Structure Risk
+Rights / Compliance Risk
+Pricing Integrity
+Liquidity / Market Support
+Operational Risk
+风险解释
+触发规则列表
+
+这部分是产品核心之一。
+
+F. Listing Intelligence / Intake
+
+给平台侧或高级用户用：
+
+输入一个新 RWA / tokenized stock 产品参数：
+
+是否有 KYC
+是否说明底层资产
+是否可赎回
+是否有托管/审计
+是否有大平台支持
+收益率有多高
+是否有做市与流动性支持
+
+系统输出：
+
+初步风险等级
+上架/推荐优先级
+主要风险点
+是否适合新手推荐
+4. 风险模型思路
+
+不要只做一个黑盒总分，要有规则引擎。
+
+当前建议的 5 维框架：
+
+Structure Risk
+产品结构是否复杂、是否只是包装后的 exposure
+Rights / Compliance Risk
+用户买到的是什么、是否有 KYC/法域限制、权益是否清楚
+Pricing Integrity
+定价方式是否透明、是否容易和底层价格偏离
+Liquidity / Market Support
+是否有交易支持、做市、持有人、平台支持
+Operational / Event Risk
+分红、拆股、暂停、风控限制、赎回问题
+
+最后输出总分和风险等级。
+
+5. UI 设计原则
+
+整体风格参考三类产品融合：
+
+MSX / 常见 CEX
+深色底
+dashboard 结构
+顶部导航 + action bar
+terminal 感
+Stockcoin.ai
+搜索即入口
+AI assistant / discover 感
+降低理解门槛
+理财 app
+结论先行
+卡片化
+风险等级可视化
+收益情景示例
+
+关键原则：
+
+不要先给复杂分类，要先给结论。
+
+6. 技术实现方式
+
+当前 demo 是 静态前端 demo：
+
+index.html
+styles.css
+app.js
+
+特点：
+
+可直接本地打开
+可直接上 GitHub Pages
+数据先用 mock / pseudo data
+后续可替换成真实 API 或链上数据
+
+适合 hackathon 快速交付。

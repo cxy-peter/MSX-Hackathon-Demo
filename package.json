@@ -1,0 +1,37 @@
+{
+  "name": "msx-risklens-demo",
+  "version": "1.0.0",
+  "description": "A static hackathon demo that reframes MSX as more than a trading venue.",
+  "scripts": {
+    "dev": "C:\\Progra~1\\nodejs\\node.exe ./node_modules/vite/bin/vite.js",
+    "build": "C:\\Progra~1\\nodejs\\node.exe ./node_modules/vite/bin/vite.js build",
+    "preview": "C:\\Progra~1\\nodejs\\node.exe ./node_modules/vite/bin/vite.js preview",
+    "deploy:badge": "C:\\Progra~1\\nodejs\\node.exe ./node_modules/hardhat/dist/src/cli.js run scripts/deploy-welcome-badge.js --network sepolia",
+    "deploy:wealth-vault": "C:\\Progra~1\\nodejs\\node.exe ./node_modules/hardhat/dist/src/cli.js run scripts/deploy-wealth-vault.js --network sepolia",
+    "deploy:replay-badges": "C:\\Progra~1\\nodejs\\node.exe ./node_modules/hardhat/dist/src/cli.js run scripts/deploy-replay-achievement-badge.js --network sepolia",
+    "update:wealth-vault": "C:\\Progra~1\\nodejs\\node.exe ./node_modules/hardhat/dist/src/cli.js run scripts/update-wealth-vault-state.js --network sepolia",
+    "profile-storage:dev": "C:\\Progra~1\\nodejs\\node.exe scripts/profile-storage-gateway.mjs",
+    "refresh:wealth-data": "C:\\Progra~1\\nodejs\\node.exe scripts/downloadWealthRwaData.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@tanstack/react-query": "^5.99.1",
+    "@openzeppelin/contracts": "^4.9.6",
+    "dotenv": "^17.2.3",
+    "ethers": "^6.15.0",
+    "mipd": "^0.0.7",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "viem": "^2.48.1",
+    "wagmi": "^3.6.3"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "^4.0.2",
+    "@vitejs/plugin-react": "^5.0.4",
+    "hardhat": "^3.0.9",
+    "vite": "^7.3.2"
+  }
+}
