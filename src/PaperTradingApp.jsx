@@ -15,11 +15,9 @@ import {
 } from 'wagmi';
 import { isAddress } from 'viem';
 
-import PaperTradingChart from './PaperTradingChart';
 import {
   BADGE_REWARD_TOKENS,
   MIN_PAPER_TRADE,
-  PAPER_INTERVALS,
   PAPER_LANE_OPTIONS,
   PAPER_PRODUCTS,
   STARTING_PAPER_TOKENS,
@@ -48,18 +46,7 @@ import {
   readWalletProfile,
   writeWalletProfilePatch
 } from './walletProfileStore';
-
-const MemoizedPaperTradingChart = React.memo(PaperTradingChart, (prev, next) => {
-  return (
-    prev.bars === next.bars &&
-    prev.currentIndex === next.currentIndex &&
-    prev.replayStarted === next.replayStarted &&
-    prev.intervalId === next.intervalId &&
-    prev.hoveredIndex === next.hoveredIndex &&
-    prev.onSelectIndex === next.onSelectIndex &&
-    prev.onHoverIndexChange === next.onHoverIndexChange
-  );
-});
+import ReplayChartPanel from './ReplayChartPanel';
 
 const SEPOLIA_CHAIN_ID = 11155111;
 const BADGE_TYPES = {
@@ -208,11 +195,19 @@ const PORTFOLIO_COMBO_DEFAULT_END_DATE = '2026-04-21';
 const PORTFOLIO_COMBO_WEIGHT_STEP = 10;
 const PORTFOLIO_COMBO_MAX_SUGGESTION_ASSETS = 4;
 const REPLAY_PRACTICE_CASE_CACHE_LIMIT = 96;
-const replayPracticeCaseBarsIds = new WeakMap();
+const REPLAY_PRACTICE_PREVIEW_SIZE_QUANTUM = 2500;
+const REPLAY_PRACTICE_PREVIEW_RATE_QUANTUM = 0.5;
+const REPLAY_PRACTICE_SCENARIO_CACHE_LIMIT = 96;
+const REPLAY_PRACTICE_FAST_WINDOW_TARGET = 36;
+const replayPracticeBarsSignatureCache = new WeakMap();
 const replayPracticeCaseCache = new Map();
+const replayPracticeScenarioCache = new Map();
 const replayPracticeSafeBarsCache = new WeakMap();
 const replayWindowScorecardCache = new WeakMap();
-let replayPracticeCaseBarsIdCounter = 0;
+const portfolioComboBaseResultCache = new Map();
+const portfolioComboWindowResultCache = new Map();
+const portfolioComboLatestResultByName = new Map();
+const PORTFOLIO_COMBO_RESULT_CACHE_LIMIT = 160;
 const HEDGE_PROTECTION_EFFECTIVENESS = {
   direct: 1,
   basket: 0.75,
@@ -4695,6 +4690,197 @@ function normalizePortfolioComboWeightMap(productIds = [], weightMap = {}) {
   );
 }
 
+function rememberLimitedCacheEntry(cache, key, value, limit) {
+  cache.set(key, value);
+
+  while (cache.size > limit) {
+    const oldestKey = cache.keys().next().value;
+    cache.delete(oldestKey);
+  }
+
+  return value;
+}
+
+function readLimitedCacheEntry(cache, key) {
+  if (!cache.has(key)) return null;
+  const cachedValue = cache.get(key);
+  cache.delete(key);
+  cache.set(key, cachedValue);
+  return cachedValue;
+}
+
+function getReplayBarsDataSignature(bars = []) {
+  if (!Array.isArray(bars)) return 'no-bars';
+  if (replayPracticeBarsSignatureCache.has(bars)) {
+    return replayPracticeBarsSignatureCache.get(bars);
+  }
+
+  let tsHash = 0;
+  let closeHash = 0;
+  bars.forEach((bar, index) => {
+    const timestamp = String(bar?.ts || bar?.date || '');
+    for (let cursor = 0; cursor < timestamp.length; cursor += 1) {
+      tsHash = (tsHash * 33 + timestamp.charCodeAt(cursor) + index) % 1000000007;
+    }
+
+    const close = getBarCloseValue(bar);
+    const quantizedClose = Number.isFinite(close) ? Math.round(close * 10000) : 0;
+    closeHash = (closeHash * 131 + quantizedClose + index * 17) % 1000000007;
+  });
+
+  const firstBar = bars[0];
+  const lastBar = bars[bars.length - 1];
+  const signature = [
+    'bars-v2',
+    bars.length,
+    firstBar?.ts || '',
+    roundNumber(getBarCloseValue(firstBar), 4),
+    lastBar?.ts || '',
+    roundNumber(getBarCloseValue(lastBar), 4),
+    tsHash,
+    closeHash
+  ].join(':');
+
+  replayPracticeBarsSignatureCache.set(bars, signature);
+  return signature;
+}
+
+function getPortfolioComboProductNameKey(productId, product = {}) {
+  return String(product?.ticker || product?.symbol || product?.name || productId || 'unknown')
+    .trim()
+    .toLowerCase();
+}
+
+function getPortfolioComboDateSignature(dates = []) {
+  if (!Array.isArray(dates) || !dates.length) return 'no-window';
+  return `${dates.length}:${dates[0] || ''}:${dates[dates.length - 1] || ''}`;
+}
+
+function buildPortfolioComboBaseRow(productId, productMap = {}, productViews = {}) {
+  const product = productMap[productId];
+  const bars = Array.isArray(productViews[productId]?.bars) ? productViews[productId].bars : [];
+  const dataSignature = getReplayBarsDataSignature(bars);
+  const nameKey = getPortfolioComboProductNameKey(productId, product);
+  const cacheKey = `${productId}:${nameKey}:${dataSignature}`;
+  const cachedRow = readLimitedCacheEntry(portfolioComboBaseResultCache, cacheKey);
+
+  if (cachedRow) {
+    return {
+      ...cachedRow,
+      cacheState: 'reused'
+    };
+  }
+
+  const dateMap = new Map();
+  bars.forEach((bar) => {
+    const dateKey = normalizePortfolioComboDateKey(bar.ts);
+    const close = getBarCloseValue(bar);
+    if (!dateKey || !Number.isFinite(close) || close <= 0) return;
+    dateMap.set(dateKey, close);
+  });
+
+  const row = {
+    id: productId,
+    product,
+    ticker: product?.ticker || product?.symbol || productId,
+    name: product?.name || productId,
+    nameKey,
+    dataSignature,
+    cacheKey,
+    dateMap,
+    loaded: dateMap.size >= 2,
+    cacheState: 'computed'
+  };
+
+  rememberLimitedCacheEntry(portfolioComboBaseResultCache, cacheKey, row, PORTFOLIO_COMBO_RESULT_CACHE_LIMIT);
+  return row;
+}
+
+function buildPortfolioComboWindowResult(row, commonDates = [], closes = []) {
+  const dateSignature = getPortfolioComboDateSignature(commonDates);
+  const resultCacheKey = `${row.cacheKey}:${dateSignature}`;
+  const cachedResult = readLimitedCacheEntry(portfolioComboWindowResultCache, resultCacheKey);
+
+  if (cachedResult) {
+    const reusedResult = {
+      ...cachedResult,
+      cacheState: 'reused'
+    };
+    portfolioComboLatestResultByName.set(row.nameKey, reusedResult);
+    return reusedResult;
+  }
+
+  let value = 1;
+  let peakValue = 1;
+  let maxDrawdownRate = 0;
+  const dailyReturns = [];
+
+  for (let index = 1; index < closes.length; index += 1) {
+    const previousClose = Number(closes[index - 1] || 0);
+    const currentClose = Number(closes[index] || 0);
+    if (previousClose <= 0 || currentClose <= 0) continue;
+    const dailyReturn = currentClose / previousClose - 1;
+    value *= 1 + dailyReturn;
+    peakValue = Math.max(peakValue, value);
+    maxDrawdownRate = Math.min(maxDrawdownRate, value / peakValue - 1);
+    dailyReturns.push(dailyReturn);
+  }
+
+  const previousResult = portfolioComboLatestResultByName.get(row.nameKey);
+  const totalReturnPct = (value - 1) * 100;
+  const result = {
+    status: 'ready',
+    productId: row.id,
+    ticker: row.ticker,
+    name: row.name,
+    nameKey: row.nameKey,
+    dataSignature: row.dataSignature,
+    dateSignature,
+    startDate: commonDates[0] || '',
+    endDate: commonDates[commonDates.length - 1] || '',
+    days: commonDates.length,
+    startClose: roundNumber(Number(closes[0] || 0), 4),
+    endClose: roundNumber(Number(closes[closes.length - 1] || 0), 4),
+    totalReturnPct: roundNumber(totalReturnPct, 2),
+    maxDrawdownPct: roundNumber(Math.abs(maxDrawdownRate) * 100, 2),
+    winRate: dailyReturns.length
+      ? roundNumber((dailyReturns.filter((dailyReturn) => dailyReturn > 0).length / dailyReturns.length) * 100, 1)
+      : 0,
+    cacheState: 'computed',
+    calculatedAt: new Date().toISOString()
+  };
+
+  if (previousResult && previousResult.dateSignature !== dateSignature) {
+    result.comparison = {
+      previousStartDate: previousResult.startDate,
+      previousEndDate: previousResult.endDate,
+      previousReturnPct: previousResult.totalReturnPct,
+      deltaReturnPct: roundNumber(result.totalReturnPct - Number(previousResult.totalReturnPct || 0), 2),
+      reason: previousResult.dataSignature === result.dataSignature ? 'date-window' : 'data-refresh'
+    };
+  }
+
+  rememberLimitedCacheEntry(portfolioComboWindowResultCache, resultCacheKey, result, PORTFOLIO_COMBO_RESULT_CACHE_LIMIT);
+  portfolioComboLatestResultByName.set(row.nameKey, result);
+  return result;
+}
+
+function buildPortfolioComboResultSummary(rows = [], dates = [], status = 'ready') {
+  const productResults = rows.map((row) => row.result).filter(Boolean);
+
+  return {
+    status,
+    dateSignature: getPortfolioComboDateSignature(dates),
+    startDate: dates[0] || '',
+    endDate: dates[dates.length - 1] || '',
+    days: dates.length,
+    productResults,
+    computedCount: productResults.filter((result) => result.cacheState === 'computed').length,
+    reusedCount: productResults.filter((result) => result.cacheState === 'reused').length,
+    comparisonCount: productResults.filter((result) => result.comparison).length
+  };
+}
+
 function collectPortfolioComboSeries({
   productIds = [],
   productMap = {},
@@ -4709,32 +4895,12 @@ function collectPortfolioComboSeries({
       status: 'select-more',
       message: 'Select at least two replay products for a portfolio combo.',
       rows: [],
-      dates: []
+      dates: [],
+      result: buildPortfolioComboResultSummary([], [], 'select-more')
     };
   }
 
-  const rows = selectedIds
-    .map((productId) => {
-      const product = productMap[productId];
-      const bars = Array.isArray(productViews[productId]?.bars) ? productViews[productId].bars : [];
-      const dateMap = new Map();
-
-      bars.forEach((bar) => {
-        const dateKey = normalizePortfolioComboDateKey(bar.ts);
-        const close = getBarCloseValue(bar);
-        if (!dateKey || !Number.isFinite(close) || close <= 0) return;
-        dateMap.set(dateKey, close);
-      });
-
-      return {
-        id: productId,
-        product,
-        ticker: product?.ticker || product?.symbol || productId,
-        name: product?.name || productId,
-        dateMap,
-        loaded: dateMap.size >= 2
-      };
-    });
+  const rows = selectedIds.map((productId) => buildPortfolioComboBaseRow(productId, productMap, productViews));
   const loadedRows = rows.filter((row) => row.loaded);
 
   if (loadedRows.length < 2) {
@@ -4742,7 +4908,23 @@ function collectPortfolioComboSeries({
       status: 'loading',
       message: 'Loading bundled replay bars for the selected stocks. The combo optimizer appears once at least two series are ready.',
       rows: loadedRows,
-      dates: []
+      dates: [],
+      result: buildPortfolioComboResultSummary(
+        loadedRows.map((row) => ({
+          ...row,
+          result: {
+            status: row.loaded ? 'loaded' : 'waiting',
+            productId: row.id,
+            ticker: row.ticker,
+            name: row.name,
+            nameKey: row.nameKey,
+            dataSignature: row.dataSignature,
+            cacheState: row.cacheState
+          }
+        })),
+        [],
+        'loading'
+      )
     };
   }
 
@@ -4756,18 +4938,42 @@ function collectPortfolioComboSeries({
       status: 'range-empty',
       message: 'The selected date window has too little overlapping history. Widen the start/end dates or select a different basket.',
       rows: loadedRows,
-      dates: commonDates
+      dates: commonDates,
+      result: buildPortfolioComboResultSummary(
+        loadedRows.map((row) => ({
+          ...row,
+          result: {
+            status: 'range-empty',
+            productId: row.id,
+            ticker: row.ticker,
+            name: row.name,
+            nameKey: row.nameKey,
+            dataSignature: row.dataSignature,
+            cacheState: row.cacheState
+          }
+        })),
+        commonDates,
+        'range-empty'
+      )
     };
   }
+
+  const resultRows = loadedRows.map((row) => {
+    const closes = commonDates.map((dateKey) => row.dateMap.get(dateKey));
+
+    return {
+      ...row,
+      closes,
+      result: buildPortfolioComboWindowResult(row, commonDates, closes)
+    };
+  });
 
   return {
     status: 'ready',
     message: '',
-    rows: loadedRows.map((row) => ({
-      ...row,
-      closes: commonDates.map((dateKey) => row.dateMap.get(dateKey))
-    })),
-    dates: commonDates
+    rows: resultRows,
+    dates: commonDates,
+    result: buildPortfolioComboResultSummary(resultRows, commonDates, 'ready')
   };
 }
 
@@ -4945,7 +5151,13 @@ function buildPortfolioComboAnalysis({
       ...series,
       manual: null,
       suggestions: [],
-      topSingles: []
+      topSingles: [],
+      result: {
+        ...(series.result || {}),
+        manual: null,
+        suggestions: [],
+        topSingles: []
+      }
     };
   }
 
@@ -4954,12 +5166,19 @@ function buildPortfolioComboAnalysis({
     .map((row) => evaluatePortfolioComboSeries(series, { [row.id]: 100 }, row.ticker))
     .filter(Boolean)
     .sort((left, right) => right.totalReturnPct - left.totalReturnPct);
+  const suggestions = buildPortfolioComboSuggestions(series);
 
   return {
     ...series,
     manual,
-    suggestions: buildPortfolioComboSuggestions(series),
-    topSingles
+    suggestions,
+    topSingles,
+    result: {
+      ...(series.result || {}),
+      manual,
+      suggestions,
+      topSingles
+    }
   };
 }
 
@@ -5280,6 +5499,258 @@ function getSafeReplayPracticeBars(bars = []) {
 
   replayPracticeSafeBarsCache.set(bars, safeBars);
   return safeBars;
+}
+
+function quantizeReplayPreviewSize(value, quantum = REPLAY_PRACTICE_PREVIEW_SIZE_QUANTUM, minimum = MIN_PAPER_TRADE) {
+  const safeValue = Math.max(0, Number(value || 0));
+  const safeQuantum = Math.max(1, Number(quantum || 1));
+  const safeMinimum = Math.max(0, Number(minimum || 0));
+  if (safeValue <= safeMinimum) return roundNumber(safeMinimum, 2);
+  return Math.max(safeMinimum, roundNumber(Math.round(safeValue / safeQuantum) * safeQuantum, 2));
+}
+
+function quantizeReplayPreviewRate(value, quantum = REPLAY_PRACTICE_PREVIEW_RATE_QUANTUM) {
+  if (value === null || value === undefined || value === '') return undefined;
+  const safeValue = Number(value || 0);
+  const safeQuantum = Math.max(0.1, Number(quantum || 0.5));
+  return roundNumber(Math.round(safeValue / safeQuantum) * safeQuantum, 2);
+}
+
+function getReplayPracticePreviewOptions(options = {}) {
+  const controls = options?.strategyControls || {};
+
+  return {
+    ...options,
+    previewMode: true,
+    notional: quantizeReplayPreviewSize(options?.notional),
+    marginCapital: quantizeReplayPreviewSize(options?.marginCapital, REPLAY_PRACTICE_PREVIEW_SIZE_QUANTUM, 0),
+    flashLoanAmount: quantizeReplayPreviewSize(options?.flashLoanAmount, REPLAY_PRACTICE_PREVIEW_SIZE_QUANTUM, 0),
+    flashLoanFee: quantizeReplayPreviewSize(options?.flashLoanFee, 100, 0),
+    hedgeSleeveNotional: quantizeReplayPreviewSize(options?.hedgeSleeveNotional ?? options?.notional),
+    hedgeTicketNotional: quantizeReplayPreviewSize(options?.hedgeTicketNotional ?? options?.notional),
+    hedgeMarginCapital: quantizeReplayPreviewSize(
+      options?.hedgeMarginCapital ?? options?.marginCapital,
+      REPLAY_PRACTICE_PREVIEW_SIZE_QUANTUM,
+      0
+    ),
+    hedgeLeverage: roundNumber(Number(options?.hedgeLeverage || options?.leverage || 1), 2),
+    leverage: roundNumber(Number(options?.leverage || 1), 2),
+    strategyControls: {
+      ...controls,
+      downsidePct: quantizeReplayPreviewRate(controls.downsidePct),
+      profitHarvestPct: quantizeReplayPreviewRate(controls.profitHarvestPct),
+      upsideCapPct: quantizeReplayPreviewRate(controls.upsideCapPct),
+      premiumPct: quantizeReplayPreviewRate(controls.premiumPct, 0.25),
+      strikePct: quantizeReplayPreviewRate(controls.strikePct)
+    }
+  };
+}
+
+function getReplayPracticeScenarioCacheKey(bars = [], mode = 'spot', options = {}) {
+  const controls = options?.strategyControls || {};
+  const strategyControlKey = [
+    controls.downsidePct,
+    controls.profitHarvestPct,
+    controls.upsideCapPct,
+    controls.premiumPct,
+    controls.strikePct
+  ]
+    .map((value) => quantizeReplayPreviewRate(value) ?? 'default')
+    .join(',');
+
+  return [
+    getReplayPracticeBarsCacheId(bars),
+    'scenario-v3',
+    mode,
+    options?.product?.id || '',
+    roundNumber(Number(options?.leverage || 1), 1),
+    roundNumber(Number(options?.hedgeLeverage || options?.leverage || 1), 1),
+    options?.strategyTemplateId || '',
+    strategyControlKey
+  ].join('|');
+}
+
+function stripReplayPracticeCandidateForReuse(candidate) {
+  if (!candidate) return null;
+
+  return {
+    startSafeIndex: candidate.startSafeIndex,
+    endSafeIndex: candidate.endSafeIndex,
+    startIndex: candidate.startIndex,
+    endIndex: candidate.endIndex,
+    hedgeStartIndex: candidate.hedgeStartIndex ?? null,
+    returnRate: Number(candidate.returnRate || 0),
+    maxDrawdownRate: candidate.maxDrawdownRate,
+    score: candidate.score,
+    scenario: candidate.scenario,
+    scenarioLabel: candidate.scenarioLabel,
+    scenarioRank: candidate.scenarioRank
+  };
+}
+
+function buildReplayFastWindowCandidates(safeBars = [], mode = 'spot', options = {}) {
+  if (!Array.isArray(safeBars) || safeBars.length < 2) return [];
+
+  const maxLookahead = Math.max(2, Math.min(safeBars.length - 1, safeBars.length >= 120 ? 42 : safeBars.length >= 45 ? 21 : 10));
+  const sampleStep = Math.max(1, Math.floor(safeBars.length / REPLAY_PRACTICE_FAST_WINDOW_TARGET));
+  const offsetSet = new Set([
+    1,
+    Math.max(2, Math.round(maxLookahead * 0.25)),
+    Math.max(2, Math.round(maxLookahead * 0.5)),
+    maxLookahead
+  ]);
+  const candidates = [];
+  const seen = new Set();
+  const addCandidate = (startSafeIndex, endSafeIndex) => {
+    if (startSafeIndex < 0 || endSafeIndex <= startSafeIndex || endSafeIndex >= safeBars.length) return;
+    const key = `${startSafeIndex}-${endSafeIndex}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const startBar = safeBars[startSafeIndex];
+    const endBar = safeBars[endSafeIndex];
+    const returnRate = endBar.closeValue / startBar.closeValue - 1;
+    let modeScore = returnRate;
+
+    if (mode === 'leverage') {
+      modeScore = returnRate * Math.max(1, Number(options?.leverage || 1));
+    } else if (mode === 'hedge') {
+      const hedgeFit = HEDGE_PROTECTION_EFFECTIVENESS[options?.product?.hedgeType || 'auto'] || HEDGE_PROTECTION_EFFECTIVENESS.auto;
+      modeScore = -returnRate * hedgeFit;
+    } else if (mode === 'strategy') {
+      const strategyOutcome = estimateOptionStrategyPracticeOutcome({
+        product: options?.product,
+        startBar,
+        endBar,
+        notional: options?.notional,
+        templateId: options?.strategyTemplateId,
+        controls: options?.strategyControls
+      });
+      modeScore = strategyOutcome?.netReturnRate ?? returnRate;
+    }
+
+    candidates.push({
+      startSafeIndex,
+      endSafeIndex,
+      startIndex: startBar.index,
+      endIndex: endBar.index,
+      returnRate,
+      score: modeScore,
+      cacheState: 'computed'
+    });
+  };
+
+  for (let startSafeIndex = 0; startSafeIndex < safeBars.length - 1; startSafeIndex += sampleStep) {
+    offsetSet.forEach((offset) => addCandidate(startSafeIndex, Math.min(safeBars.length - 1, startSafeIndex + offset)));
+  }
+
+  [0, 0.25, 0.5, 0.75].forEach((ratio) => {
+    const startSafeIndex = Math.min(safeBars.length - 2, Math.max(0, Math.floor((safeBars.length - 1) * ratio)));
+    offsetSet.forEach((offset) => addCandidate(startSafeIndex, Math.min(safeBars.length - 1, startSafeIndex + offset)));
+  });
+
+  return candidates;
+}
+
+function buildReplayPracticeCasesFast(bars = [], mode = 'spot', options = {}) {
+  const safeBars = getSafeReplayPracticeBars(bars);
+  if (safeBars.length < 2) return [];
+
+  const candidates = buildReplayFastWindowCandidates(safeBars, mode, options);
+  if (!candidates.length) return [];
+
+  const selected = [];
+  const selectedKeys = new Set();
+  const diversityGap = Math.max(1, Math.floor(safeBars.length * 0.06));
+  const hasNearbyStart = (candidate) => selected.some((existing) => Math.abs(existing.startSafeIndex - candidate.startSafeIndex) < diversityGap);
+  const addCandidate = (candidate, scenario, scenarioLabel, scenarioRank, allowNearbyStart = false) => {
+    if (!candidate || selected.length >= 3) return;
+    const key = `${candidate.startSafeIndex}-${candidate.endSafeIndex}`;
+    if (selectedKeys.has(key)) return;
+    if (!allowNearbyStart && selected.length > 0 && hasNearbyStart(candidate)) return;
+    selectedKeys.add(key);
+    selected.push({ ...candidate, scenario, scenarioLabel, scenarioRank, cacheState: 'computed' });
+  };
+  const scoreOf = (candidate) => Number(candidate?.score || 0);
+
+  if (mode === 'strategy') {
+    const ranked = [...candidates].sort((left, right) => scoreOf(right) - scoreOf(left) || Math.abs(right.returnRate) - Math.abs(left.returnRate));
+    addCandidate(ranked[0], 'best-payoff', 'Best preview #1', 1, true);
+    ranked.slice(1).forEach((candidate) => {
+      if (selected.length < 2) addCandidate(candidate, 'best-payoff', `Best preview #${selected.length + 1}`, selected.length + 1);
+    });
+    const downside = candidates.filter((candidate) => candidate.returnRate < 0).sort((left, right) => scoreOf(right) - scoreOf(left))[0];
+    addCandidate(downside, 'stress-test', 'Downside test', 3, true);
+  } else {
+    const rankedPositive = candidates.filter((candidate) => scoreOf(candidate) > 0).sort((left, right) => scoreOf(right) - scoreOf(left));
+    addCandidate(rankedPositive[0], 'up-most', 'Best preview #1', 1, true);
+    rankedPositive.slice(1).forEach((candidate) => {
+      if (selected.length < 2) addCandidate(candidate, 'up-most', `Best preview #${selected.length + 1}`, selected.length + 1);
+    });
+    const smallLoss = candidates.filter((candidate) => scoreOf(candidate) < 0).sort((left, right) => Math.abs(scoreOf(left)) - Math.abs(scoreOf(right)))[0];
+    addCandidate(smallLoss, 'small-loss', 'Small loss', 3, true);
+  }
+
+  if (selected.length < 3) {
+    [...candidates].sort((left, right) => scoreOf(right) - scoreOf(left)).forEach((candidate) => {
+      if (selected.length >= 3) return;
+      addCandidate(
+        candidate,
+        scoreOf(candidate) < 0 ? 'small-loss' : 'up-most',
+        scoreOf(candidate) < 0 ? 'Small loss' : `Best preview #${selected.length + 1}`,
+        selected.length + 1,
+        true
+      );
+    });
+  }
+
+  return selected
+    .slice(0, 3)
+    .map((candidate) => buildReplayPracticeCaseFromCandidate(bars, safeBars, candidate, mode, options))
+    .filter(Boolean);
+}
+
+function buildReplayPracticeCasesPreviewCached(bars = [], mode = 'spot', options = {}) {
+  const previewOptions = getReplayPracticePreviewOptions(options);
+  const scenarioKey = getReplayPracticeScenarioCacheKey(bars, mode, previewOptions);
+  const safeBars = getSafeReplayPracticeBars(bars);
+  const cachedDescriptors = readLimitedCacheEntry(replayPracticeScenarioCache, scenarioKey);
+
+  if (cachedDescriptors?.length) {
+    return cachedDescriptors
+      .map((descriptor) =>
+        buildReplayPracticeCaseFromCandidate(bars, safeBars, { ...descriptor, cacheState: 'reused' }, mode, previewOptions)
+      )
+      .filter(Boolean);
+  }
+
+  const fastCases = buildReplayPracticeCasesFast(bars, mode, previewOptions);
+  const descriptors = fastCases
+    .map((practiceCase) => {
+      const startSafeIndex = safeBars.findIndex((bar) => bar.index === practiceCase.startIndex);
+      const endSafeIndex = safeBars.findIndex((bar) => bar.index === practiceCase.endIndex);
+      if (startSafeIndex < 0 || endSafeIndex < 0) return null;
+
+      return stripReplayPracticeCandidateForReuse({
+        startSafeIndex,
+        endSafeIndex,
+        startIndex: practiceCase.startIndex,
+        endIndex: practiceCase.endIndex,
+        hedgeStartIndex: practiceCase.mode === 'hedge' ? practiceCase.triggerIndex : null,
+        returnRate: practiceCase.grossReturnRate ?? practiceCase.returnRate,
+        maxDrawdownRate: practiceCase.maxDrawdownRate,
+        score: practiceCase.drawdownAdjustedReturnRate ?? practiceCase.outcomeReturnRate ?? practiceCase.returnRate,
+        scenario: practiceCase.scenario,
+        scenarioLabel: practiceCase.scenarioLabel,
+        scenarioRank: practiceCase.scenarioRank
+      });
+    })
+    .filter(Boolean);
+
+  if (descriptors.length) {
+    rememberLimitedCacheEntry(replayPracticeScenarioCache, scenarioKey, descriptors, REPLAY_PRACTICE_SCENARIO_CACHE_LIMIT);
+  }
+
+  return fastCases;
 }
 
 function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}) {
@@ -5655,6 +6126,8 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
       : outcomePnl !== null
         ? roundNumber(Number(outcomePnl || 0) - maxDrawdownPnl * REPLAY_PRACTICE_DRAWDOWN_PENALTY_FACTOR, 2)
         : null;
+  const resultCacheState = options?.previewMode ? candidate.cacheState || 'computed' : 'exact';
+  const resultDateSignature = `${startBar?.ts || ''}:${triggerBar?.ts || ''}:${endBar?.ts || ''}`;
 
   return {
     mode,
@@ -5680,6 +6153,26 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
     scenario: candidate.scenario || 'best',
     scenarioLabel: candidate.scenarioLabel || 'Best case',
     scenarioRank: candidate.scenarioRank || 1,
+    result: {
+      status: 'ready',
+      cacheState: resultCacheState,
+      productId: product?.id || '',
+      ticker: product?.ticker || product?.symbol || '',
+      mode,
+      dataSignature: getReplayPracticeBarsCacheId(bars),
+      dateSignature: resultDateSignature,
+      startIndex: candidate.startIndex,
+      triggerIndex,
+      endIndex: candidate.endIndex,
+      startDate: startBar?.ts || '',
+      triggerDate: triggerBar?.ts || '',
+      endDate: endBar?.ts || '',
+      outcomePnl: outcomePnl !== null ? roundNumber(outcomePnl, 2) : null,
+      outcomeReturnRate: outcomeReturnRate !== null ? roundNumber(outcomeReturnRate, 4) : null,
+      maxDrawdownRate: roundNumber(maxDrawdownRate, 4),
+      hedgeStartIndex: mode === 'hedge' ? triggerIndex : null,
+      strategyTemplateId
+    },
     startBar,
     triggerBar: bars[triggerIndex],
     endBar
@@ -5797,22 +6290,7 @@ function buildReplayPracticeCases(bars = [], mode = 'spot', options = {}) {
 }
 
 function getReplayPracticeBarsCacheId(bars = []) {
-  if (!Array.isArray(bars)) return 'no-bars';
-  if (!replayPracticeCaseBarsIds.has(bars)) {
-    replayPracticeCaseBarsIdCounter += 1;
-    replayPracticeCaseBarsIds.set(bars, `bars-${replayPracticeCaseBarsIdCounter}`);
-  }
-
-  const firstBar = bars[0];
-  const lastBar = bars[bars.length - 1];
-  return [
-    replayPracticeCaseBarsIds.get(bars),
-    bars.length,
-    firstBar?.ts || '',
-    firstBar?.close ?? '',
-    lastBar?.ts || '',
-    lastBar?.close ?? ''
-  ].join(':');
+  return getReplayBarsDataSignature(bars);
 }
 
 function getReplayPracticeCaseCacheKey(bars = [], mode = 'spot', options = {}) {
@@ -5846,6 +6324,10 @@ function getReplayPracticeCaseCacheKey(bars = [], mode = 'spot', options = {}) {
 }
 
 function buildReplayPracticeCasesCached(bars = [], mode = 'spot', options = {}) {
+  if (options?.previewMode) {
+    return buildReplayPracticeCasesPreviewCached(bars, mode, options);
+  }
+
   const cacheKey = getReplayPracticeCaseCacheKey(bars, mode, options);
   if (replayPracticeCaseCache.has(cacheKey)) {
     const cachedValue = replayPracticeCaseCache.get(cacheKey);
@@ -13446,8 +13928,6 @@ function PaperTradingInner() {
         Number(hedgeStagedTicketNotional || hedgePlannedTicketNotional || routeEffectiveTicketNotional || tradeAmount || MIN_PAPER_TRADE)
       )
     : routePracticeNotional;
-  const debouncedRoutePracticeMode = useDebouncedValue(routePracticeMode, 100);
-  const deferredRoutePracticeMode = useDeferredValue(debouncedRoutePracticeMode);
   const debouncedRoutePracticeFlashNotional = useDebouncedValue(routePracticeFlashNotional, 140);
   const debouncedRoutePracticeFlashPremiumEstimate = useDebouncedValue(routePracticeFlashPremiumEstimate, 140);
   const debouncedRoutePracticeNotional = useDebouncedValue(routePracticeNotional, 140);
@@ -13462,7 +13942,7 @@ function PaperTradingInner() {
   const deferredStrategyControlValues = useDeferredValue(debouncedStrategyControlValues);
   const routePracticeCases = useMemo(
     () =>
-      buildReplayPracticeCasesCached(selectedView?.bars || [], deferredRoutePracticeMode, {
+      buildReplayPracticeCasesCached(selectedView?.bars || [], routePracticeMode, {
         product: selectedProduct,
         notional: deferredRoutePracticeNotional,
         leverage: routeLeverageMultiple,
@@ -13474,7 +13954,8 @@ function PaperTradingInner() {
         hedgeMarginCapital: routePostedBaseMarginCapital,
         hedgeLeverage: routeLeverageMultiple,
         strategyTemplateId: selectedStrategyTemplateId,
-        strategyControls: deferredStrategyControlValues
+        strategyControls: deferredStrategyControlValues,
+        previewMode: true
       }),
     [
       deferredRoutePracticeFlashNotional,
@@ -13483,8 +13964,8 @@ function PaperTradingInner() {
       routePostedBaseMarginCapital,
       deferredRoutePracticeHedgeSleeveNotional,
       deferredRoutePracticeHedgeTicketNotional,
-      deferredRoutePracticeMode,
       deferredRoutePracticeNotional,
+      routePracticeMode,
       selectedStrategyTemplateId,
       selectedProduct,
       selectedView?.bars,
@@ -13755,9 +14236,7 @@ function PaperTradingInner() {
   const portfolioComboBarsSignature = portfolioComboSelectedIds
     .map((productId) => {
       const bars = Array.isArray(productViews[productId]?.bars) ? productViews[productId].bars : [];
-      const firstBar = bars[0];
-      const lastBar = bars[bars.length - 1];
-      return `${productId}:${bars.length}:${firstBar?.ts || ''}:${firstBar?.close ?? ''}:${lastBar?.ts || ''}:${lastBar?.close ?? ''}`;
+      return `${productId}:${getReplayBarsDataSignature(bars)}`;
     })
     .join('|');
   const portfolioComboAnalysis = useMemo(
@@ -13794,6 +14273,8 @@ function PaperTradingInner() {
     ]
   );
   const portfolioComboManualMetrics = portfolioComboAnalysis.manual;
+  const portfolioComboResult = portfolioComboAnalysis.result || {};
+  const portfolioComboComparisonRows = (portfolioComboResult.productResults || []).filter((result) => result?.comparison);
   const strategyTemplateLeaderboardRows = strategyTemplateLeaderboard.entries || [];
   const strategyTemplateUploadedForCurrentPrompt = strategyTemplateLeaderboardRows.some(
     (entry) =>
@@ -16481,6 +16962,19 @@ function PaperTradingInner() {
               })}
             </div>
 
+            {portfolioComboResult.productResults?.length ? (
+              <div className="paper-inline-note-box paper-inline-route-capacity-note">
+                <strong>Result cache.</strong>{' '}
+                {Number(portfolioComboResult.computedCount || 0)} recalculated / {Number(portfolioComboResult.reusedCount || 0)} reused for this window.
+                {portfolioComboComparisonRows.length
+                  ? ` ${portfolioComboComparisonRows[0].ticker} changed ${formatSignedPercent(
+                      Number(portfolioComboComparisonRows[0].comparison.deltaReturnPct || 0),
+                      1
+                    )} versus its previous ${portfolioComboComparisonRows[0].comparison.reason === 'date-window' ? 'date window' : 'data refresh'}.`
+                  : ' Same product signatures reuse the saved result; only a changed product or window recalculates.'}
+              </div>
+            ) : null}
+
             {portfolioComboManualMetrics ? (
               <>
                 <div className="paper-portfolio-combo-metric-grid">
@@ -17094,103 +17588,24 @@ function PaperTradingInner() {
           </div>
 
           <div className="paper-main-stage">
-            <section
+            <ReplayChartPanel
               key={`chart-stage-${selectedProductId}`}
-              className="card paper-chart-card"
-            >
-              <div className="section-head">
-                <div className="paper-chart-head-main">
-                  <div key={`chart-${selectedProductId}`}>
-                    <div className="eyebrow">Replay chart</div>
-                    <h2>{selectedProduct.name}</h2>
-                  </div>
-                  <div className="paper-chart-market-meta">
-                    <div className="paper-chart-market-label">{selectedProduct.productType}</div>
-                    {selectedProduct.structureTags?.length ? (
-                      <div className="paper-product-tag-row paper-product-tag-row-chart">
-                        {selectedProduct.structureTags.map((tag) => (
-                          <span key={tag} className="paper-product-tag">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                    <div className="paper-product-disclosure-row">
-                      {selectedProductDisclosureRows.map((row) => (
-                        <div key={row.label} className="paper-product-disclosure-chip">
-                          <span>{row.label}</span>
-                          <strong>{row.value}</strong>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="paper-chart-market-stats">
-                      <div className="paper-chart-market-stat">
-                        <span>Open</span>
-                        <strong>{replayFocus.openLabel}</strong>
-                      </div>
-                      <div className="paper-chart-market-stat">
-                        <span>Volume</span>
-                        <strong>{replayFocus.volumeLabel}</strong>
-                      </div>
-                      <div className="paper-chart-market-stat">
-                        <span>Market cap</span>
-                        <strong>{selectedMarketCapValue}</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="paper-chart-head-actions">
-                  <span className={`pill ${riskClass(selectedProduct.risk)}`}>{selectedProduct.risk} risk</span>
-                </div>
-              </div>
-
-              <div className="paper-chart-timescale-row">
-                <div className="paper-chart-timescale-group paper-chart-timescale-group-start">
-                  <div className="paper-chart-timescale-name">{selectedProduct.ticker || selectedProduct.name}</div>
-                  {selectedProduct.intervalOptions.map((intervalId) => (
-                    <button
-                      key={intervalId}
-                      className={`ghost-btn compact ${selectedView?.interval === intervalId ? 'active-toggle' : ''}`}
-                      onClick={() => handleChangeInterval(intervalId)}
-                    >
-                      {PAPER_INTERVALS[intervalId].label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="paper-chart-timescale-group paper-chart-timescale-group-end">
-                  {selectedRangeOptions.map((range) => (
-                    <button
-                      key={range.id}
-                      className={`ghost-btn compact ${selectedView?.range === range.id ? 'active-toggle' : ''}`}
-                      onClick={() => handleChangeRange(range.id)}
-                    >
-                      {range.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <MemoizedPaperTradingChart
-                key={selectedProductId}
-                bars={selectedView?.bars || []}
-                currentIndex={selectedView?.cursor || 0}
-                replayStarted={Boolean(selectedView?.replayStarted)}
-                intervalId={selectedView?.interval || selectedProduct.defaultInterval}
-                onSelectIndex={handleSelectReplayIndex}
-                hoveredIndex={hoveredReplayIndex}
-                onHoverIndexChange={scheduleHoveredReplayIndexChange}
-              />
-
-              {hoverDebugEnabled ? (
-                <div className="env-hint" style={{ marginTop: 12 }}>
-                  <strong>Hover debug.</strong> {chartHoverDiagnosticRows.map(([label, value]) => `${label}: ${value}`).join(' / ')}
-                </div>
-              ) : null}
-
-              {renderReplayDeskCompact()}
-            </section>
+              selectedProductId={selectedProductId}
+              selectedProduct={selectedProduct}
+              selectedProductDisclosureRows={selectedProductDisclosureRows}
+              selectedView={selectedView}
+              selectedRangeOptions={selectedRangeOptions}
+              selectedMarketCapValue={selectedMarketCapValue}
+              replayFocus={replayFocus}
+              hoveredReplayIndex={hoveredReplayIndex}
+              onChangeInterval={handleChangeInterval}
+              onChangeRange={handleChangeRange}
+              onSelectReplayIndex={handleSelectReplayIndex}
+              onHoverReplayIndexChange={scheduleHoveredReplayIndexChange}
+              hoverDebugEnabled={hoverDebugEnabled}
+              chartHoverDiagnosticRows={chartHoverDiagnosticRows}
+              renderReplayDeskCompact={renderReplayDeskCompact}
+            />
           </div>
 
           <aside
