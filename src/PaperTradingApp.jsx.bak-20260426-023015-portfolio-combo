@@ -127,74 +127,6 @@ const HIDDEN_LEARNING_ROUTE_IDS = new Set(['routing', 'lending']);
 const HIDDEN_PERP_FOCUS_IDS = new Set([]);
 const DEFAULT_STRATEGY_AI_PROMPT =
   'Protect a BTC sleeve with a collar when volatility expands, keep upside capped, and exit if drawdown breaks 8%.';
-const STRATEGY_AI_TEMPLATE_VARIANTS = [
-  {
-    id: 'balanced-guardrail',
-    label: 'Balanced guardrail',
-    shortLabel: 'Balanced',
-    promptHint: 'Add position sizing, drawdown guardrails, and a defined rebalance or unwind rule.',
-    featureIds: ['risk', 'exit', 'trend'],
-    winRateShift: 4,
-    expectedReturnShift: 0.6,
-    maxDrawdownShift: -2.8,
-    scoreShift: 5
-  },
-  {
-    id: 'momentum-breakout',
-    label: 'Momentum breakout',
-    shortLabel: 'Momentum',
-    promptHint: 'Favor trend confirmation, breakout entry, momentum continuation, and a trailing stop.',
-    featureIds: ['trend', 'exit', 'risk'],
-    winRateShift: -1,
-    expectedReturnShift: 4.2,
-    maxDrawdownShift: 3.4,
-    scoreShift: 1
-  },
-  {
-    id: 'income-carry',
-    label: 'Income carry',
-    shortLabel: 'Carry',
-    promptHint: 'Focus on premium income, carry, funding spread, yield capture, and slow rebalance.',
-    featureIds: ['carry', 'risk', 'exit'],
-    winRateShift: 6,
-    expectedReturnShift: 1.4,
-    maxDrawdownShift: -4.6,
-    scoreShift: 4
-  },
-  {
-    id: 'options-defined-risk',
-    label: 'Defined-risk options',
-    shortLabel: 'Options',
-    promptHint: 'Express the idea with option strikes, cap, floor, collar, premium, and payoff bands.',
-    featureIds: ['options', 'risk', 'exit'],
-    winRateShift: 2,
-    expectedReturnShift: -0.4,
-    maxDrawdownShift: -5.2,
-    scoreShift: 3
-  },
-  {
-    id: 'event-hedged',
-    label: 'Event hedge',
-    shortLabel: 'Event hedge',
-    promptHint: 'Treat the setup as an event window with a hedge leg, stop loss, and post-event unwind.',
-    featureIds: ['risk', 'leverage', 'exit'],
-    winRateShift: 1,
-    expectedReturnShift: 2.4,
-    maxDrawdownShift: 1.8,
-    scoreShift: 0
-  }
-];
-const PORTFOLIO_COMBO_PRODUCT_IDS = ['aaplx', 'nvdax', 'msftx', 'googlx', 'tslax-public', 'spyx', 'qqqx'];
-const PORTFOLIO_COMBO_DEFAULT_SELECTED_IDS = ['googlx', 'nvdax', 'spyx'];
-const PORTFOLIO_COMBO_DEFAULT_WEIGHTS = {
-  googlx: 45,
-  nvdax: 25,
-  spyx: 30
-};
-const PORTFOLIO_COMBO_DEFAULT_START_DATE = '2025-04-21';
-const PORTFOLIO_COMBO_DEFAULT_END_DATE = '2026-04-21';
-const PORTFOLIO_COMBO_WEIGHT_STEP = 10;
-const PORTFOLIO_COMBO_MAX_SUGGESTION_ASSETS = 4;
 const HEDGE_PROTECTION_EFFECTIVENESS = {
   direct: 1,
   basket: 0.75,
@@ -4547,379 +4479,6 @@ function buildStrategyAiTemplateAnalysis({
   };
 }
 
-function buildStrategyAiTemplateVariants({
-  prompt,
-  product,
-  strategyLabel = 'Strategy',
-  strategyOutcome = null
-} = {}) {
-  const cleanPrompt = String(prompt || '').trim() || DEFAULT_STRATEGY_AI_PROMPT;
-  const featureById = new Map(STRATEGY_AI_FEATURE_DEFINITIONS.map((feature) => [feature.id, feature]));
-
-  return STRATEGY_AI_TEMPLATE_VARIANTS.map((variant) => {
-    const base = buildStrategyAiTemplateAnalysis({
-      prompt: `${cleanPrompt}\n${variant.promptHint}`,
-      product,
-      strategyLabel,
-      strategyOutcome
-    });
-    const pinnedFeatures = (variant.featureIds || [])
-      .map((featureId) => featureById.get(featureId))
-      .filter(Boolean);
-    const pinnedFeatureIds = new Set(pinnedFeatures.map((feature) => feature.id));
-    const features = [
-      ...pinnedFeatures,
-      ...base.features.filter((feature) => !pinnedFeatureIds.has(feature.id))
-    ].slice(0, 5);
-    const winRate = clampNumber(Math.round(base.winRate + Number(variant.winRateShift || 0)), 34, 88);
-    const expectedReturnPct = clampNumber(
-      roundNumber(base.expectedReturnPct + Number(variant.expectedReturnShift || 0), 1),
-      -16,
-      42
-    );
-    const maxDrawdownPct = clampNumber(
-      roundNumber(base.maxDrawdownPct + Number(variant.maxDrawdownShift || 0), 1),
-      3,
-      42
-    );
-    const templateScore = clamp(
-      Math.round(
-        winRate * 0.62 +
-          Math.max(-8, expectedReturnPct) * 1.15 -
-          maxDrawdownPct * 0.5 +
-          Number(variant.scoreShift || 0) +
-          (features.some((feature) => feature.id === 'exit') ? 4 : 0)
-      ),
-      0,
-      100
-    );
-
-    return {
-      ...base,
-      id: variant.id,
-      variantId: variant.id,
-      variantLabel: variant.label,
-      title: `${variant.shortLabel}: ${getStrategyIdeaTitle(cleanPrompt, strategyLabel)}`,
-      prompt: cleanPrompt,
-      features,
-      winRate,
-      expectedReturnPct,
-      maxDrawdownPct,
-      templateScore
-    };
-  });
-}
-
-function normalizePortfolioComboDateKey(timestamp) {
-  const direct = String(timestamp || '').match(/^(\d{4}-\d{2}-\d{2})/);
-  if (direct) return direct[1];
-
-  const date = new Date(timestamp);
-  if (!Number.isFinite(date.getTime())) return '';
-  return date.toISOString().slice(0, 10);
-}
-
-function isPortfolioComboDateInRange(dateKey, startDate, endDate) {
-  if (!dateKey) return false;
-  const safeStartDate = String(startDate || '').trim();
-  const safeEndDate = String(endDate || '').trim();
-  if (safeStartDate && dateKey < safeStartDate) return false;
-  if (safeEndDate && dateKey > safeEndDate) return false;
-  return true;
-}
-
-function normalizePortfolioComboWeightMap(productIds = [], weightMap = {}) {
-  const safeProductIds = productIds.filter(Boolean);
-  if (!safeProductIds.length) return {};
-
-  const rawWeights = safeProductIds.map((productId) => {
-    const numericWeight = Number(weightMap?.[productId] ?? 0);
-
-    return {
-      productId,
-      value: Number.isFinite(numericWeight) ? Math.max(0, numericWeight) : 0
-    };
-  });
-  const totalWeight = rawWeights.reduce((sum, row) => sum + row.value, 0);
-
-  if (totalWeight <= 0) {
-    const equalWeight = roundNumber(100 / safeProductIds.length, 2);
-    return Object.fromEntries(safeProductIds.map((productId) => [productId, equalWeight]));
-  }
-
-  return Object.fromEntries(
-    rawWeights.map((row) => [row.productId, roundNumber((row.value / totalWeight) * 100, 2)])
-  );
-}
-
-function collectPortfolioComboSeries({
-  productIds = [],
-  productMap = {},
-  productViews = {},
-  startDate = '',
-  endDate = ''
-} = {}) {
-  const selectedIds = [...new Set(productIds.filter(Boolean))];
-
-  if (selectedIds.length < 2) {
-    return {
-      status: 'select-more',
-      message: 'Select at least two replay products for a portfolio combo.',
-      rows: [],
-      dates: []
-    };
-  }
-
-  const rows = selectedIds
-    .map((productId) => {
-      const product = productMap[productId];
-      const bars = Array.isArray(productViews[productId]?.bars) ? productViews[productId].bars : [];
-      const dateMap = new Map();
-
-      bars.forEach((bar) => {
-        const dateKey = normalizePortfolioComboDateKey(bar.ts);
-        const close = getBarCloseValue(bar);
-        if (!dateKey || !Number.isFinite(close) || close <= 0) return;
-        dateMap.set(dateKey, close);
-      });
-
-      return {
-        id: productId,
-        product,
-        ticker: product?.ticker || product?.symbol || productId,
-        name: product?.name || productId,
-        dateMap,
-        loaded: dateMap.size >= 2
-      };
-    });
-  const loadedRows = rows.filter((row) => row.loaded);
-
-  if (loadedRows.length < 2) {
-    return {
-      status: 'loading',
-      message: 'Loading bundled replay bars for the selected stocks. The combo optimizer appears once at least two series are ready.',
-      rows: loadedRows,
-      dates: []
-    };
-  }
-
-  const commonDates = [...loadedRows[0].dateMap.keys()]
-    .filter((dateKey) => loadedRows.every((row) => row.dateMap.has(dateKey)))
-    .filter((dateKey) => isPortfolioComboDateInRange(dateKey, startDate, endDate))
-    .sort();
-
-  if (commonDates.length < 2) {
-    return {
-      status: 'range-empty',
-      message: 'The selected date window has too little overlapping history. Widen the start/end dates or select a different basket.',
-      rows: loadedRows,
-      dates: commonDates
-    };
-  }
-
-  return {
-    status: 'ready',
-    message: '',
-    rows: loadedRows.map((row) => ({
-      ...row,
-      closes: commonDates.map((dateKey) => row.dateMap.get(dateKey))
-    })),
-    dates: commonDates
-  };
-}
-
-function evaluatePortfolioComboSeries(series, weightMap = {}, label = 'Manual weights') {
-  if (!series || series.status !== 'ready' || !Array.isArray(series.rows) || series.rows.length < 1 || series.dates.length < 2) {
-    return null;
-  }
-
-  const productIds = series.rows.map((row) => row.id);
-  const normalizedWeights = normalizePortfolioComboWeightMap(productIds, weightMap);
-  let value = 1;
-  let peakValue = 1;
-  let maxDrawdownRate = 0;
-  const dailyReturns = [];
-
-  for (let index = 1; index < series.dates.length; index += 1) {
-    const dailyReturn = series.rows.reduce((sum, row) => {
-      const previousClose = Number(row.closes[index - 1] || 0);
-      const currentClose = Number(row.closes[index] || 0);
-      if (previousClose <= 0 || currentClose <= 0) return sum;
-      return sum + (Number(normalizedWeights[row.id] || 0) / 100) * (currentClose / previousClose - 1);
-    }, 0);
-
-    value *= 1 + dailyReturn;
-    peakValue = Math.max(peakValue, value);
-    maxDrawdownRate = Math.min(maxDrawdownRate, value / peakValue - 1);
-    dailyReturns.push(dailyReturn);
-  }
-
-  const totalReturnPct = (value - 1) * 100;
-  const averageDailyReturn = dailyReturns.reduce((sum, row) => sum + row, 0) / Math.max(1, dailyReturns.length);
-  const variance =
-    dailyReturns.reduce((sum, row) => sum + (row - averageDailyReturn) ** 2, 0) / Math.max(1, dailyReturns.length);
-  const annualVolPct = Math.sqrt(variance) * Math.sqrt(252) * 100;
-  const sharpe = annualVolPct > 0 ? (averageDailyReturn * 252) / (annualVolPct / 100) : totalReturnPct > 0 ? 9.99 : 0;
-  const winRate = dailyReturns.length
-    ? (dailyReturns.filter((row) => row > 0).length / dailyReturns.length) * 100
-    : 0;
-  const maxDrawdownPct = Math.abs(maxDrawdownRate) * 100;
-  const riskAdjustedScore = totalReturnPct - maxDrawdownPct * 0.85 + sharpe * 4 - annualVolPct * 0.15;
-  const templateScore = clampNumber(
-    Math.round(50 + totalReturnPct * 0.3 - maxDrawdownPct * 0.55 + sharpe * 4 - annualVolPct * 0.08 + winRate * 0.12),
-    0,
-    100
-  );
-  const allocation = series.rows
-    .map((row) => ({
-      productId: row.id,
-      ticker: row.ticker,
-      name: row.name,
-      weightPct: Number(normalizedWeights[row.id] || 0)
-    }))
-    .filter((row) => row.weightPct > 0.01)
-    .sort((left, right) => right.weightPct - left.weightPct);
-
-  return {
-    label,
-    startDate: series.dates[0],
-    endDate: series.dates[series.dates.length - 1],
-    days: series.dates.length,
-    totalReturnPct: roundNumber(totalReturnPct, 2),
-    maxDrawdownPct: roundNumber(maxDrawdownPct, 2),
-    annualVolPct: roundNumber(annualVolPct, 2),
-    sharpe: roundNumber(sharpe, 2),
-    winRate: roundNumber(winRate, 1),
-    riskAdjustedScore: roundNumber(riskAdjustedScore, 2),
-    templateScore,
-    normalizedWeights,
-    allocation
-  };
-}
-
-function generatePortfolioComboWeightCandidates(productIds = []) {
-  const safeProductIds = productIds.slice(0, PORTFOLIO_COMBO_PRODUCT_IDS.length);
-  const totalUnits = Math.round(100 / PORTFOLIO_COMBO_WEIGHT_STEP);
-  const candidates = [];
-
-  function visit(index, remainingUnits, current) {
-    if (index === safeProductIds.length - 1) {
-      const finalCandidate = {
-        ...current,
-        [safeProductIds[index]]: remainingUnits * PORTFOLIO_COMBO_WEIGHT_STEP
-      };
-      const nonZeroCount = Object.values(finalCandidate).filter((value) => Number(value || 0) > 0).length;
-      if (nonZeroCount >= 2 && nonZeroCount <= PORTFOLIO_COMBO_MAX_SUGGESTION_ASSETS) {
-        candidates.push(finalCandidate);
-      }
-      return;
-    }
-
-    for (let units = 0; units <= remainingUnits; units += 1) {
-      visit(index + 1, remainingUnits - units, {
-        ...current,
-        [safeProductIds[index]]: units * PORTFOLIO_COMBO_WEIGHT_STEP
-      });
-    }
-  }
-
-  if (safeProductIds.length >= 2) {
-    visit(0, totalUnits, {});
-  }
-
-  return candidates;
-}
-
-function getPortfolioComboAllocationKey(metrics) {
-  return (metrics?.allocation || [])
-    .map((row) => `${row.productId}:${roundNumber(row.weightPct, 1)}`)
-    .join('|');
-}
-
-function buildPortfolioComboSuggestions(series) {
-  if (!series || series.status !== 'ready') return [];
-
-  const candidateWeightMaps = generatePortfolioComboWeightCandidates(series.rows.map((row) => row.id));
-  const evaluatedCandidates = candidateWeightMaps
-    .map((weightMap) => evaluatePortfolioComboSeries(series, weightMap, 'Suggested combo'))
-    .filter(Boolean);
-
-  if (!evaluatedCandidates.length) return [];
-
-  const sortedByReturn = [...evaluatedCandidates].sort((left, right) => {
-    if (right.totalReturnPct !== left.totalReturnPct) return right.totalReturnPct - left.totalReturnPct;
-    return left.maxDrawdownPct - right.maxDrawdownPct;
-  });
-  const sortedByDrawdown = [...evaluatedCandidates]
-    .filter((row) => row.totalReturnPct > 0)
-    .sort((left, right) => {
-      if (left.maxDrawdownPct !== right.maxDrawdownPct) return left.maxDrawdownPct - right.maxDrawdownPct;
-      return right.totalReturnPct - left.totalReturnPct;
-    });
-  const sortedByBalanced = [...evaluatedCandidates].sort((left, right) => {
-    if (right.riskAdjustedScore !== left.riskAdjustedScore) return right.riskAdjustedScore - left.riskAdjustedScore;
-    return right.totalReturnPct - left.totalReturnPct;
-  });
-  const sortedBySharpe = [...evaluatedCandidates].sort((left, right) => {
-    if (right.sharpe !== left.sharpe) return right.sharpe - left.sharpe;
-    return right.totalReturnPct - left.totalReturnPct;
-  });
-  const rawSuggestions = [
-    { id: 'max-return', label: 'Best return', copy: 'Highest total return in the selected window.', metrics: sortedByReturn[0] },
-    { id: 'min-drawdown', label: 'Smallest drawdown', copy: 'Lowest max drawdown while still ending positive.', metrics: sortedByDrawdown[0] || sortedByBalanced[0] },
-    { id: 'balanced', label: 'Balanced', copy: 'Best return after drawdown, volatility, and Sharpe penalties.', metrics: sortedByBalanced[0] },
-    { id: 'best-sharpe', label: 'Best Sharpe', copy: 'Highest annualized return per unit of daily volatility.', metrics: sortedBySharpe[0] }
-  ];
-  const usedKeys = new Set();
-
-  return rawSuggestions.filter((suggestion) => {
-    if (!suggestion.metrics) return false;
-    const key = getPortfolioComboAllocationKey(suggestion.metrics);
-    if (usedKeys.has(key)) return false;
-    usedKeys.add(key);
-    return true;
-  });
-}
-
-function buildPortfolioComboAnalysis({
-  productIds,
-  productMap,
-  productViews,
-  weightMap,
-  startDate,
-  endDate
-} = {}) {
-  const series = collectPortfolioComboSeries({
-    productIds,
-    productMap,
-    productViews,
-    startDate,
-    endDate
-  });
-
-  if (series.status !== 'ready') {
-    return {
-      ...series,
-      manual: null,
-      suggestions: [],
-      topSingles: []
-    };
-  }
-
-  const manual = evaluatePortfolioComboSeries(series, weightMap, 'Manual weights');
-  const topSingles = series.rows
-    .map((row) => evaluatePortfolioComboSeries(series, { [row.id]: 100 }, row.ticker))
-    .filter(Boolean)
-    .sort((left, right) => right.totalReturnPct - left.totalReturnPct);
-
-  return {
-    ...series,
-    manual,
-    suggestions: buildPortfolioComboSuggestions(series),
-    topSingles
-  };
-}
-
 function normalizeStrategyTemplateLeaderboardEntry(entry) {
   if (!entry || typeof entry !== 'object') return null;
   const submittedAt = entry.submittedAt || new Date().toISOString();
@@ -4933,16 +4492,6 @@ function normalizeStrategyTemplateLeaderboardEntry(entry) {
         }))
         .filter((feature) => feature.label && feature.value)
     : [];
-  const allocation = Array.isArray(entry.allocation)
-    ? entry.allocation
-        .map((row) => ({
-          productId: String(row?.productId || '').trim(),
-          ticker: String(row?.ticker || row?.productId || '').trim(),
-          name: String(row?.name || '').trim(),
-          weightPct: clampNumber(Number(row?.weightPct || 0), 0, 100)
-        }))
-        .filter((row) => row.productId && row.weightPct > 0)
-    : [];
 
   return {
     id: String(entry.id || `${entry.walletAddress || 'guest'}-${submittedAt}-${entry.title || 'strategy'}`),
@@ -4950,14 +4499,9 @@ function normalizeStrategyTemplateLeaderboardEntry(entry) {
     prompt: String(entry.prompt || '').trim(),
     productLabel: String(entry.productLabel || 'Replay product').trim(),
     strategyLabel: String(entry.strategyLabel || 'Strategy').trim(),
-    entryType: String(entry.entryType || 'ai-template').trim(),
-    variantId: String(entry.variantId || '').trim(),
-    variantLabel: String(entry.variantLabel || '').trim(),
-    dateRange: String(entry.dateRange || '').trim(),
     walletAddress: String(entry.walletAddress || 'guest').toLowerCase(),
     submittedAt,
     features,
-    allocation,
     winRate: clampNumber(Number(entry.winRate || 0), 0, 100),
     expectedReturnPct: clampNumber(Number(entry.expectedReturnPct || 0), -100, 200),
     maxDrawdownPct: clampNumber(Number(entry.maxDrawdownPct || 0), 0, 100),
@@ -6626,13 +6170,13 @@ function buildReplayAchievements({
       activityLabel: 'Strategy example',
       coverCopy: 'Strategy template shipped',
       requirement:
-        'Build one strategy example or portfolio combo, review the payoff or backtest details, generate/select an AI-marked template, then upload return and drawdown metrics to the strategy leaderboard.',
+        'Build one strategy example, review the payoff details, generate an AI-marked template, then upload return and drawdown metrics to the strategy leaderboard.',
       reward:
-        'Makes the strategy route feel product-ready: the example has payoff nodes or combo weights, AI feature tags, estimated win rate, expected return, max drawdown, and a leaderboard submission path.',
+        'Makes the strategy route feel product-ready: the example has payoff nodes, AI feature tags, estimated win rate, expected return, max drawdown, and a leaderboard submission path.',
       unlocked: onboardingReady && strategyRouteUsed,
       detail: strategyRouteUsed
-        ? 'The wallet has built a strategy example or portfolio combo, generated an AI feature template, and uploaded metrics to the local strategy board.'
-        : 'Open Options / strategy for AI templates, or open Leverage + Hedge combo for portfolio combo. Review return, drawdown, and feature tags, then upload the result.'
+        ? 'The wallet has built a strategy example, generated an AI feature template, and uploaded the template metrics to the local strategy board.'
+        : 'Open Options / strategy, build the example, review cap / floor / premium / breakeven details, then use the AI template box to tag the strategy and upload win rate, return, and drawdown.'
     }
   ];
 }
@@ -6905,13 +6449,8 @@ function PaperTradingInner() {
   const [strategyPremiumPct, setStrategyPremiumPct] = useState(1.2);
   const [strategyStrikePct, setStrategyStrikePct] = useState(8);
   const [strategyAiPrompt, setStrategyAiPrompt] = useState(DEFAULT_STRATEGY_AI_PROMPT);
-  const [selectedStrategyAiVariantId, setSelectedStrategyAiVariantId] = useState(STRATEGY_AI_TEMPLATE_VARIANTS[0]?.id || 'balanced-guardrail');
   const [strategyAiTemplateGenerated, setStrategyAiTemplateGenerated] = useState(false);
   const [strategyTemplateLeaderboard, setStrategyTemplateLeaderboard] = useState(() => readStoredStrategyTemplateLeaderboard());
-  const [portfolioComboStartDate, setPortfolioComboStartDate] = useState(PORTFOLIO_COMBO_DEFAULT_START_DATE);
-  const [portfolioComboEndDate, setPortfolioComboEndDate] = useState(PORTFOLIO_COMBO_DEFAULT_END_DATE);
-  const [portfolioComboSelectedIds, setPortfolioComboSelectedIds] = useState(PORTFOLIO_COMBO_DEFAULT_SELECTED_IDS);
-  const [portfolioComboWeights, setPortfolioComboWeights] = useState(() => PORTFOLIO_COMBO_DEFAULT_WEIGHTS);
   const [contractDirection, setContractDirection] = useState('long');
   const [activePerpLeg, setActivePerpLeg] = useState(null);
   const [activePerpPurpose, setActivePerpPurpose] = useState(null);
@@ -8059,17 +7598,6 @@ function PaperTradingInner() {
         ...comboHedgeFocusProfile
       }
     : selectedRouteFocusConfig;
-
-  useEffect(() => {
-    if (!comboFocusActive) return;
-
-    PORTFOLIO_COMBO_PRODUCT_IDS.forEach((productId) => {
-      const product = productMap[productId];
-      const view = productViews[productId];
-      if (!product || !view) return;
-      ensureReplayProductViewLoaded(productId, product, view);
-    });
-  }, [comboFocusActive, productMap, productViews]);
   const selectedStrategyTemplateId = selectedAdvancedRoute === 'borrow' ? selectedRouteFocusConfig?.id || 'collar' : 'collar';
   const strategyControlValues = useMemo(
     () =>
@@ -13330,17 +12858,6 @@ function PaperTradingInner() {
             }
           ]
     : [];
-  const routeLearningStepRows =
-    comboFocusActive && routePracticeStepRows.length
-      ? [
-          ...routePracticeStepRows,
-          {
-            label: '4',
-            title: 'Build portfolio combo',
-            copy: 'Pick a date window, choose several tokenized stocks, compare manual weights with suggested best-return, drawdown, and balanced baskets, then upload one result to the strategy board.'
-          }
-        ]
-      : routePracticeStepRows;
 
   function handleApplyRoutePracticeCase(step = 'start') {
     if (!routePracticeCase || !selectedView?.bars?.length) {
@@ -13406,9 +12923,9 @@ function PaperTradingInner() {
           controls: strategyControlValues
         })
       : null;
-  const strategyAiTemplateOptions = useMemo(
+  const strategyAiTemplate = useMemo(
     () =>
-      buildStrategyAiTemplateVariants({
+      buildStrategyAiTemplateAnalysis({
         prompt: strategyAiPrompt,
         product: selectedProduct,
         strategyLabel: OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'Strategy',
@@ -13416,46 +12933,19 @@ function PaperTradingInner() {
       }),
     [optionStrategyPreview, selectedProduct, selectedStrategyTemplateId, strategyAiPrompt]
   );
-  const strategyAiTemplate =
-    strategyAiTemplateOptions.find((template) => template.variantId === selectedStrategyAiVariantId) ||
-    strategyAiTemplateOptions[0] ||
-    buildStrategyAiTemplateAnalysis({
-      prompt: strategyAiPrompt,
-      product: selectedProduct,
-      strategyLabel: OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'Strategy',
-      strategyOutcome: optionStrategyPreview
-    });
-  const portfolioComboCandidates = useMemo(
-    () => PORTFOLIO_COMBO_PRODUCT_IDS.map((productId) => productMap[productId]).filter(Boolean),
-    [productMap]
-  );
-  const portfolioComboAnalysis = useMemo(
-    () =>
-      buildPortfolioComboAnalysis({
-        productIds: portfolioComboSelectedIds,
-        productMap,
-        productViews,
-        weightMap: portfolioComboWeights,
-        startDate: portfolioComboStartDate,
-        endDate: portfolioComboEndDate
-      }),
-    [portfolioComboEndDate, portfolioComboSelectedIds, portfolioComboStartDate, portfolioComboWeights, productMap, productViews]
-  );
-  const portfolioComboManualMetrics = portfolioComboAnalysis.manual;
   const strategyTemplateLeaderboardRows = strategyTemplateLeaderboard.entries || [];
   const strategyTemplateUploadedForCurrentPrompt = strategyTemplateLeaderboardRows.some(
     (entry) =>
       entry.prompt === strategyAiTemplate.prompt &&
       entry.productLabel === strategyAiTemplate.productLabel &&
-      entry.strategyLabel === strategyAiTemplate.strategyLabel &&
-      entry.variantId === strategyAiTemplate.variantId
+      entry.strategyLabel === strategyAiTemplate.strategyLabel
   );
 
   function handleGenerateStrategyAiTemplate() {
     setStrategyAiTemplateGenerated(true);
     mergeProgressUpdate({ strategyAiTemplateCompleted: true });
     setFeedback(
-      `${strategyAiTemplate.variantLabel || 'AI template'} marked ${strategyAiTemplate.features.length} features for ${strategyAiTemplate.strategyLabel}: ${strategyAiTemplate.winRate}% paper win rate, ${formatSignedPercent(
+      `AI template marked ${strategyAiTemplate.features.length} features for ${strategyAiTemplate.strategyLabel}: ${strategyAiTemplate.winRate}% paper win rate, ${formatSignedPercent(
         strategyAiTemplate.expectedReturnPct,
         1
       )} expected return, -${strategyAiTemplate.maxDrawdownPct.toFixed(1)}% max drawdown.`
@@ -13466,7 +12956,6 @@ function PaperTradingInner() {
     const submittedAt = new Date().toISOString();
     const entry = normalizeStrategyTemplateLeaderboardEntry({
       ...strategyAiTemplate,
-      entryType: 'ai-template',
       id: `${address || 'guest'}-${submittedAt}-${strategyAiTemplate.title}`,
       walletAddress: address || 'guest',
       submittedAt
@@ -13488,127 +12977,10 @@ function PaperTradingInner() {
       strategyLeaderboardUploaded: true
     });
     setFeedback(
-      `Uploaded "${entry.title}" to the local strategy / combo leaderboard with ${entry.winRate}% paper win rate, ${formatSignedPercent(
+      `Uploaded "${entry.title}" to the local strategy leaderboard with ${entry.winRate}% paper win rate, ${formatSignedPercent(
         entry.expectedReturnPct,
         1
       )} expected return, and -${entry.maxDrawdownPct.toFixed(1)}% max drawdown.`
-    );
-  }
-
-  function handleTogglePortfolioComboProduct(productId) {
-    const isSelected = portfolioComboSelectedIds.includes(productId);
-
-    if (isSelected && portfolioComboSelectedIds.length <= 2) {
-      setFeedback('Keep at least two stocks selected so the combo stays diversified.');
-      return;
-    }
-
-    if (isSelected) {
-      setPortfolioComboSelectedIds((current) => current.filter((id) => id !== productId));
-    } else {
-      setPortfolioComboWeights((weights) => ({
-        ...weights,
-        [productId]: weights[productId] ?? 10
-      }));
-      setPortfolioComboSelectedIds((current) => [...current, productId]);
-    }
-  }
-
-  function handlePortfolioComboWeightChange(productId, nextValue) {
-    const numericValue = Number(nextValue || 0);
-
-    setPortfolioComboWeights((current) => ({
-      ...current,
-      [productId]: Number.isFinite(numericValue) ? clampNumber(numericValue, 0, 100) : 0
-    }));
-  }
-
-  function handleApplyPortfolioComboSuggestion(suggestion) {
-    const metrics = suggestion?.metrics;
-    if (!metrics?.allocation?.length) return;
-
-    setPortfolioComboSelectedIds(metrics.allocation.map((row) => row.productId));
-    setPortfolioComboWeights(Object.fromEntries(metrics.allocation.map((row) => [row.productId, roundNumber(row.weightPct, 1)])));
-    setFeedback(
-      `Applied ${suggestion.label}: ${metrics.allocation
-        .map((row) => `${row.ticker} ${row.weightPct.toFixed(0)}%`)
-        .join(' / ')}.`
-    );
-  }
-
-  function handleUploadPortfolioComboToStrategyBoard(suggestion = null) {
-    const metrics = suggestion?.metrics || portfolioComboManualMetrics;
-    if (!metrics?.allocation?.length) {
-      setFeedback(portfolioComboAnalysis.message || 'Load at least two replay series before uploading a portfolio combo.');
-      return;
-    }
-
-    const submittedAt = new Date().toISOString();
-    const allocationLabel = metrics.allocation.map((row) => `${row.ticker} ${row.weightPct.toFixed(0)}%`).join(' / ');
-    const entry = normalizeStrategyTemplateLeaderboardEntry({
-      id: `${address || 'guest'}-${submittedAt}-portfolio-combo-${getPortfolioComboAllocationKey(metrics)}`,
-      entryType: 'portfolio-combo',
-      title: `${suggestion?.label || 'Manual combo'}: ${allocationLabel}`,
-      prompt: `Portfolio combo ${metrics.startDate} to ${metrics.endDate}: ${allocationLabel}.`,
-      productLabel: 'Portfolio Combo',
-      strategyLabel: suggestion?.label || 'Manual weights',
-      variantId: suggestion?.id || 'manual-combo',
-      variantLabel: suggestion?.label || 'Manual combo',
-      dateRange: `${metrics.startDate} -> ${metrics.endDate}`,
-      walletAddress: address || 'guest',
-      submittedAt,
-      allocation: metrics.allocation,
-      features: [
-        {
-          id: 'basket',
-          label: 'Basket',
-          value: `${metrics.allocation.length} assets`,
-          copy: `Weights: ${allocationLabel}.`
-        },
-        {
-          id: 'window',
-          label: 'Backtest window',
-          value: `${metrics.days} bars`,
-          copy: `${metrics.startDate} to ${metrics.endDate} on overlapping daily replay history.`
-        },
-        {
-          id: 'return',
-          label: 'Return',
-          value: formatSignedPercent(metrics.totalReturnPct, 1),
-          copy: 'Total return from daily rebalanced weights over the selected window.'
-        },
-        {
-          id: 'drawdown',
-          label: 'Drawdown',
-          value: `-${metrics.maxDrawdownPct.toFixed(1)}%`,
-          copy: 'Worst peak-to-trough move in the combo path.'
-        }
-      ],
-      winRate: metrics.winRate,
-      expectedReturnPct: metrics.totalReturnPct,
-      maxDrawdownPct: metrics.maxDrawdownPct,
-      templateScore: metrics.templateScore
-    });
-    if (!entry) return;
-
-    setStrategyTemplateLeaderboard((current) => {
-      const next = normalizeStrategyTemplateLeaderboard({
-        entries: [entry, ...(current.entries || [])]
-      });
-      writeStorageJson(STRATEGY_TEMPLATE_LEADERBOARD_STORAGE_KEY, next);
-      return next;
-    });
-    mergeProgressUpdate({
-      strategyLessonCompleted: true,
-      strategyExampleCompleted: true,
-      strategyAiTemplateCompleted: true,
-      strategyLeaderboardUploaded: true
-    });
-    setFeedback(
-      `Uploaded ${suggestion?.label || 'manual portfolio combo'} to the strategy / combo leaderboard: ${formatSignedPercent(
-        metrics.totalReturnPct,
-        1
-      )} return, -${metrics.maxDrawdownPct.toFixed(1)}% max drawdown, ${metrics.winRate.toFixed(1)}% winning days.`
     );
   }
   const timedExitSpotSnapshot =
@@ -15340,7 +14712,7 @@ function PaperTradingInner() {
                   <div>
                     <div className="k">AI strategy template</div>
                     <div className="muted">
-                      Type a strategy idea; the local AI template offers five variants, marks feature points, and turns one choice into board-ready paper metrics.
+                      Type a strategy idea; the local AI template marks feature points and turns the idea into board-ready paper metrics.
                     </div>
                   </div>
                   <span className={`pill ${strategyAiTemplateGenerated || progressState.strategyAiTemplateCompleted ? 'risk-low' : 'risk-medium'}`}>
@@ -15359,26 +14731,6 @@ function PaperTradingInner() {
                     }}
                   />
                 </label>
-
-                <div className="paper-strategy-ai-template-grid">
-                  {strategyAiTemplateOptions.map((template) => (
-                    <button
-                      key={template.variantId}
-                      type="button"
-                      className={`paper-strategy-ai-template-card ${template.variantId === strategyAiTemplate.variantId ? 'active' : ''}`}
-                      onClick={() => {
-                        setSelectedStrategyAiVariantId(template.variantId);
-                        setStrategyAiTemplateGenerated(false);
-                      }}
-                    >
-                      <span>{template.variantLabel}</span>
-                      <strong>{template.winRate}% win</strong>
-                      <small>
-                        {formatSignedPercent(template.expectedReturnPct, 1)} / -{template.maxDrawdownPct.toFixed(1)}% DD
-                      </small>
-                    </button>
-                  ))}
-                </div>
 
                 <div className="paper-strategy-ai-metric-grid">
                   <div>
@@ -15427,8 +14779,8 @@ function PaperTradingInner() {
 
                 <div className="paper-strategy-board">
                   <div className="paper-strategy-board-head">
-                    <span>Strategy / combo leaderboard</span>
-                    <strong>{strategyTemplateLeaderboardRows.length} entr{strategyTemplateLeaderboardRows.length === 1 ? 'y' : 'ies'}</strong>
+                    <span>Strategy leaderboard</span>
+                    <strong>{strategyTemplateLeaderboardRows.length} template{strategyTemplateLeaderboardRows.length === 1 ? '' : 's'}</strong>
                   </div>
                   {strategyTemplateLeaderboardRows.length ? (
                     <div className="paper-strategy-board-list">
@@ -15436,16 +14788,9 @@ function PaperTradingInner() {
                         <div key={entry.id} className="paper-strategy-board-row">
                           <div className="paper-strategy-board-rank">#{index + 1}</div>
                           <div className="paper-strategy-board-main">
-                            <strong>
-                              <span className="paper-strategy-board-type">
-                                {entry.entryType === 'portfolio-combo' ? 'Combo' : 'AI'}
-                              </span>
-                              {entry.title}
-                            </strong>
+                            <strong>{entry.title}</strong>
                             <span>
-                              {entry.entryType === 'portfolio-combo'
-                                ? `${entry.productLabel} / ${entry.dateRange || entry.strategyLabel}`
-                                : `${entry.productLabel} / ${entry.variantLabel || entry.strategyLabel}`}
+                              {entry.productLabel} / {entry.strategyLabel}
                             </span>
                           </div>
                           <div className="paper-strategy-board-metrics">
@@ -15458,7 +14803,7 @@ function PaperTradingInner() {
                     </div>
                   ) : (
                     <div className="paper-inline-note-box paper-inline-route-capacity-note">
-                      No strategy or combo entries uploaded yet. Generate an AI template or upload a portfolio combo to rank by score, expected return, and drawdown.
+                      No strategy templates uploaded yet. Generate one template and upload it to rank by score, expected return, and drawdown.
                     </div>
                   )}
                 </div>
@@ -15973,8 +15318,8 @@ function PaperTradingInner() {
         </div>
 
         <div className="paper-shelf-learning-case-plan paper-shelf-learning-case-plan-sidebar">
-          {(routeLearningStepRows.length
-            ? routeLearningStepRows
+          {(routePracticeStepRows.length
+            ? routePracticeStepRows
             : routeGuideSteps.map((step) => ({
                 label: step.number,
                 title: step.title,
@@ -16051,167 +15396,6 @@ function PaperTradingInner() {
                 Lock a replay bar first. Then set the protected sleeve amount separately from the hedge ticket so the route can show before / after / residual exposure in one screen.
               </div>
             )}
-          </div>
-        ) : null}
-
-        {comboFocusActive ? (
-          <div className="paper-portfolio-combo-card">
-            <div className="paper-portfolio-combo-head">
-              <div>
-                <div className="paper-shelf-learning-subhead">Portfolio combo lab</div>
-                <div className="paper-portfolio-combo-copy">
-                  Build a diversified stock combo from the local daily replay series. Set the window, choose stocks, edit weights, then compare manual results with suggested allocations.
-                </div>
-              </div>
-              <span className={`pill ${portfolioComboAnalysis.status === 'ready' ? 'risk-low' : 'risk-medium'}`}>
-                {portfolioComboAnalysis.status === 'ready' ? `${portfolioComboAnalysis.dates.length} bars` : 'Loading'}
-              </span>
-            </div>
-
-            <div className="paper-portfolio-combo-date-grid">
-              <label>
-                <span>Start date</span>
-                <input
-                  type="date"
-                  value={portfolioComboStartDate}
-                  onChange={(event) => setPortfolioComboStartDate(event.target.value)}
-                />
-              </label>
-              <label>
-                <span>End date</span>
-                <input
-                  type="date"
-                  value={portfolioComboEndDate}
-                  onChange={(event) => setPortfolioComboEndDate(event.target.value)}
-                />
-              </label>
-            </div>
-
-            <div className="paper-portfolio-combo-chip-grid">
-              {portfolioComboCandidates.map((product) => {
-                const active = portfolioComboSelectedIds.includes(product.id);
-                const ready = Array.isArray(productViews[product.id]?.bars) && productViews[product.id].bars.length >= 2;
-
-                return (
-                  <button
-                    key={product.id}
-                    type="button"
-                    className={`paper-portfolio-combo-chip ${active ? 'active' : ''}`}
-                    onClick={() => handleTogglePortfolioComboProduct(product.id)}
-                  >
-                    <strong>{product.ticker}</strong>
-                    <span>{ready ? 'ready' : 'loading'}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="paper-portfolio-combo-weight-grid">
-              {portfolioComboSelectedIds.map((productId) => {
-                const product = productMap[productId];
-                const normalizedWeight = portfolioComboManualMetrics?.allocation?.find((row) => row.productId === productId)?.weightPct;
-
-                return (
-                  <label key={productId}>
-                    <span>{product?.ticker || productId}</span>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="5"
-                      value={portfolioComboWeights[productId] ?? 0}
-                      onChange={(event) => handlePortfolioComboWeightChange(productId, event.target.value)}
-                    />
-                    <small>{Number.isFinite(normalizedWeight) ? `${normalizedWeight.toFixed(1)}% normalized` : 'waiting for bars'}</small>
-                  </label>
-                );
-              })}
-            </div>
-
-            {portfolioComboManualMetrics ? (
-              <>
-                <div className="paper-portfolio-combo-metric-grid">
-                  <div>
-                    <span>Manual return</span>
-                    <strong className={portfolioComboManualMetrics.totalReturnPct >= 0 ? 'risk-low' : 'risk-high'}>
-                      {formatSignedPercent(portfolioComboManualMetrics.totalReturnPct, 1)}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Max drawdown</span>
-                    <strong className="risk-high">-{portfolioComboManualMetrics.maxDrawdownPct.toFixed(1)}%</strong>
-                  </div>
-                  <div>
-                    <span>Sharpe</span>
-                    <strong>{portfolioComboManualMetrics.sharpe.toFixed(2)}</strong>
-                  </div>
-                  <div>
-                    <span>Winning days</span>
-                    <strong>{portfolioComboManualMetrics.winRate.toFixed(1)}%</strong>
-                  </div>
-                </div>
-                <div className="paper-portfolio-combo-actions">
-                  <button type="button" className="ghost-btn compact" onClick={() => handleUploadPortfolioComboToStrategyBoard()}>
-                    Upload manual combo
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="paper-inline-note-box paper-inline-route-capacity-note">
-                {portfolioComboAnalysis.message || 'Select at least two products and wait for replay bars to load.'}
-              </div>
-            )}
-
-            {portfolioComboAnalysis.suggestions.length ? (
-              <div className="paper-portfolio-combo-suggestion-grid">
-                {portfolioComboAnalysis.suggestions.map((suggestion) => {
-                  const metrics = suggestion.metrics;
-
-                  return (
-                    <div key={suggestion.id} className="paper-portfolio-combo-suggestion-card">
-                      <div className="paper-portfolio-combo-suggestion-head">
-                        <div>
-                          <strong>{suggestion.label}</strong>
-                          <span>{suggestion.copy}</span>
-                        </div>
-                        <span className="pill risk-low">{metrics.templateScore}/100</span>
-                      </div>
-                      <div className="paper-portfolio-combo-allocation">
-                        {metrics.allocation.map((row) => (
-                          <span key={`${suggestion.id}-${row.productId}`}>
-                            {row.ticker} {row.weightPct.toFixed(0)}%
-                          </span>
-                        ))}
-                      </div>
-                      <div className="paper-portfolio-combo-mini-metrics">
-                        <span>{formatSignedPercent(metrics.totalReturnPct, 1)} return</span>
-                        <span>-{metrics.maxDrawdownPct.toFixed(1)}% DD</span>
-                        <span>{metrics.sharpe.toFixed(2)} Sharpe</span>
-                      </div>
-                      <div className="paper-portfolio-combo-actions">
-                        <button type="button" className="ghost-btn compact" onClick={() => handleApplyPortfolioComboSuggestion(suggestion)}>
-                          Apply weights
-                        </button>
-                        <button type="button" className="primary-btn compact" onClick={() => handleUploadPortfolioComboToStrategyBoard(suggestion)}>
-                          Upload
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : null}
-
-            {portfolioComboAnalysis.topSingles.length ? (
-              <div className="paper-portfolio-combo-single-strip">
-                {portfolioComboAnalysis.topSingles.slice(0, 3).map((row) => (
-                  <div key={`single-${row.allocation[0]?.productId || row.label}`}>
-                    <span>{row.allocation[0]?.ticker || row.label}</span>
-                    <strong>{formatSignedPercent(row.totalReturnPct, 1)}</strong>
-                  </div>
-                ))}
-              </div>
-            ) : null}
           </div>
         ) : null}
 

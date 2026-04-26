@@ -8572,7 +8572,6 @@ label {
 .paper-strategy-template-strip,
 .paper-strategy-control-card,
 .paper-strategy-ai-card,
-.paper-portfolio-combo-card,
 .paper-inline-hedge-order-card,
 .paper-inline-hedge-compact-card,
 .paper-inline-hedge-unwind-card,
@@ -8647,17 +8646,11 @@ label {
 }
 
 .paper-strategy-ai-input span,
-.paper-strategy-ai-template-card span,
 .paper-strategy-ai-metric-grid span,
 .paper-strategy-ai-feature-card span,
 .paper-strategy-board-head span,
 .paper-strategy-board-main span,
-.paper-strategy-board-metrics span,
-.paper-portfolio-combo-date-grid span,
-.paper-portfolio-combo-weight-grid span,
-.paper-portfolio-combo-metric-grid span,
-.paper-portfolio-combo-mini-metrics span,
-.paper-portfolio-combo-single-strip span {
+.paper-strategy-board-metrics span {
   color: var(--muted);
   font-size: 11px;
   letter-spacing: 0;
@@ -8673,43 +8666,6 @@ label {
   color: var(--text);
   padding: 10px;
   line-height: 1.45;
-}
-
-.paper-strategy-ai-template-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
-  gap: 8px;
-}
-
-.paper-strategy-ai-template-card {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  padding: 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(151, 169, 191, 0.12);
-  background: rgba(255,255,255,0.035);
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-}
-
-.paper-strategy-ai-template-card.active {
-  border-color: rgba(164, 255, 47, 0.32);
-  background: rgba(164, 255, 47, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(164, 255, 47, 0.12);
-}
-
-.paper-strategy-ai-template-card strong {
-  color: var(--text);
-  font-size: 14px;
-  line-height: 1.2;
-}
-
-.paper-strategy-ai-template-card small {
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.35;
 }
 
 .paper-strategy-ai-metric-grid,
@@ -8792,194 +8748,14 @@ label {
 }
 
 .paper-strategy-board-main strong {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
   color: var(--text);
   font-size: 13px;
   line-height: 1.25;
-}
-
-.paper-strategy-board-type {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: rgba(164,255,47,0.12);
-  color: var(--green);
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0;
 }
 
 .paper-strategy-board-metrics {
   justify-items: end;
   text-align: right;
-}
-
-.paper-portfolio-combo-card {
-  border-color: rgba(90, 151, 255, 0.2);
-  background:
-    linear-gradient(180deg, rgba(12, 26, 38, 0.86), rgba(14, 22, 30, 0.94)),
-    rgba(255,255,255,0.03);
-}
-
-.paper-portfolio-combo-head,
-.paper-portfolio-combo-suggestion-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.paper-portfolio-combo-copy,
-.paper-portfolio-combo-suggestion-head span {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.paper-portfolio-combo-date-grid,
-.paper-portfolio-combo-weight-grid,
-.paper-portfolio-combo-metric-grid,
-.paper-portfolio-combo-suggestion-grid,
-.paper-portfolio-combo-single-strip {
-  display: grid;
-  gap: 8px;
-}
-
-.paper-portfolio-combo-date-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.paper-portfolio-combo-date-grid label,
-.paper-portfolio-combo-weight-grid label {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  padding: 9px;
-  border-radius: 8px;
-  border: 1px solid rgba(151, 169, 191, 0.12);
-  background: rgba(255,255,255,0.035);
-}
-
-.paper-portfolio-combo-date-grid input,
-.paper-portfolio-combo-weight-grid input {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid rgba(151, 169, 191, 0.16);
-  border-radius: 8px;
-  background: rgba(255,255,255,0.045);
-  color: var(--text);
-  padding: 8px;
-}
-
-.paper-portfolio-combo-chip-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(82px, 1fr));
-  gap: 8px;
-}
-
-.paper-portfolio-combo-chip {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-  padding: 8px;
-  border-radius: 8px;
-  border: 1px solid rgba(151, 169, 191, 0.12);
-  background: rgba(255,255,255,0.035);
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-}
-
-.paper-portfolio-combo-chip.active {
-  border-color: rgba(164, 255, 47, 0.34);
-  background: rgba(164, 255, 47, 0.08);
-}
-
-.paper-portfolio-combo-chip strong {
-  color: var(--text);
-  font-size: 13px;
-}
-
-.paper-portfolio-combo-chip span {
-  color: var(--muted);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.paper-portfolio-combo-weight-grid {
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
-}
-
-.paper-portfolio-combo-weight-grid small {
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.3;
-}
-
-.paper-portfolio-combo-metric-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.paper-portfolio-combo-metric-grid > div,
-.paper-portfolio-combo-suggestion-card,
-.paper-portfolio-combo-single-strip > div {
-  min-width: 0;
-  padding: 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(151, 169, 191, 0.12);
-  background: rgba(255,255,255,0.035);
-}
-
-.paper-portfolio-combo-metric-grid strong,
-.paper-portfolio-combo-single-strip strong {
-  color: var(--text);
-  font-size: 14px;
-  line-height: 1.25;
-}
-
-.paper-portfolio-combo-suggestion-grid {
-  grid-template-columns: repeat(auto-fit, minmax(188px, 1fr));
-}
-
-.paper-portfolio-combo-suggestion-card {
-  display: grid;
-  gap: 8px;
-}
-
-.paper-portfolio-combo-suggestion-head strong {
-  color: var(--text);
-  font-size: 13px;
-}
-
-.paper-portfolio-combo-allocation,
-.paper-portfolio-combo-mini-metrics,
-.paper-portfolio-combo-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.paper-portfolio-combo-allocation span {
-  padding: 4px 7px;
-  border-radius: 999px;
-  background: rgba(90, 151, 255, 0.12);
-  color: var(--text);
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.paper-portfolio-combo-actions .ghost-btn,
-.paper-portfolio-combo-actions .primary-btn {
-  flex: 1 1 92px;
-}
-
-.paper-portfolio-combo-single-strip {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .paper-strategy-parameter-grid {
@@ -9526,13 +9302,9 @@ label {
   .paper-inline-hedge-ticket-grid,
   .paper-practice-example-strip,
   .paper-shelf-learning-case-grid,
-  .paper-strategy-ai-template-grid,
   .paper-strategy-ai-metric-grid,
   .paper-strategy-ai-feature-grid,
   .paper-strategy-board-row,
-  .paper-portfolio-combo-date-grid,
-  .paper-portfolio-combo-metric-grid,
-  .paper-portfolio-combo-single-strip,
   .paper-route-definition-pill,
   .paper-inline-hedge-type-row,
   .paper-inline-hedge-unwind-row,

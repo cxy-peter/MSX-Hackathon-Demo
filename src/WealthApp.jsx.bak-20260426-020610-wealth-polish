@@ -68,11 +68,11 @@ const DEFAULT_COMPARE_PRODUCT_IDS_BY_CATEGORY = {
   auto: ['msx-quant-fund-1', 'msx-quant-fund-2', 'superstate-ustb', 'superstate-uscc'],
   earn: ['hashnote-usyc', 'openeden-tbill', 'superstate-uscc', 'apollo-acred'],
   dual: ['msx-dual-btc-usdc', 'msx-dual-eth-usdc', 'msx-dual-sol-usdt', 'msx-premium-income-btc'],
-  protected: ['msx-protected-growth-eth', 'msx-premium-income-btc', 'msx-autocall-index', 'superstate-uscc'],
+  protected: ['msx-protected-growth-eth', 'msx-dual-btc-usdc', 'msx-premium-income-btc', 'msx-autocall-index'],
   growth: ['private-watchlist', 'spacex-secondary', 'stripe-secondary', 'bytedance-secondary'],
-  protectedGrowth: ['msx-protected-growth-eth', 'msx-premium-income-btc', 'superstate-ustb', 'msx-autocall-index'],
+  protectedGrowth: ['msx-protected-growth-eth', 'msx-dual-btc-usdc', 'msx-premium-income-btc', 'superstate-ustb'],
   premiumIncome: ['msx-premium-income-btc', 'msx-protected-growth-eth', 'msx-autocall-index', 'superstate-uscc'],
-  autoCall: ['msx-autocall-index', 'msx-premium-income-btc', 'msx-protected-growth-eth', 'superstate-uscc'],
+  autoCall: ['msx-autocall-index', 'msx-dual-btc-usdc', 'msx-premium-income-btc', 'msx-protected-growth-eth'],
   privateCredit: ['apollo-acred', 'hamilton-scope', 'private-watchlist', 'msx-quant-fund-1']
 };
 const COMPARE_LINE_COLORS = ['#226d40', '#7aa6ff', '#f06a7f', '#ffd166'];
@@ -334,30 +334,10 @@ const WEALTH_OPPORTUNITY_PRODUCT_IDS = WEALTH_OPPORTUNITY_TYPES.reduce((acc, ite
 
 const FEATURED_WEALTH_OPPORTUNITY_IDS = new Set(['protected-growth', 'growth-access']);
 const FEATURED_WEALTH_OPPORTUNITIES = WEALTH_OPPORTUNITY_TYPES.filter((type) => FEATURED_WEALTH_OPPORTUNITY_IDS.has(type.id));
-const WEALTH_PRODUCT_TYPE_GROUPS = [
-  {
-    id: 'wrapper',
-    label: 'Wrapper',
-    options: [
-      { id: 'all', label: 'All' },
-      { id: 'cash', label: 'Cash & Treasury' },
-      { id: 'public', label: 'Pre-IPO / Private' },
-      { id: 'auto', label: 'Auto / Managed' }
-    ]
-  },
-  {
-    id: 'outcome',
-    label: 'Payoff style',
-    options: [
-      { id: 'all', label: 'All' },
-      { id: 'dual', label: 'Dual Investment' },
-      { id: 'protected', label: 'Protected' },
-      { id: 'growth', label: 'Growth' }
-    ]
-  }
-];
 const WEALTH_PRODUCT_TYPE_FILTERS = [
-  ...new Map(WEALTH_PRODUCT_TYPE_GROUPS.flatMap((group) => group.options).map((category) => [category.id, category])).values()
+  ...CATEGORY_OPTIONS.filter((category) => category.id !== 'earn'),
+  { id: 'protected', label: 'Protected' },
+  { id: 'growth', label: 'Growth' }
 ];
 const WEALTH_TIMELINE_FLOAT_STORAGE_KEY = 'msx.wealthTimelineFloat';
 const WEALTH_TIMELINE_FLOAT_EDGE_GAP = 18;
@@ -1246,17 +1226,17 @@ function productMatchesWealthCategory(product, categoryId) {
   const surface = getWealthProductSurface(product);
   const text = `${product.id || ''} ${product.productType || ''} ${product.name || ''} ${product.yieldSource || ''}`.toLowerCase();
 
-  if (categoryId === 'public') return surface === 'public' || surface === 'private' || /pre-ipo|private-growth|late-stage|private share|secondary window|private growth|spv access/.test(text);
+  if (categoryId === 'public') return surface === 'public' || /pre-ipo|private-growth|late-stage|secondary window|private growth|spv access/.test(text);
   if (categoryId === 'private') return surface === 'private' || /pre-ipo|private-growth|late-stage|private share|secondary window|private growth|spv access/.test(text);
-  if (categoryId === 'dual') return isDualInvestmentProduct(product);
-  if (isDualInvestmentProduct(product)) return false;
+  if (categoryId === 'dual') return /dual investment|dual currency|buy-the-dip|reverse convertible/.test(text);
   if (categoryId === 'protected') {
     return (
-      /protected growth|defined outcome|buffer|premium income|covered call|option premium|auto-call|autocall|snowball/.test(text) ||
+      /protected growth|defined outcome|buffer|premium income|covered call|option premium|auto-call|autocall|dual investment|dual currency|snowball/.test(text) ||
       WEALTH_OPPORTUNITY_PRODUCT_IDS.protected?.has(product.id) ||
       WEALTH_OPPORTUNITY_PRODUCT_IDS.protectedGrowth?.has(product.id) ||
       WEALTH_OPPORTUNITY_PRODUCT_IDS.premiumIncome?.has(product.id) ||
-      WEALTH_OPPORTUNITY_PRODUCT_IDS.autoCall?.has(product.id)
+      WEALTH_OPPORTUNITY_PRODUCT_IDS.autoCall?.has(product.id) ||
+      WEALTH_OPPORTUNITY_PRODUCT_IDS.dual?.has(product.id)
     );
   }
   if (categoryId === 'growth') {
@@ -1289,8 +1269,8 @@ function getCategoryIdForProduct(product) {
   const surface = getWealthProductSurface(product);
   const text = `${product.productType || ''} ${product.name || ''} ${product.id || ''}`.toLowerCase();
 
-  if (/dual investment|dual currency/.test(text)) return 'dual';
-  if (/protected growth|defined outcome|premium income|covered call|auto-call|autocall/.test(text)) return 'protected';
+  if (/dual investment|dual currency/.test(text)) return 'protected';
+  if (/protected growth|defined outcome|premium income|covered call|auto-call|autocall|dual investment|dual currency/.test(text)) return 'protected';
   if (/pre-ipo|private-growth|late-stage|private share|secondary window|private growth|spv access/.test(text)) return 'growth';
   if (/premium income|covered call/.test(text)) return 'premiumIncome';
   if (/auto-call|autocall/.test(text)) return 'autoCall';
@@ -2853,7 +2833,6 @@ function WealthInner() {
   const [selectedDetailTopics, setSelectedDetailTopics] = useState(['flow']);
   const [selectedWealthTaskId, setSelectedWealthTaskId] = useState('subscribe');
   const [wealthDiligencePageIndex, setWealthDiligencePageIndex] = useState(0);
-  const [aiRecommendationSeed] = useState(() => Math.random());
   const [fastForwardTarget, setFastForwardTarget] = useState('90d');
   const [settlementDays, setSettlementDays] = useState(180);
   const [settlementAction, setSettlementAction] = useState('roll');
@@ -3723,94 +3702,32 @@ function WealthInner() {
         : isConnected
           ? 'Starter wallet'
           : 'Web3 starter profile';
-  const aiRecommendationTopRows = useMemo(() => {
-    const activityCount = displayWealthState.activityLog?.length || 0;
-    const ownedCount = Object.keys(displayWealthState.positions || {}).length;
-    const collateralCount = Object.keys(displayWealthState.collateral || {}).length;
-    const currentGoalRecommendedIds = new Set(currentGoal.recommended || []);
+  const aiRecommendedProduct = useMemo(() => {
+    const candidates = liveProducts.filter((product) => {
+      const surface = getWealthProductSurface(product);
+      if (walletProfileLevel === 'advanced') return surface === 'auto' || surface === 'public' || product.bucket === 'strategy';
+      if (walletProfileLevel === 'intermediate') return surface === 'earn' || surface === 'cash' || product.bucket === 'fixed';
+      return surface === 'cash';
+    });
+    const ranked = (candidates.length ? candidates : liveProducts).map((product) => ({
+      product,
+      model: buildDiligenceModel(product, day1BriefState.data)
+    }));
 
-    return liveProducts
-      .map((product) => {
-        const model = buildDiligenceModel(product, day1BriefState.data);
-        const report = model.report;
-        const surface = getWealthProductSurface(product);
-        const difficulty = getProductDifficulty(product);
-        const annualYieldRate = Math.max(0, Math.min(0.2, getAnnualYieldRate(product)));
-        const settlementPolicy = getSettlementPolicy(product);
-        const isOwned = Boolean(displayWealthState.positions?.[product.id]?.shares);
-        const isCurrentGoalPick = currentGoalRecommendedIds.has(product.id);
-        const isDual = isDualInvestmentProduct(product);
-        const isStructured = surface === 'structured' || isDual;
-        const beginnerFit =
-          walletProfileLevel === 'starter'
-            ? (surface === 'cash' ? 22 : 0) + (difficulty.id === 'easy' ? 12 : difficulty.id === 'medium' ? 4 : -12)
-            : 0;
-        const builderFit =
-          walletProfileLevel === 'intermediate'
-            ? (surface === 'cash' || surface === 'earn' ? 10 : 0) + (isStructured ? 5 : 0) + (settlementPolicy.redeemable ? 4 : 0)
-            : 0;
-        const advancedFit =
-          walletProfileLevel === 'advanced'
-            ? (surface === 'auto' ? 11 : 0) + (isStructured ? 9 : 0) + (surface === 'private' ? 5 : 0) + (product.bucket === 'strategy' ? 7 : 0)
-            : 0;
-        const activityFit =
-          (paperTaskDone ? 3 : 0) +
-          (paperFlashSignal ? (isStructured || surface === 'auto' ? 6 : 1) : 0) +
-          (collateralCount ? (isCollateralPilotProduct(product) ? 7 : 2) : 0) +
-          (wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') ? (settlementPolicy.redeemable ? 4 : 2) : 0) +
-          (activityCount ? 2 : 0) +
-          (ownedCount && !isOwned ? 2 : 0);
-        const evidenceFit =
-          (report?.productQuality?.score || model.finalScore || 0) * 0.42 +
-          (report?.evidenceConfidence?.score || 0) * 0.18 +
-          (report?.suitability?.tone === 'risk-low' ? 8 : report?.suitability?.tone === 'risk-medium' ? 4 : -6);
-        const score =
-          evidenceFit +
-          beginnerFit +
-          builderFit +
-          advancedFit +
-          activityFit +
-          annualYieldRate * 100 +
-          (isCurrentGoalPick ? 6 : 0) +
-          (isOwned ? -4 : 0);
+    ranked.sort((left, right) => {
+      if (walletProfileLevel === 'advanced') return right.model.finalScore + getAnnualYieldRate(right.product) * 100 - (left.model.finalScore + getAnnualYieldRate(left.product) * 100);
+      if (walletProfileLevel === 'intermediate') return right.model.finalScore - left.model.finalScore;
+      return getProductDifficulty(left.product).id === 'easy' ? -1 : 1;
+    });
 
-        return {
-          product,
-          score,
-          reason:
-            walletProfileLevel === 'advanced'
-              ? 'paper, collateral, settlement, evidence quality, product fit, and strategy complexity all clear the advanced-wallet screen'
-              : walletProfileLevel === 'intermediate'
-                ? 'learning progress, evidence quality, current goal, NAV clarity, and exit terms stay balanced'
-                : 'cash-like structure, easier exit framing, evidence quality, and beginner difficulty score best for the first receipt'
-        };
-      })
-      .sort((left, right) => right.score - left.score || left.product.name.localeCompare(right.product.name))
-      .slice(0, 3);
-  }, [
-    currentGoal.recommended,
-    day1BriefState.data,
-    displayWealthState.activityLog,
-    displayWealthState.collateral,
-    displayWealthState.positions,
-    liveProducts,
-    paperFlashSignal,
-    paperTaskDone,
-    walletProfileLevel,
-    wealthActivityTypes
-  ]);
-  const aiRecommendedRow =
-    aiRecommendationTopRows.length > 0
-      ? aiRecommendationTopRows[Math.floor(aiRecommendationSeed * aiRecommendationTopRows.length) % aiRecommendationTopRows.length]
-      : null;
-  const aiRecommendedProduct = aiRecommendedRow?.product || liveProducts[0] || WEALTH_PRODUCTS[0];
+    return ranked[0]?.product || liveProducts[0] || WEALTH_PRODUCTS[0];
+  }, [day1BriefState.data, liveProducts, walletProfileLevel]);
   const aiRecommendationReason =
-    aiRecommendedRow?.reason ||
-    (walletProfileLevel === 'advanced'
-      ? 'paper, collateral, and settlement signals support a more complex product while the detail view keeps exit terms visible'
+    walletProfileLevel === 'advanced'
+      ? 'Your wallet has paper-trading or collateral signals, so the AI can recommend a product with more moving parts while keeping exit and settlement visible.'
       : walletProfileLevel === 'intermediate'
-        ? 'learning progress supports moving beyond simple cash parking without hiding NAV and redemption controls'
-        : 'the first wealth action should favor a simple receipt, clear exit framing, and visible evidence');
+        ? 'Your wallet has completed enough learning steps to move beyond simple cash parking, but still benefits from visible NAV and redemption controls.'
+        : 'This is the cleanest first wealth action: easier receipt, easier exit framing, and lower chance that yield hides complexity.';
   const collectibleHelperCopy =
     'Beginner note: when a homepage badge is minted, look for it in the connected wallet collectibles / NFT view. Wealth keeps reading the same wallet-linked progress.';
   const wealthTaskDetailMap = {
@@ -5344,13 +5261,12 @@ function WealthInner() {
         ) : (
           <div className="wealth-portfolio-grid compact">
             {portfolioRows.map((row) => {
+              const rowProduct = getProductByIdFrom(liveProducts, row.id);
+              const rowPolicy = getSettlementPolicy(rowProduct || row);
+              const primaryExitLabel = rowPolicy.redeemable ? 'Redeem' : 'Settle';
+
               return (
-                <button
-                  type="button"
-                  className="reason-card wealth-position-card wealth-position-card-clickable"
-                  key={row.id}
-                  onClick={() => handlePositionQuickAction(row.id, 'preview')}
-                >
+                <div className="reason-card wealth-position-card" key={row.id}>
                   <div className="wealth-position-head">
                     <div>
                       <div className="product-title">{row.name}</div>
@@ -5380,60 +5296,66 @@ function WealthInner() {
                     </div>
                   </div>
 
-                  <div className="wealth-position-detail-hint">
-                    Open detail for settle, roll, pledge, and receipt lifecycle controls
+                  <div className="wealth-position-action-row">
+                    <button type="button" className="secondary-btn wealth-position-action-button primary" onClick={() => handlePositionQuickAction(row.id, 'exit')}>
+                      {primaryExitLabel}
+                    </button>
+                    <button type="button" className="ghost-btn wealth-position-action-button" onClick={() => handlePositionQuickAction(row.id, 'roll')}>
+                      Roll
+                    </button>
+                    <button type="button" className="ghost-btn wealth-position-action-button" onClick={() => handlePositionQuickAction(row.id, 'pledge')}>
+                      Pledge
+                    </button>
+                    <button type="button" className="ghost-btn wealth-position-action-button" onClick={() => handlePositionQuickAction(row.id, 'preview')}>
+                      Open
+                    </button>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
         )}
 
-      </section>
-    );
-  }
+        {displayWealthState.activityLog?.length ? (
+          <div className="wealth-activity-section compact">
+            <div className="section-head compact">
+              <div>
+                <div className="eyebrow">Recent wallet activity</div>
+                <h3>Latest signed actions</h3>
+              </div>
+            </div>
 
-  function renderRecentWalletActivitySection() {
-    if (!displayWealthState.activityLog?.length) return null;
-
-    return (
-      <section className="card wealth-activity-section wealth-activity-section-bottom">
-        <div className="section-head compact">
-          <div>
-            <div className="eyebrow">Recent wallet activity</div>
-            <h3>Latest signed actions</h3>
+            <div className="wealth-activity-list compact">
+              {displayWealthState.activityLog.slice(0, 4).map((entry) => {
+                const entryProduct = getProductByIdFrom(liveProducts, entry.productId);
+                return (
+                  <button
+                    type="button"
+                    className="wealth-activity-row compact"
+                    key={entry.id}
+                    onClick={() =>
+                      focusProduct(entry.productId, {
+                        topic: 'flow',
+                        categoryId: entryProduct ? getCategoryIdForProduct(entryProduct) : selectedCategory
+                      })
+                    }
+                  >
+                    <div className="wealth-activity-main">
+                      <div className="product-title">{entry.productName || entry.productId}</div>
+                      <div className="muted">
+                        {formatWealthDateTime(entry.ts)} / {entry.action || entry.type} / {formatValue(entry.amount || 0, hideBalances)}
+                      </div>
+                    </div>
+                    <div className="wealth-activity-side">
+                      <strong>{formatShareBalance(entry.shares || 0, hideBalances)}</strong>
+                      <span>{entryProduct?.shareToken || 'receipt'} shares</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
-
-        <div className="wealth-activity-list compact">
-          {displayWealthState.activityLog.slice(0, 6).map((entry) => {
-            const entryProduct = getProductByIdFrom(liveProducts, entry.productId);
-            return (
-              <button
-                type="button"
-                className="wealth-activity-row compact"
-                key={entry.id}
-                onClick={() =>
-                  focusProduct(entry.productId, {
-                    topic: 'flow',
-                    categoryId: entryProduct ? getCategoryIdForProduct(entryProduct) : selectedCategory
-                  })
-                }
-              >
-                <div className="wealth-activity-main">
-                  <div className="product-title">{entry.productName || entry.productId}</div>
-                  <div className="muted">
-                    {formatWealthDateTime(entry.ts)} / {entry.action || entry.type} / {formatValue(entry.amount || 0, hideBalances)}
-                  </div>
-                </div>
-                <div className="wealth-activity-side">
-                  <strong>{formatShareBalance(entry.shares || 0, hideBalances)}</strong>
-                  <span>{entryProduct?.shareToken || 'receipt'} shares</span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
+        ) : null}
       </section>
     );
   }
@@ -6852,6 +6774,10 @@ function WealthInner() {
             </div>
           </div>
 
+          <button className="ghost-btn compact wallet-nickname-top-btn" onClick={() => setWalletModalOpen(true)}>
+            {t('Wallet nickname', '钱包昵称')}
+          </button>
+
           <button className="secondary-btn compact wealth-reset-top-btn" onClick={handleResetPortfolio}>
             Reset wealth demo
           </button>
@@ -7033,22 +6959,14 @@ function WealthInner() {
               </div>
               <div className="wealth-task-detail-panel">
                 <div className="quest-panel-title">Wallet-linked badge carry-over</div>
-                <div className="wealth-task-badge-card-stack">
-                  {selectedWealthTaskDetail.supportBadges.map((item) => {
-                    const ready = /minted|ready|unlocked|seen|already|practiced/i.test(`${item.value}`);
-                    return (
-                      <div className="home-quest-task-summary wealth-task-badge-card" key={item.label}>
-                        <div>
-                          <div className="quest-panel-title">{item.label}</div>
-                          <div className="muted">Wallet-linked progress carries into Wealth.</div>
-                        </div>
-                        <span className={`checklist-status-badge ${ready ? 'done' : 'todo'}`}>
-                          {item.value}
-                        </span>
-                      </div>
-                    );
-                  })}
+                <div className="wealth-profile-storage-grid wealth-task-badge-grid">
+                  {selectedWealthTaskDetail.supportBadges.map((item) => (
+                    <span key={item.label}>
+                      {item.label}: {item.value}
+                    </span>
+                  ))}
                 </div>
+                <div className="wealth-inline-note">{collectibleHelperCopy}</div>
               </div>
             </div>
           </div>
@@ -7057,27 +6975,41 @@ function WealthInner() {
             <div className="wealth-product-type-heading">
               <div>
                 <div className="eyebrow">Product types</div>
-                <h3>Choose the wrapper, then the payoff style</h3>
+                <h3>Choose the product wrapper first</h3>
               </div>
               <span className="pill risk-medium">Hover for the long explanation</span>
             </div>
-            <div className="wealth-product-type-group-stack">
-              {WEALTH_PRODUCT_TYPE_GROUPS.map((group) => (
-                <div className="wealth-product-type-group" key={group.id}>
-                  <div className="wealth-product-type-group-label">{group.label}</div>
-                  <div className="wealth-filter-row compact wealth-product-type-chip-row">
-                    {group.options.map((category) => (
-                      <button
-                        key={`${group.id}-${category.id}`}
-                        className={`risk-card-tab wealth-product-type-chip ${selectedCategory === category.id ? 'active' : ''}`}
-                        onClick={() => handleProductTypeSelect(category)}
-                        title={getWealthProductTypeTooltip(category)}
-                      >
-                        {category.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+            <div className="wealth-filter-row compact">
+              {wealthCategoryOptions.map((category) => (
+                <button
+                  key={category.id}
+                  className={`risk-card-tab ${selectedCategory === category.id ? 'active' : ''}`}
+                  onClick={() => handleProductTypeSelect(category)}
+                  title={getWealthProductTypeTooltip(category)}
+                >
+                  {category.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="wealth-opportunity-section">
+            <div className="wealth-opportunity-head">
+              <div className="eyebrow">Product types</div>
+              <span className="pill risk-low">{wealthCategoryOptions.length} labels</span>
+            </div>
+
+            <div className="wealth-opportunity-grid compact">
+              {wealthCategoryOptions.map((category) => (
+                <button
+                  type="button"
+                  className={`wealth-opportunity-card wealth-product-type-card clickable ${selectedCategory === category.id ? 'active' : ''}`}
+                  key={category.id}
+                  onClick={() => handleProductTypeSelect(category)}
+                  title={getWealthProductTypeTooltip(category)}
+                >
+                  <div className="wealth-opportunity-title">{category.label}</div>
+                </button>
               ))}
             </div>
           </div>
@@ -7092,7 +7024,7 @@ function WealthInner() {
             </div>
             {recommendedProductsForView.length ? (
               <div className="wealth-recommended-strip">
-                {recommendedProductsForView.slice(0, 3).map((product) => {
+                {recommendedProductsForView.slice(0, 4).map((product) => {
                   const policy = getSettlementPolicy(product);
                   const destinationCategory = selectedCategory === 'all' ? getCategoryIdForProduct(product) : selectedCategory;
 
@@ -7127,7 +7059,7 @@ function WealthInner() {
                 <span className="wealth-ai-recommend-reason">Fits this wallet because {aiRecommendationReason}</span>
               </div>
               <div className="muted">
-                Randomized from the top {aiRecommendationTopRows.length || 1}: evidence quality, product quality, suitability, goal fit, difficulty, yield basis, holdings, collateral, paper route history, and prior settlement activity.
+                Signals used: wallet connection, homepage learning, quiz, paper trading, flash-style sophistication, collateral, and prior settlement activity when available.
               </div>
             </div>
             <span className="pill risk-low">Open detail</span>
@@ -8024,21 +7956,19 @@ function WealthInner() {
               ) : null}
             </section>
 
-            {selectedCategory === 'dual' ? renderDualInvestmentShelfSection() : null}
+            {renderDualInvestmentShelfSection()}
           </div>
 
           <aside className="card wealth-ranking-sidebar">
             <div className="section-head">
               <div>
-                <div className="eyebrow">{selectedCategory === 'dual' ? 'Dual Investment leaderboard' : 'Leaderboard'}</div>
-                <h2>{selectedCategory === 'dual' ? 'Premium leaderboard' : 'Return leaderboard'}</h2>
+                <div className="eyebrow">Leaderboard</div>
+                <h2>Return leaderboard</h2>
               </div>
             </div>
 
             <div className="muted">
-              {selectedCategory === 'dual'
-                ? 'Dual receipts rank by modeled premium APR and diligence context. Treat the APR as a term premium for settlement risk, not as stable cash yield.'
-                : 'Top 10 shelves by displayed yield, premium, coupon, or outcome metric. AI score stays beside each row so return never appears without diligence context.'}
+              Top 10 shelves by displayed yield, premium, coupon, or outcome metric. AI score stays beside each row so return never appears without diligence context.
             </div>
 
             <div className="wealth-signal-list">
@@ -8071,7 +8001,6 @@ function WealthInner() {
         </section>
 
         {renderCompareSection()}
-        {renderRecentWalletActivitySection()}
       </main>
 
       {renderTimelineDock()}

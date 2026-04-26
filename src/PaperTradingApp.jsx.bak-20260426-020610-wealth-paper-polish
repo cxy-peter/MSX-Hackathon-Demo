@@ -97,7 +97,6 @@ const PAPER_SHELF_SPLIT_OFFSET_STORAGE_KEY = 'msx.paperShelfSplitOffsetPx.v3';
 const PAPER_LEFT_COLUMN_GAP = 18;
 const PAPER_TUTORIAL_PATH_MIN_HEIGHT = 180;
 const PRODUCT_LEADERBOARD_FLOAT_STORAGE_KEY = 'msx.paperProductLeaderboardFloat';
-const STRATEGY_TEMPLATE_LEADERBOARD_STORAGE_KEY = 'msx.paperStrategyTemplateLeaderboard.v1';
 const AUTO_SELL_DOCK_STORAGE_KEY = 'msx.paperAutoSellDockOpen';
 const AUTO_SELL_DOCK_FLOAT_STORAGE_KEY = 'msx.paperAutoSellDockFloat';
 const PRODUCT_LEADERBOARD_FLOAT_EDGE_GAP = 18;
@@ -124,77 +123,7 @@ const PAPER_LOCKUP_FILTERS = [
 const HIDDEN_REPLAY_PRODUCT_LANES = new Set(['yield', 'strategy', 'ai']);
 const HIDDEN_REPLAY_LANE_TAB_IDS = new Set([]);
 const HIDDEN_LEARNING_ROUTE_IDS = new Set(['routing', 'lending']);
-const HIDDEN_PERP_FOCUS_IDS = new Set([]);
-const DEFAULT_STRATEGY_AI_PROMPT =
-  'Protect a BTC sleeve with a collar when volatility expands, keep upside capped, and exit if drawdown breaks 8%.';
-const STRATEGY_AI_TEMPLATE_VARIANTS = [
-  {
-    id: 'balanced-guardrail',
-    label: 'Balanced guardrail',
-    shortLabel: 'Balanced',
-    promptHint: 'Add position sizing, drawdown guardrails, and a defined rebalance or unwind rule.',
-    featureIds: ['risk', 'exit', 'trend'],
-    winRateShift: 4,
-    expectedReturnShift: 0.6,
-    maxDrawdownShift: -2.8,
-    scoreShift: 5
-  },
-  {
-    id: 'momentum-breakout',
-    label: 'Momentum breakout',
-    shortLabel: 'Momentum',
-    promptHint: 'Favor trend confirmation, breakout entry, momentum continuation, and a trailing stop.',
-    featureIds: ['trend', 'exit', 'risk'],
-    winRateShift: -1,
-    expectedReturnShift: 4.2,
-    maxDrawdownShift: 3.4,
-    scoreShift: 1
-  },
-  {
-    id: 'income-carry',
-    label: 'Income carry',
-    shortLabel: 'Carry',
-    promptHint: 'Focus on premium income, carry, funding spread, yield capture, and slow rebalance.',
-    featureIds: ['carry', 'risk', 'exit'],
-    winRateShift: 6,
-    expectedReturnShift: 1.4,
-    maxDrawdownShift: -4.6,
-    scoreShift: 4
-  },
-  {
-    id: 'options-defined-risk',
-    label: 'Defined-risk options',
-    shortLabel: 'Options',
-    promptHint: 'Express the idea with option strikes, cap, floor, collar, premium, and payoff bands.',
-    featureIds: ['options', 'risk', 'exit'],
-    winRateShift: 2,
-    expectedReturnShift: -0.4,
-    maxDrawdownShift: -5.2,
-    scoreShift: 3
-  },
-  {
-    id: 'event-hedged',
-    label: 'Event hedge',
-    shortLabel: 'Event hedge',
-    promptHint: 'Treat the setup as an event window with a hedge leg, stop loss, and post-event unwind.',
-    featureIds: ['risk', 'leverage', 'exit'],
-    winRateShift: 1,
-    expectedReturnShift: 2.4,
-    maxDrawdownShift: 1.8,
-    scoreShift: 0
-  }
-];
-const PORTFOLIO_COMBO_PRODUCT_IDS = ['aaplx', 'nvdax', 'msftx', 'googlx', 'tslax-public', 'spyx', 'qqqx'];
-const PORTFOLIO_COMBO_DEFAULT_SELECTED_IDS = ['googlx', 'nvdax', 'spyx'];
-const PORTFOLIO_COMBO_DEFAULT_WEIGHTS = {
-  googlx: 45,
-  nvdax: 25,
-  spyx: 30
-};
-const PORTFOLIO_COMBO_DEFAULT_START_DATE = '2025-04-21';
-const PORTFOLIO_COMBO_DEFAULT_END_DATE = '2026-04-21';
-const PORTFOLIO_COMBO_WEIGHT_STEP = 10;
-const PORTFOLIO_COMBO_MAX_SUGGESTION_ASSETS = 4;
+const HIDDEN_PERP_FOCUS_IDS = new Set(['combo']);
 const HEDGE_PROTECTION_EFFECTIVENESS = {
   direct: 1,
   basket: 0.75,
@@ -339,10 +268,6 @@ const FINRA_TAF_EQUITY_PER_SHARE = 0.000195;
 const FINRA_TAF_EQUITY_MAX_PER_TRADE = 9.79;
 const KRAKEN_PERP_APP_TAKER_FEE_RATE = 0.0025;
 const KRAKEN_PERP_FUNDING_RATE_PER_8H = 0.0001;
-const REPLAY_SPOT_MANAGEMENT_FEE_FALLBACK_RATE = 0.004;
-const REPLAY_STRATEGY_MANAGEMENT_FEE_RATE = 0.006;
-const REPLAY_PERP_MANAGEMENT_FEE_RATE = 0.0075;
-const REPLAY_PRACTICE_DRAWDOWN_PENALTY_FACTOR = 0.45;
 const AAVE_FLASH_LOAN_PREMIUM_RATE = 0.0009;
 const PERP_MAINTENANCE_MARGIN_FLOOR_RATE = 0.01;
 const FLASH_LIQUIDITY_QUOTE_LANE_META = [
@@ -2134,7 +2059,6 @@ function normalizePaperState(payload) {
           feeTotal: roundNumber(Number(trade.feeTotal || 0), 2),
           taxTotal: roundNumber(Number(trade.taxTotal || 0), 2),
           carryTotal: roundNumber(Number(trade.carryTotal || 0), 2),
-          managementFeeTotal: roundNumber(Number(trade.managementFeeTotal || 0), 2),
           loanApplied: roundNumber(Number(trade.loanApplied || 0), 2),
           loanRepaid: roundNumber(Number(trade.loanRepaid || 0), 2),
           realizedPnl: roundNumber(Number(trade.realizedPnl || 0), 2)
@@ -2466,60 +2390,6 @@ function calculateTradeCosts({ product, side, notional, gain = 0, holdingDays = 
   };
 }
 
-function getReplayAnnualManagementFeeRate(product, fallbackRate = REPLAY_SPOT_MANAGEMENT_FEE_FALLBACK_RATE) {
-  const guide = product ? getReplayProductGuide(product) : null;
-  const guideAnnualRate = sumRates((guide?.feeBlueprint || []).filter((row) => row.type === 'annual'));
-  const resolvedRate = guideAnnualRate > 0 ? guideAnnualRate : fallbackRate;
-  return Math.max(0, Number(resolvedRate || 0));
-}
-
-function calculateReplayManagementFee({ product, notional = 0, holdingDays = 0, fallbackRate = REPLAY_SPOT_MANAGEMENT_FEE_FALLBACK_RATE }) {
-  const safeNotional = Math.max(0, Number(notional || 0));
-  const safeHoldingDays = Math.max(0, Number(holdingDays || 0));
-  const annualRate = getReplayAnnualManagementFeeRate(product, fallbackRate);
-  return roundNumber(safeNotional * annualRate * (safeHoldingDays / 365), 2);
-}
-
-function normalizeFeeDisclosureRows(rows = []) {
-  return (Array.isArray(rows) ? rows : [])
-    .map((row) => ({
-      label: row?.label || 'Fee',
-      amount: roundNumber(Number(row?.amount || 0), 2)
-    }))
-    .filter((row) => row.amount > 0);
-}
-
-function formatFeeDisclosureLines(rows = []) {
-  return normalizeFeeDisclosureRows(rows).map((row) => `${row.label}: ${formatNotional(row.amount)} PT`);
-}
-
-function getFeeDisclosureTotal(rows = []) {
-  return roundNumber(normalizeFeeDisclosureRows(rows).reduce((sum, row) => sum + Number(row.amount || 0), 0), 2);
-}
-
-function buildSpotSettlementFeeRows(snapshot = {}) {
-  const rows = [
-    { label: 'Exit trading / spread / channel fees', amount: Number(snapshot.exitCosts?.nonTaxCost || 0) },
-    { label: 'Estimated tax holdback', amount: Number(snapshot.exitCosts?.estimatedTax || 0) },
-    { label: 'Carry accrual', amount: Number(snapshot.unpaidCarry || 0) },
-    { label: 'Management fee', amount: Number(snapshot.managementFee || 0) },
-    { label: 'Principal loan repayment', amount: Number(snapshot.principalLoan || 0) }
-  ];
-  return normalizeFeeDisclosureRows(rows);
-}
-
-function buildLeveragedSettlementFeeRows(snapshot = {}, flashReserveCapital = 0) {
-  const rows = [
-    { label: 'Entry taker fee', amount: Number(snapshot.entryFee || 0) },
-    { label: 'Exit taker fee', amount: Number(snapshot.exitFee || 0) },
-    { label: 'Funding cost', amount: Number(snapshot.fundingCost || 0) },
-    { label: 'Flash premium', amount: Number(snapshot.flashLoanFee || 0) },
-    { label: 'Management fee', amount: Number(snapshot.managementFee || 0) },
-    { label: 'Released flash reserve offset', amount: -Math.max(0, Number(flashReserveCapital || 0)) }
-  ];
-  return normalizeFeeDisclosureRows(rows.filter((row) => row.amount > 0));
-}
-
 function buildHistoricalPositionFromTrades(trades, productId, currentTs) {
   const emptyPosition = {
     units: 0,
@@ -2632,12 +2502,7 @@ function buildPositionSnapshot(product, position, markPrice, currentTs) {
     2
   );
   const marketMovePnl = roundNumber(grossValue - grossNotional, 2);
-  const managementFee = calculateReplayManagementFee({
-    product,
-    notional: grossNotional || Number(position.principal || 0),
-    holdingDays
-  });
-  const grossGainAfterCarry = roundNumber(Math.max(0, grossValue - position.principal - unpaidCarry - managementFee), 2);
+  const grossGainAfterCarry = roundNumber(Math.max(0, grossValue - position.principal - unpaidCarry), 2);
   const exitCosts = calculateTradeCosts({
     product,
     side: 'sell',
@@ -2646,10 +2511,7 @@ function buildPositionSnapshot(product, position, markPrice, currentTs) {
     holdingDays,
     units: Number(position.units || 0)
   });
-  const netExitBeforeLoan = roundNumber(
-    Math.max(0, grossValue - unpaidCarry - managementFee - exitCosts.nonTaxCost - exitCosts.estimatedTax),
-    2
-  );
+  const netExitBeforeLoan = roundNumber(Math.max(0, grossValue - unpaidCarry - exitCosts.nonTaxCost - exitCosts.estimatedTax), 2);
   const netExitValue = roundNumber(Math.max(0, netExitBeforeLoan - principalLoan), 2);
   const grossPnl = roundNumber(grossValue - position.principal, 2);
   const netPnl = roundNumber(netExitValue - walletPrincipal, 2);
@@ -2661,7 +2523,6 @@ function buildPositionSnapshot(product, position, markPrice, currentTs) {
     entryFeeRemaining,
     marketMovePnl,
     unpaidCarry,
-    managementFee,
     exitCosts,
     netExitValue,
     principalLoan,
@@ -2712,8 +2573,7 @@ function buildLeveragedReplaySnapshot({
   holdingDays = 0,
   targetNotional = 0,
   flashLoanAmount = 0,
-  flashLoanFee = 0,
-  managementFeeRate = REPLAY_PERP_MANAGEMENT_FEE_RATE
+  flashLoanFee = 0
 }) {
   const entryPrice = Number(entryBar?.close || 0);
   const exitPrice = Number(targetBar?.close || 0);
@@ -2742,10 +2602,6 @@ function buildLeveragedReplaySnapshot({
     Number(flashLoanFee || 0) > 0
       ? roundNumber(Math.max(0, Number(flashLoanFee || 0)), 2)
       : roundNumber(effectiveFlashLoanAmount * AAVE_FLASH_LOAN_PREMIUM_RATE, 2);
-  const managementFee = roundNumber(
-    exposureNotional * Math.max(0, Number(managementFeeRate || 0)) * (effectiveHoldingDays / 365),
-    2
-  );
   const initialMarginRate = 1 / safeLeverage;
   const maintenanceMarginRate = Math.max(PERP_MAINTENANCE_MARGIN_FLOOR_RATE, initialMarginRate * 0.2);
   const maintenanceMargin = roundNumber(exposureNotional * maintenanceMarginRate, 2);
@@ -2756,7 +2612,7 @@ function buildLeveragedReplaySnapshot({
       ? roundNumber(entryPrice * (1 + liquidationMoveRate), 2)
       : roundNumber(Math.max(0, entryPrice * (1 - liquidationMoveRate)), 2);
   const netExitValue = roundNumber(
-    Math.max(0, safeMargin + priceMovePnl - entryFee - exitFee - fundingCost - effectiveFlashLoanFee - managementFee),
+    Math.max(0, safeMargin + priceMovePnl - entryFee - exitFee - fundingCost - effectiveFlashLoanFee),
     2
   );
   const netPnl = roundNumber(netExitValue - safeMargin, 2);
@@ -2777,7 +2633,6 @@ function buildLeveragedReplaySnapshot({
     exitFee,
     fundingCost,
     flashLoanFee: effectiveFlashLoanFee,
-    managementFee,
     initialMarginRate,
     maintenanceMarginRate,
     maintenanceMargin,
@@ -4055,12 +3910,7 @@ function estimateSpotPracticeOutcome({ product, startBar, endBar, notional = MIN
   const grossProceeds = roundNumber(units * endPrice, 2);
   const annualCarryRate = Number(getCostModel(product).annualCarryBps || 0) / 10000;
   const carry = roundNumber(principal * annualCarryRate * (holdingDays / 365), 2);
-  const managementFee = calculateReplayManagementFee({
-    product,
-    notional: safeNotional,
-    holdingDays
-  });
-  const preTaxGain = roundNumber(Math.max(0, grossProceeds - principal - carry - managementFee), 2);
+  const preTaxGain = roundNumber(Math.max(0, grossProceeds - principal - carry), 2);
   const sellCosts = calculateTradeCosts({
     product,
     side: 'sell',
@@ -4069,7 +3919,7 @@ function estimateSpotPracticeOutcome({ product, startBar, endBar, notional = MIN
     holdingDays,
     units
   });
-  const exitDrag = roundNumber(sellCosts.nonTaxCost + sellCosts.estimatedTax + carry + managementFee, 2);
+  const exitDrag = roundNumber(sellCosts.nonTaxCost + sellCosts.estimatedTax + carry, 2);
   const totalDrag = roundNumber(buyCosts.nonTaxCost + exitDrag, 2);
   const netExitValue = roundNumber(Math.max(0, grossProceeds - exitDrag), 2);
   const netPnl = roundNumber(netExitValue - principal, 2);
@@ -4089,7 +3939,6 @@ function estimateSpotPracticeOutcome({ product, startBar, endBar, notional = MIN
     entryDrag: buyCosts.nonTaxCost,
     exitDrag,
     carry,
-    managementFee,
     totalDrag,
     exitCosts: sellCosts
   };
@@ -4181,815 +4030,6 @@ function estimateHedgePracticeOutcome({
   };
 }
 
-function getDrawdownMagnitude(drawdownRate = 0) {
-  return Math.abs(Math.min(0, Number(drawdownRate || 0)));
-}
-
-function formatPracticeDrawdownRatio(drawdownRate = 0) {
-  return formatPercent(getDrawdownMagnitude(drawdownRate), 1);
-}
-
-function buildMaxDrawdownRateFromValues(values = []) {
-  const safeValues = values
-    .map((value) => Number(value || 0))
-    .filter((value) => Number.isFinite(value) && value > 0);
-
-  if (safeValues.length < 2) return 0;
-
-  let peak = safeValues[0];
-  let maxDrawdown = 0;
-  safeValues.forEach((value) => {
-    if (value > peak) peak = value;
-    const drawdown = peak > 0 ? (value - peak) / peak : 0;
-    if (drawdown < maxDrawdown) maxDrawdown = drawdown;
-  });
-
-  return maxDrawdown;
-}
-
-function getPracticeCapitalBase({
-  mode = 'spot',
-  notional = MIN_PAPER_TRADE,
-  marginCapital = 0,
-  leverage = 1,
-  hedgeSleeveNotional = notional
-} = {}) {
-  if (mode === 'leverage') {
-    const inferredMargin = Number(leverage || 1) > 0 ? Number(notional || 0) / Math.max(1, Number(leverage || 1)) : Number(notional || 0);
-    return Math.max(1, Number(marginCapital || 0), inferredMargin);
-  }
-
-  if (mode === 'hedge') {
-    return Math.max(1, Number(hedgeSleeveNotional || notional || MIN_PAPER_TRADE));
-  }
-
-  return Math.max(1, Number(notional || MIN_PAPER_TRADE));
-}
-
-function estimatePracticePathMaxDrawdownRate({
-  mode = 'spot',
-  product,
-  caseBars = [],
-  startBar,
-  hedgeStartBar,
-  notional = MIN_PAPER_TRADE,
-  leverage = 1,
-  marginCapital = 0,
-  flashLoanAmount = 0,
-  flashLoanFee = 0,
-  hedgeSleeveNotional = notional,
-  hedgeTicketNotional = notional,
-  hedgeMarginCapital = marginCapital,
-  hedgeLeverage = leverage,
-  strategyTemplateId = 'collar',
-  strategyControls = {}
-} = {}) {
-  const safeCaseBars = Array.isArray(caseBars) ? caseBars.filter(Boolean) : [];
-  if (safeCaseBars.length < 2) return 0;
-
-  if (mode === 'leverage') {
-    const safeNotional = Math.max(MIN_PAPER_TRADE, Number(notional || 0));
-    const safeLeverage = Math.max(1, Number(leverage || 1));
-    const inferredMargin = safeNotional / safeLeverage;
-    const safeMarginCapital = Math.max(0, Number(marginCapital || 0), inferredMargin);
-    const values = [
-      safeMarginCapital,
-      ...safeCaseBars.map((bar) => {
-        const snapshot = estimateLeveragePracticeOutcome({
-          startBar,
-          endBar: bar,
-          direction: 'long',
-          marginCapital: safeMarginCapital,
-          leverage: safeLeverage,
-          notional: safeNotional,
-          flashLoanAmount,
-          flashLoanFee
-        });
-        return snapshot?.netExitValue || safeMarginCapital;
-      })
-    ];
-    return buildMaxDrawdownRateFromValues(values);
-  }
-
-  if (mode === 'hedge') {
-    const startPrice = getBarCloseValue(startBar);
-    const hedgePrice = getBarCloseValue(hedgeStartBar);
-    const hedgeStartIndex = Number.isInteger(hedgeStartBar?.index)
-      ? hedgeStartBar.index
-      : safeCaseBars.findIndex((bar) => bar?.ts === hedgeStartBar?.ts);
-    const safeSleeveNotional = Math.max(MIN_PAPER_TRADE, Number(hedgeSleeveNotional || notional || MIN_PAPER_TRADE));
-    const safeHedgeTicketNotional = Math.max(0, Number(hedgeTicketNotional || 0));
-
-    if (startPrice <= 0) return getMaxDrawdownFromBars(safeCaseBars);
-
-    const values = safeCaseBars.map((bar, index) => {
-      const price = getBarCloseValue(bar);
-      const sleevePnl = price > 0 ? safeSleeveNotional * (price / startPrice - 1) : 0;
-      const hedgeActive =
-        safeHedgeTicketNotional > 0 &&
-        hedgePrice > 0 &&
-        (Number.isInteger(hedgeStartBar?.index)
-          ? Number(bar?.index ?? index) >= hedgeStartIndex
-          : index >= Math.max(0, hedgeStartIndex));
-      const hedgePnl = hedgeActive ? safeHedgeTicketNotional * ((hedgePrice - price) / hedgePrice) : 0;
-      return Math.max(0.01, safeSleeveNotional + sleevePnl + hedgePnl);
-    });
-
-    return buildMaxDrawdownRateFromValues(values);
-  }
-
-  if (mode === 'strategy') {
-    const safeNotional = Math.max(MIN_PAPER_TRADE, Number(notional || 0));
-    const values = [
-      safeNotional,
-      ...safeCaseBars.map((bar) => {
-        const outcome = estimateOptionStrategyPracticeOutcome({
-          product,
-          startBar,
-          endBar: bar,
-          notional: safeNotional,
-          templateId: strategyTemplateId,
-          controls: strategyControls
-        });
-        return outcome?.exitValue || safeNotional;
-      })
-    ];
-    return buildMaxDrawdownRateFromValues(values);
-  }
-
-  return getMaxDrawdownFromBars(safeCaseBars);
-}
-
-function getDrawdownAdjustedPracticeScore({ rawReturnScore = 0, maxDrawdownRate = 0, spanBonus = 0 } = {}) {
-  return Number(rawReturnScore || 0) - getDrawdownMagnitude(maxDrawdownRate) * REPLAY_PRACTICE_DRAWDOWN_PENALTY_FACTOR + Number(spanBonus || 0);
-}
-
-function findBestHedgePracticeTrigger({
-  product,
-  caseBars = [],
-  startBar,
-  endBar,
-  sleeveNotional = MIN_PAPER_TRADE,
-  hedgeTicketNotional = 0,
-  hedgeMarginCapital = 0,
-  hedgeLeverage = 1,
-  flashLoanAmount = 0,
-  flashLoanFee = 0
-}) {
-  const fallbackBar = getHedgePracticeTriggerBar(caseBars, startBar, endBar);
-  const safeCaseBars = Array.isArray(caseBars) ? caseBars.filter(Boolean) : [];
-
-  if (safeCaseBars.length <= 2) {
-    const outcome = estimateHedgePracticeOutcome({
-      product,
-      startBar,
-      hedgeStartBar: fallbackBar,
-      endBar,
-      sleeveNotional,
-      hedgeTicketNotional,
-      hedgeMarginCapital,
-      hedgeLeverage,
-      flashLoanAmount,
-      flashLoanFee
-    });
-    return { bar: fallbackBar, outcome };
-  }
-
-  let best = null;
-  for (let index = 1; index < safeCaseBars.length - 1; index += 1) {
-    const hedgeStartBar = safeCaseBars[index];
-    const outcome = estimateHedgePracticeOutcome({
-      product,
-      startBar,
-      hedgeStartBar,
-      endBar,
-      sleeveNotional,
-      hedgeTicketNotional,
-      hedgeMarginCapital,
-      hedgeLeverage,
-      flashLoanAmount,
-      flashLoanFee
-    });
-    if (!outcome) continue;
-
-    const maxDrawdownRate = estimatePracticePathMaxDrawdownRate({
-      mode: 'hedge',
-      product,
-      caseBars: safeCaseBars,
-      startBar,
-      hedgeStartBar,
-      endBar,
-      notional: sleeveNotional,
-      hedgeSleeveNotional: sleeveNotional,
-      hedgeTicketNotional,
-      hedgeMarginCapital,
-      hedgeLeverage,
-      flashLoanAmount,
-      flashLoanFee
-    });
-    const base = getPracticeCapitalBase({
-      mode: 'hedge',
-      notional: sleeveNotional,
-      hedgeSleeveNotional: sleeveNotional
-    });
-    const timingBonus = index / Math.max(1, safeCaseBars.length - 1) * 0.0001;
-    const score = Number(outcome.netPnl || 0) - base * getDrawdownMagnitude(maxDrawdownRate) * REPLAY_PRACTICE_DRAWDOWN_PENALTY_FACTOR + timingBonus;
-    if (!best || score > best.score) {
-      best = {
-        bar: hedgeStartBar,
-        outcome,
-        maxDrawdownRate,
-        score
-      };
-    }
-  }
-
-  if (best) return best;
-
-  return {
-    bar: fallbackBar,
-    outcome: estimateHedgePracticeOutcome({
-      product,
-      startBar,
-      hedgeStartBar: fallbackBar,
-      endBar,
-      sleeveNotional,
-      hedgeTicketNotional,
-      hedgeMarginCapital,
-      hedgeLeverage,
-      flashLoanAmount,
-      flashLoanFee
-    })
-  };
-}
-
-const STRATEGY_AI_FEATURE_DEFINITIONS = [
-  {
-    id: 'risk',
-    label: 'Risk guardrail',
-    value: 'Drawdown boundary',
-    patterns: [/hedge|protect|drawdown|stop|floor|collar|insurance|de-risk|risk|liquidation|\u5bf9\u51b2|\u4fdd\u62a4|\u56de\u64a4|\u6b62\u635f/],
-    copy: 'The idea names how downside is bounded before the payoff is published.'
-  },
-  {
-    id: 'trend',
-    label: 'Signal type',
-    value: 'Trend / breakout',
-    patterns: [/trend|momentum|breakout|higher high|moving average|rally|volatility expands|\u8d8b\u52bf|\u7a81\u7834|\u52a8\u91cf|\u6ce2\u52a8/],
-    copy: 'Entry depends on a directional move or volatility expansion.'
-  },
-  {
-    id: 'mean-reversion',
-    label: 'Signal type',
-    value: 'Mean reversion',
-    patterns: [/mean reversion|oversold|support|range|pullback|discount|\u5747\u503c|\u8d85\u8dcc|\u652f\u6491|\u56de\u843d/],
-    copy: 'Entry waits for a stretched move to normalize instead of chasing the first print.'
-  },
-  {
-    id: 'carry',
-    label: 'Return source',
-    value: 'Carry / funding',
-    patterns: [/carry|funding|basis|yield|premium income|cash and carry|\u5957\u5229|\u6536\u76ca|\u8d44\u91d1\u8d39|\u57fa\u5dee/],
-    copy: 'The template separates income capture from pure price direction.'
-  },
-  {
-    id: 'options',
-    label: 'Payoff layer',
-    value: 'Option structure',
-    patterns: [/option|call|put|collar|covered|strike|premium|cap|floor|\u671f\u6743|\u770b\u6da8|\u770b\u8dcc|\u884c\u6743|\u6743\u5229\u91d1/],
-    copy: 'The strategy has a payoff shape with visible cap, floor, premium, or strike logic.'
-  },
-  {
-    id: 'leverage',
-    label: 'Sizing',
-    value: 'Levered leg',
-    patterns: [/leverage|perp|margin|short|long|borrow|flash|\u6760\u6746|\u6c38\u7eed|\u4fdd\u8bc1\u91d1|\u501f/],
-    copy: 'The idea uses borrowed or synthetic notional, so margin and liquidation deserve a separate check.'
-  },
-  {
-    id: 'exit',
-    label: 'Exit rule',
-    value: 'Defined unwind',
-    patterns: [/exit|unwind|settle|rebalance|take profit|stop loss|time stop|\u9000\u51fa|\u5e73\u4ed3|\u6b62\u76c8|\u518d\u5e73\u8861/],
-    copy: 'The prompt includes a clear condition for closing or rebalancing the template.'
-  }
-];
-
-function getStrategyIdeaTitle(prompt, fallbackLabel = 'Strategy') {
-  const firstLine = String(prompt || '')
-    .split(/\n|\.|;|\u3002/)
-    .map((part) => part.trim())
-    .find(Boolean);
-  if (!firstLine) return `${fallbackLabel} AI template`;
-  return firstLine.length > 64 ? `${firstLine.slice(0, 61)}...` : firstLine;
-}
-
-function buildStrategyAiTemplateAnalysis({
-  prompt,
-  product,
-  strategyLabel = 'Strategy',
-  strategyOutcome = null
-} = {}) {
-  const cleanPrompt = String(prompt || '').trim() || DEFAULT_STRATEGY_AI_PROMPT;
-  const lowerPrompt = cleanPrompt.toLowerCase();
-  const matchedFeatures = STRATEGY_AI_FEATURE_DEFINITIONS.filter((definition) =>
-    definition.patterns.some((pattern) => pattern.test(lowerPrompt))
-  );
-  const fallbackFeatures = STRATEGY_AI_FEATURE_DEFINITIONS.filter(
-    (definition) => !matchedFeatures.some((feature) => feature.id === definition.id)
-  );
-  const features = [...matchedFeatures, ...fallbackFeatures.slice(0, Math.max(0, 4 - matchedFeatures.length))].slice(0, 5);
-  const featureIds = new Set(features.map((feature) => feature.id));
-  const hasRiskGuardrail = featureIds.has('risk') || featureIds.has('options');
-  const hasExitRule = featureIds.has('exit');
-  const hasLeverage = featureIds.has('leverage');
-  const previewReturnPct = Number(strategyOutcome?.netReturnRate || 0) * 100;
-  const promptSpecificity = clampNumber(Math.floor(cleanPrompt.length / 34), 0, 8);
-  const winRate = clampNumber(
-    Math.round(
-      47 +
-        matchedFeatures.length * 4.2 +
-        promptSpecificity +
-        (hasRiskGuardrail ? 5 : 0) +
-        (hasExitRule ? 4 : 0) +
-        (featureIds.has('carry') ? 2 : 0) -
-        (hasLeverage ? 3 : 0)
-    ),
-    38,
-    82
-  );
-  const maxDrawdownPct = clampNumber(
-    roundNumber(17 + (hasLeverage ? 7 : 0) - (hasRiskGuardrail ? 5 : 0) - (hasExitRule ? 3 : 0) - (featureIds.has('carry') ? 1.5 : 0), 1),
-    4,
-    36
-  );
-  const expectedReturnPct = clampNumber(
-    roundNumber(4 + previewReturnPct * 0.42 + (winRate - 50) * 0.28 + (featureIds.has('trend') ? 2 : 0) + (featureIds.has('carry') ? 1.5 : 0), 1),
-    -12,
-    34
-  );
-  const templateScore = clamp(
-    Math.round(winRate * 0.62 + Math.max(-8, expectedReturnPct) * 1.15 - maxDrawdownPct * 0.5 + (hasExitRule ? 4 : 0)),
-    0,
-    100
-  );
-
-  return {
-    title: getStrategyIdeaTitle(cleanPrompt, strategyLabel),
-    prompt: cleanPrompt,
-    productLabel: product?.ticker || product?.name || 'Replay product',
-    strategyLabel,
-    features,
-    winRate,
-    expectedReturnPct,
-    maxDrawdownPct,
-    templateScore
-  };
-}
-
-function buildStrategyAiTemplateVariants({
-  prompt,
-  product,
-  strategyLabel = 'Strategy',
-  strategyOutcome = null
-} = {}) {
-  const cleanPrompt = String(prompt || '').trim() || DEFAULT_STRATEGY_AI_PROMPT;
-  const featureById = new Map(STRATEGY_AI_FEATURE_DEFINITIONS.map((feature) => [feature.id, feature]));
-
-  return STRATEGY_AI_TEMPLATE_VARIANTS.map((variant) => {
-    const base = buildStrategyAiTemplateAnalysis({
-      prompt: `${cleanPrompt}\n${variant.promptHint}`,
-      product,
-      strategyLabel,
-      strategyOutcome
-    });
-    const pinnedFeatures = (variant.featureIds || [])
-      .map((featureId) => featureById.get(featureId))
-      .filter(Boolean);
-    const pinnedFeatureIds = new Set(pinnedFeatures.map((feature) => feature.id));
-    const features = [
-      ...pinnedFeatures,
-      ...base.features.filter((feature) => !pinnedFeatureIds.has(feature.id))
-    ].slice(0, 5);
-    const winRate = clampNumber(Math.round(base.winRate + Number(variant.winRateShift || 0)), 34, 88);
-    const expectedReturnPct = clampNumber(
-      roundNumber(base.expectedReturnPct + Number(variant.expectedReturnShift || 0), 1),
-      -16,
-      42
-    );
-    const maxDrawdownPct = clampNumber(
-      roundNumber(base.maxDrawdownPct + Number(variant.maxDrawdownShift || 0), 1),
-      3,
-      42
-    );
-    const templateScore = clamp(
-      Math.round(
-        winRate * 0.62 +
-          Math.max(-8, expectedReturnPct) * 1.15 -
-          maxDrawdownPct * 0.5 +
-          Number(variant.scoreShift || 0) +
-          (features.some((feature) => feature.id === 'exit') ? 4 : 0)
-      ),
-      0,
-      100
-    );
-
-    return {
-      ...base,
-      id: variant.id,
-      variantId: variant.id,
-      variantLabel: variant.label,
-      title: `${variant.shortLabel}: ${getStrategyIdeaTitle(cleanPrompt, strategyLabel)}`,
-      prompt: cleanPrompt,
-      features,
-      winRate,
-      expectedReturnPct,
-      maxDrawdownPct,
-      templateScore
-    };
-  });
-}
-
-function normalizePortfolioComboDateKey(timestamp) {
-  const direct = String(timestamp || '').match(/^(\d{4}-\d{2}-\d{2})/);
-  if (direct) return direct[1];
-
-  const date = new Date(timestamp);
-  if (!Number.isFinite(date.getTime())) return '';
-  return date.toISOString().slice(0, 10);
-}
-
-function isPortfolioComboDateInRange(dateKey, startDate, endDate) {
-  if (!dateKey) return false;
-  const safeStartDate = String(startDate || '').trim();
-  const safeEndDate = String(endDate || '').trim();
-  if (safeStartDate && dateKey < safeStartDate) return false;
-  if (safeEndDate && dateKey > safeEndDate) return false;
-  return true;
-}
-
-function normalizePortfolioComboWeightMap(productIds = [], weightMap = {}) {
-  const safeProductIds = productIds.filter(Boolean);
-  if (!safeProductIds.length) return {};
-
-  const rawWeights = safeProductIds.map((productId) => {
-    const numericWeight = Number(weightMap?.[productId] ?? 0);
-
-    return {
-      productId,
-      value: Number.isFinite(numericWeight) ? Math.max(0, numericWeight) : 0
-    };
-  });
-  const totalWeight = rawWeights.reduce((sum, row) => sum + row.value, 0);
-
-  if (totalWeight <= 0) {
-    const equalWeight = roundNumber(100 / safeProductIds.length, 2);
-    return Object.fromEntries(safeProductIds.map((productId) => [productId, equalWeight]));
-  }
-
-  return Object.fromEntries(
-    rawWeights.map((row) => [row.productId, roundNumber((row.value / totalWeight) * 100, 2)])
-  );
-}
-
-function collectPortfolioComboSeries({
-  productIds = [],
-  productMap = {},
-  productViews = {},
-  startDate = '',
-  endDate = ''
-} = {}) {
-  const selectedIds = [...new Set(productIds.filter(Boolean))];
-
-  if (selectedIds.length < 2) {
-    return {
-      status: 'select-more',
-      message: 'Select at least two replay products for a portfolio combo.',
-      rows: [],
-      dates: []
-    };
-  }
-
-  const rows = selectedIds
-    .map((productId) => {
-      const product = productMap[productId];
-      const bars = Array.isArray(productViews[productId]?.bars) ? productViews[productId].bars : [];
-      const dateMap = new Map();
-
-      bars.forEach((bar) => {
-        const dateKey = normalizePortfolioComboDateKey(bar.ts);
-        const close = getBarCloseValue(bar);
-        if (!dateKey || !Number.isFinite(close) || close <= 0) return;
-        dateMap.set(dateKey, close);
-      });
-
-      return {
-        id: productId,
-        product,
-        ticker: product?.ticker || product?.symbol || productId,
-        name: product?.name || productId,
-        dateMap,
-        loaded: dateMap.size >= 2
-      };
-    });
-  const loadedRows = rows.filter((row) => row.loaded);
-
-  if (loadedRows.length < 2) {
-    return {
-      status: 'loading',
-      message: 'Loading bundled replay bars for the selected stocks. The combo optimizer appears once at least two series are ready.',
-      rows: loadedRows,
-      dates: []
-    };
-  }
-
-  const commonDates = [...loadedRows[0].dateMap.keys()]
-    .filter((dateKey) => loadedRows.every((row) => row.dateMap.has(dateKey)))
-    .filter((dateKey) => isPortfolioComboDateInRange(dateKey, startDate, endDate))
-    .sort();
-
-  if (commonDates.length < 2) {
-    return {
-      status: 'range-empty',
-      message: 'The selected date window has too little overlapping history. Widen the start/end dates or select a different basket.',
-      rows: loadedRows,
-      dates: commonDates
-    };
-  }
-
-  return {
-    status: 'ready',
-    message: '',
-    rows: loadedRows.map((row) => ({
-      ...row,
-      closes: commonDates.map((dateKey) => row.dateMap.get(dateKey))
-    })),
-    dates: commonDates
-  };
-}
-
-function evaluatePortfolioComboSeries(series, weightMap = {}, label = 'Manual weights') {
-  if (!series || series.status !== 'ready' || !Array.isArray(series.rows) || series.rows.length < 1 || series.dates.length < 2) {
-    return null;
-  }
-
-  const productIds = series.rows.map((row) => row.id);
-  const normalizedWeights = normalizePortfolioComboWeightMap(productIds, weightMap);
-  let value = 1;
-  let peakValue = 1;
-  let maxDrawdownRate = 0;
-  const dailyReturns = [];
-
-  for (let index = 1; index < series.dates.length; index += 1) {
-    const dailyReturn = series.rows.reduce((sum, row) => {
-      const previousClose = Number(row.closes[index - 1] || 0);
-      const currentClose = Number(row.closes[index] || 0);
-      if (previousClose <= 0 || currentClose <= 0) return sum;
-      return sum + (Number(normalizedWeights[row.id] || 0) / 100) * (currentClose / previousClose - 1);
-    }, 0);
-
-    value *= 1 + dailyReturn;
-    peakValue = Math.max(peakValue, value);
-    maxDrawdownRate = Math.min(maxDrawdownRate, value / peakValue - 1);
-    dailyReturns.push(dailyReturn);
-  }
-
-  const totalReturnPct = (value - 1) * 100;
-  const averageDailyReturn = dailyReturns.reduce((sum, row) => sum + row, 0) / Math.max(1, dailyReturns.length);
-  const variance =
-    dailyReturns.reduce((sum, row) => sum + (row - averageDailyReturn) ** 2, 0) / Math.max(1, dailyReturns.length);
-  const annualVolPct = Math.sqrt(variance) * Math.sqrt(252) * 100;
-  const sharpe = annualVolPct > 0 ? (averageDailyReturn * 252) / (annualVolPct / 100) : totalReturnPct > 0 ? 9.99 : 0;
-  const winRate = dailyReturns.length
-    ? (dailyReturns.filter((row) => row > 0).length / dailyReturns.length) * 100
-    : 0;
-  const maxDrawdownPct = Math.abs(maxDrawdownRate) * 100;
-  const riskAdjustedScore = totalReturnPct - maxDrawdownPct * 0.85 + sharpe * 4 - annualVolPct * 0.15;
-  const templateScore = clampNumber(
-    Math.round(50 + totalReturnPct * 0.3 - maxDrawdownPct * 0.55 + sharpe * 4 - annualVolPct * 0.08 + winRate * 0.12),
-    0,
-    100
-  );
-  const allocation = series.rows
-    .map((row) => ({
-      productId: row.id,
-      ticker: row.ticker,
-      name: row.name,
-      weightPct: Number(normalizedWeights[row.id] || 0)
-    }))
-    .filter((row) => row.weightPct > 0.01)
-    .sort((left, right) => right.weightPct - left.weightPct);
-
-  return {
-    label,
-    startDate: series.dates[0],
-    endDate: series.dates[series.dates.length - 1],
-    days: series.dates.length,
-    totalReturnPct: roundNumber(totalReturnPct, 2),
-    maxDrawdownPct: roundNumber(maxDrawdownPct, 2),
-    annualVolPct: roundNumber(annualVolPct, 2),
-    sharpe: roundNumber(sharpe, 2),
-    winRate: roundNumber(winRate, 1),
-    riskAdjustedScore: roundNumber(riskAdjustedScore, 2),
-    templateScore,
-    normalizedWeights,
-    allocation
-  };
-}
-
-function generatePortfolioComboWeightCandidates(productIds = []) {
-  const safeProductIds = productIds.slice(0, PORTFOLIO_COMBO_PRODUCT_IDS.length);
-  const totalUnits = Math.round(100 / PORTFOLIO_COMBO_WEIGHT_STEP);
-  const candidates = [];
-
-  function visit(index, remainingUnits, current) {
-    if (index === safeProductIds.length - 1) {
-      const finalCandidate = {
-        ...current,
-        [safeProductIds[index]]: remainingUnits * PORTFOLIO_COMBO_WEIGHT_STEP
-      };
-      const nonZeroCount = Object.values(finalCandidate).filter((value) => Number(value || 0) > 0).length;
-      if (nonZeroCount >= 2 && nonZeroCount <= PORTFOLIO_COMBO_MAX_SUGGESTION_ASSETS) {
-        candidates.push(finalCandidate);
-      }
-      return;
-    }
-
-    for (let units = 0; units <= remainingUnits; units += 1) {
-      visit(index + 1, remainingUnits - units, {
-        ...current,
-        [safeProductIds[index]]: units * PORTFOLIO_COMBO_WEIGHT_STEP
-      });
-    }
-  }
-
-  if (safeProductIds.length >= 2) {
-    visit(0, totalUnits, {});
-  }
-
-  return candidates;
-}
-
-function getPortfolioComboAllocationKey(metrics) {
-  return (metrics?.allocation || [])
-    .map((row) => `${row.productId}:${roundNumber(row.weightPct, 1)}`)
-    .join('|');
-}
-
-function buildPortfolioComboSuggestions(series) {
-  if (!series || series.status !== 'ready') return [];
-
-  const candidateWeightMaps = generatePortfolioComboWeightCandidates(series.rows.map((row) => row.id));
-  const evaluatedCandidates = candidateWeightMaps
-    .map((weightMap) => evaluatePortfolioComboSeries(series, weightMap, 'Suggested combo'))
-    .filter(Boolean);
-
-  if (!evaluatedCandidates.length) return [];
-
-  const sortedByReturn = [...evaluatedCandidates].sort((left, right) => {
-    if (right.totalReturnPct !== left.totalReturnPct) return right.totalReturnPct - left.totalReturnPct;
-    return left.maxDrawdownPct - right.maxDrawdownPct;
-  });
-  const sortedByDrawdown = [...evaluatedCandidates]
-    .filter((row) => row.totalReturnPct > 0)
-    .sort((left, right) => {
-      if (left.maxDrawdownPct !== right.maxDrawdownPct) return left.maxDrawdownPct - right.maxDrawdownPct;
-      return right.totalReturnPct - left.totalReturnPct;
-    });
-  const sortedByBalanced = [...evaluatedCandidates].sort((left, right) => {
-    if (right.riskAdjustedScore !== left.riskAdjustedScore) return right.riskAdjustedScore - left.riskAdjustedScore;
-    return right.totalReturnPct - left.totalReturnPct;
-  });
-  const sortedBySharpe = [...evaluatedCandidates].sort((left, right) => {
-    if (right.sharpe !== left.sharpe) return right.sharpe - left.sharpe;
-    return right.totalReturnPct - left.totalReturnPct;
-  });
-  const rawSuggestions = [
-    { id: 'max-return', label: 'Best return', copy: 'Highest total return in the selected window.', metrics: sortedByReturn[0] },
-    { id: 'min-drawdown', label: 'Smallest drawdown', copy: 'Lowest max drawdown while still ending positive.', metrics: sortedByDrawdown[0] || sortedByBalanced[0] },
-    { id: 'balanced', label: 'Balanced', copy: 'Best return after drawdown, volatility, and Sharpe penalties.', metrics: sortedByBalanced[0] },
-    { id: 'best-sharpe', label: 'Best Sharpe', copy: 'Highest annualized return per unit of daily volatility.', metrics: sortedBySharpe[0] }
-  ];
-  const usedKeys = new Set();
-
-  return rawSuggestions.filter((suggestion) => {
-    if (!suggestion.metrics) return false;
-    const key = getPortfolioComboAllocationKey(suggestion.metrics);
-    if (usedKeys.has(key)) return false;
-    usedKeys.add(key);
-    return true;
-  });
-}
-
-function buildPortfolioComboAnalysis({
-  productIds,
-  productMap,
-  productViews,
-  weightMap,
-  startDate,
-  endDate
-} = {}) {
-  const series = collectPortfolioComboSeries({
-    productIds,
-    productMap,
-    productViews,
-    startDate,
-    endDate
-  });
-
-  if (series.status !== 'ready') {
-    return {
-      ...series,
-      manual: null,
-      suggestions: [],
-      topSingles: []
-    };
-  }
-
-  const manual = evaluatePortfolioComboSeries(series, weightMap, 'Manual weights');
-  const topSingles = series.rows
-    .map((row) => evaluatePortfolioComboSeries(series, { [row.id]: 100 }, row.ticker))
-    .filter(Boolean)
-    .sort((left, right) => right.totalReturnPct - left.totalReturnPct);
-
-  return {
-    ...series,
-    manual,
-    suggestions: buildPortfolioComboSuggestions(series),
-    topSingles
-  };
-}
-
-function normalizeStrategyTemplateLeaderboardEntry(entry) {
-  if (!entry || typeof entry !== 'object') return null;
-  const submittedAt = entry.submittedAt || new Date().toISOString();
-  const features = Array.isArray(entry.features)
-    ? entry.features
-        .map((feature) => ({
-          id: String(feature?.id || feature?.label || '').trim(),
-          label: String(feature?.label || 'Feature').trim(),
-          value: String(feature?.value || '').trim(),
-          copy: String(feature?.copy || '').trim()
-        }))
-        .filter((feature) => feature.label && feature.value)
-    : [];
-  const allocation = Array.isArray(entry.allocation)
-    ? entry.allocation
-        .map((row) => ({
-          productId: String(row?.productId || '').trim(),
-          ticker: String(row?.ticker || row?.productId || '').trim(),
-          name: String(row?.name || '').trim(),
-          weightPct: clampNumber(Number(row?.weightPct || 0), 0, 100)
-        }))
-        .filter((row) => row.productId && row.weightPct > 0)
-    : [];
-
-  return {
-    id: String(entry.id || `${entry.walletAddress || 'guest'}-${submittedAt}-${entry.title || 'strategy'}`),
-    title: String(entry.title || 'Strategy template').trim(),
-    prompt: String(entry.prompt || '').trim(),
-    productLabel: String(entry.productLabel || 'Replay product').trim(),
-    strategyLabel: String(entry.strategyLabel || 'Strategy').trim(),
-    entryType: String(entry.entryType || 'ai-template').trim(),
-    variantId: String(entry.variantId || '').trim(),
-    variantLabel: String(entry.variantLabel || '').trim(),
-    dateRange: String(entry.dateRange || '').trim(),
-    walletAddress: String(entry.walletAddress || 'guest').toLowerCase(),
-    submittedAt,
-    features,
-    allocation,
-    winRate: clampNumber(Number(entry.winRate || 0), 0, 100),
-    expectedReturnPct: clampNumber(Number(entry.expectedReturnPct || 0), -100, 200),
-    maxDrawdownPct: clampNumber(Number(entry.maxDrawdownPct || 0), 0, 100),
-    templateScore: clampNumber(Number(entry.templateScore || 0), 0, 100)
-  };
-}
-
-function normalizeStrategyTemplateLeaderboard(payload) {
-  const byId = new Map();
-  const rawEntries = Array.isArray(payload?.entries) ? payload.entries : [];
-  rawEntries.forEach((entry) => {
-    const normalized = normalizeStrategyTemplateLeaderboardEntry(entry);
-    if (!normalized) return;
-    byId.set(normalized.id, normalized);
-  });
-
-  return {
-    entries: [...byId.values()]
-      .sort((left, right) => {
-        if (right.templateScore !== left.templateScore) return right.templateScore - left.templateScore;
-        if (right.expectedReturnPct !== left.expectedReturnPct) return right.expectedReturnPct - left.expectedReturnPct;
-        if (left.maxDrawdownPct !== right.maxDrawdownPct) return left.maxDrawdownPct - right.maxDrawdownPct;
-        return new Date(right.submittedAt).getTime() - new Date(left.submittedAt).getTime();
-      })
-      .slice(0, 12)
-  };
-}
-
-function readStoredStrategyTemplateLeaderboard() {
-  return normalizeStrategyTemplateLeaderboard(readStorageJson(STRATEGY_TEMPLATE_LEADERBOARD_STORAGE_KEY, { entries: [] }));
-}
-
 function getOptionStrategyDefaults(templateId = 'collar') {
   return OPTION_STRATEGY_DEFAULTS[templateId] || OPTION_STRATEGY_DEFAULTS.collar;
 }
@@ -5006,14 +4046,7 @@ function normalizeOptionStrategyControls(rawControls = {}, templateId = 'collar'
   };
 }
 
-function estimateOptionStrategyPracticeOutcome({
-  product,
-  startBar,
-  endBar,
-  notional = MIN_PAPER_TRADE,
-  templateId = 'collar',
-  controls = {}
-}) {
+function estimateOptionStrategyPracticeOutcome({ startBar, endBar, notional = MIN_PAPER_TRADE, templateId = 'collar', controls = {} }) {
   const startPrice = getBarCloseValue(startBar);
   const endPrice = getBarCloseValue(endBar);
   const safeNotional = Math.max(MIN_PAPER_TRADE, Number(notional || 0));
@@ -5142,33 +4175,23 @@ function estimateOptionStrategyPracticeOutcome({
     ];
   }
 
-  const holdingDays = getReplayCaseHoldingDays(startBar, endBar);
-  const managementFee = calculateReplayManagementFee({
-    product,
-    notional: safeNotional,
-    holdingDays,
-    fallbackRate: REPLAY_STRATEGY_MANAGEMENT_FEE_RATE
-  });
-  const netPnl = roundNumber(safeNotional * netReturnRate - managementFee, 2);
+  const netPnl = roundNumber(safeNotional * netReturnRate, 2);
   const exitValue = roundNumber(Math.max(0, safeNotional + netPnl), 2);
-  const netReturnRateAfterFees = safeNotional > 0 ? netPnl / safeNotional : netReturnRate;
 
   return {
     templateId,
     title: `${OPTION_STRATEGY_LABELS[templateId] || OPTION_STRATEGY_LABELS.collar} preview`,
     copy,
     notional: safeNotional,
-    holdingDays,
+    holdingDays: getReplayCaseHoldingDays(startBar, endBar),
     controls: normalizedControls,
     grossMoveRate: roundNumber(grossMoveRate, 4),
-    netReturnRate: roundNumber(netReturnRateAfterFees, 4),
-    managementFee,
+    netReturnRate: roundNumber(netReturnRate, 4),
     netPnl,
     exitValue,
     rows: [
       { label: 'Historical move', value: formatSignedPercent(grossMoveRate * 100, 1) },
       { label: 'Strategy payoff', value: `${formatSigned(netPnl)} PT` },
-      { label: 'Management fee', value: `${formatNotional(managementFee)} PT` },
       { label: 'Max upside', value: maxUpsideLabel },
       { label: 'Max downside', value: maxDownsideLabel },
       { label: 'Premium', value: premiumLabel },
@@ -5216,11 +4239,6 @@ function formatPracticeCaseOutcome(practiceCase) {
   return formatSignedPercent(getPracticeCaseOutcomeRate(practiceCase) * 100);
 }
 
-function formatPracticeCaseOutcomeWithDrawdown(practiceCase) {
-  const maxDrawdownRate = Number(practiceCase?.maxDrawdownRate || 0);
-  return `${formatPracticeCaseOutcome(practiceCase)} / DD ${formatPracticeDrawdownRatio(maxDrawdownRate)}`;
-}
-
 function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}) {
   const {
     product,
@@ -5264,24 +4282,8 @@ function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}
       const returnRate = endBar.closeValue / startBar.closeValue - 1;
       const absoluteMove = Math.abs(returnRate);
       const spanBonus = ((endSafeIndex - startSafeIndex) / maxLookahead) * 0.01;
-      const caseBars = safeBars.slice(startSafeIndex, endSafeIndex + 1);
-      const hedgeCaseBars = mode === 'hedge' ? caseBars : [];
-      const optimizedHedgeTrigger =
-        mode === 'hedge'
-          ? findBestHedgePracticeTrigger({
-              product,
-              caseBars: hedgeCaseBars,
-              startBar,
-              endBar,
-              sleeveNotional: hedgeSleeveNotional,
-              hedgeTicketNotional,
-              hedgeMarginCapital,
-              hedgeLeverage,
-              flashLoanAmount,
-              flashLoanFee
-            })
-          : null;
-      const hedgeStartBar = optimizedHedgeTrigger?.bar || null;
+      const hedgeCaseBars = mode === 'hedge' ? safeBars.slice(startSafeIndex, endSafeIndex + 1) : [];
+      const hedgeStartBar = mode === 'hedge' ? getHedgePracticeTriggerBar(hedgeCaseBars, startBar, endBar) : null;
       const spotOutcome =
         mode === 'spot'
           ? estimateSpotPracticeOutcome({
@@ -5306,24 +4308,22 @@ function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}
           : null;
       const hedgeOutcome =
         mode === 'hedge'
-          ? optimizedHedgeTrigger?.outcome ||
-            estimateHedgePracticeOutcome({
-                product,
-                startBar,
-                hedgeStartBar,
-                endBar,
-                sleeveNotional: hedgeSleeveNotional,
-                hedgeTicketNotional,
-                hedgeMarginCapital,
-                hedgeLeverage,
-                flashLoanAmount,
-                flashLoanFee
-              })
+          ? estimateHedgePracticeOutcome({
+              product,
+              startBar,
+              hedgeStartBar,
+              endBar,
+              sleeveNotional: hedgeSleeveNotional,
+              hedgeTicketNotional,
+              hedgeMarginCapital,
+              hedgeLeverage,
+              flashLoanAmount,
+              flashLoanFee
+            })
           : null;
       const strategyOutcome =
         mode === 'strategy'
           ? estimateOptionStrategyPracticeOutcome({
-              product,
               startBar,
               endBar,
               notional,
@@ -5339,54 +4339,20 @@ function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}
         strategyOutcome?.netReturnRate ??
         returnRate;
       const spotScoreReturn = spotOutcome?.netReturnRate ?? returnRate;
-      const maxDrawdownRate =
-        mode === 'hedge' && optimizedHedgeTrigger?.maxDrawdownRate !== undefined
-          ? optimizedHedgeTrigger.maxDrawdownRate
-          : estimatePracticePathMaxDrawdownRate({
-              mode,
-              product,
-              caseBars,
-              startBar,
-              hedgeStartBar,
-              endBar,
-              notional,
-              leverage,
-              marginCapital,
-              flashLoanAmount,
-              flashLoanFee,
-              hedgeSleeveNotional,
-              hedgeTicketNotional,
-              hedgeMarginCapital,
-              hedgeLeverage,
-              strategyTemplateId,
-              strategyControls
-            });
-      const capitalBase = getPracticeCapitalBase({
-        mode,
-        notional,
-        marginCapital,
-        leverage,
-        hedgeSleeveNotional
-      });
-      const rawReturnScore =
-        modeOutcomePnl !== null && Number.isFinite(Number(modeOutcomePnl))
-          ? Number(modeOutcomePnl) / capitalBase
-          : mode === 'hedge'
-            ? -returnRate
+      const score =
+        mode === 'hedge'
+          ? (modeOutcomePnl !== null && Number.isFinite(Number(modeOutcomePnl))
+              ? Number(modeOutcomePnl) / Math.max(1, Number(hedgeSleeveNotional || notional || 1))
+              : -returnRate) + spanBonus
+          : mode === 'strategy'
+            ? (modeOutcomePnl !== null && Number.isFinite(Number(modeOutcomePnl))
+                ? Number(modeOutcomePnl) / Math.max(1, Number(notional || 1))
+                : modeOutcomeReturnRate) + spanBonus
             : mode === 'leverage'
-              ? absoluteMove
-              : mode === 'spot'
-                ? spotScoreReturn
-                : modeOutcomeReturnRate;
-      const score = getDrawdownAdjustedPracticeScore({
-        rawReturnScore,
-        maxDrawdownRate,
-        spanBonus
-      });
-      const riskAdjustedPnl =
-        modeOutcomePnl !== null && Number.isFinite(Number(modeOutcomePnl))
-          ? roundNumber(Number(modeOutcomePnl) - capitalBase * getDrawdownMagnitude(maxDrawdownRate) * REPLAY_PRACTICE_DRAWDOWN_PENALTY_FACTOR, 2)
-          : null;
+            ? (modeOutcomePnl !== null && Number.isFinite(Number(modeOutcomePnl))
+                ? Number(modeOutcomePnl) / Math.max(1, Number(notional || 1))
+                : absoluteMove) + spanBonus
+            : spotScoreReturn + spanBonus;
 
       candidates.push({
         startSafeIndex,
@@ -5397,45 +4363,15 @@ function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}
         spotOutcome,
         leveragedOutcome,
         hedgeOutcome,
-        hedgeStartIndex: hedgeStartBar?.index ?? null,
         strategyOutcome,
         modeOutcomePnl,
         modeOutcomeReturnRate,
-        maxDrawdownRate,
-        maxDrawdownPnl: roundNumber(capitalBase * getDrawdownMagnitude(maxDrawdownRate), 2),
-        riskAdjustedPnl,
-        riskAdjustedReturnRate: roundNumber(score, 4),
         score
       });
     }
   }
 
   if (!candidates.length) {
-    const fallbackMaxDrawdownRate = estimatePracticePathMaxDrawdownRate({
-      mode,
-      product,
-      caseBars: safeBars,
-      startBar: safeBars[0],
-      endBar: safeBars[safeBars.length - 1],
-      notional,
-      leverage,
-      marginCapital,
-      flashLoanAmount,
-      flashLoanFee,
-      hedgeSleeveNotional,
-      hedgeTicketNotional,
-      hedgeMarginCapital,
-      hedgeLeverage,
-      strategyTemplateId,
-      strategyControls
-    });
-    const fallbackCapitalBase = getPracticeCapitalBase({
-      mode,
-      notional,
-      marginCapital,
-      leverage,
-      hedgeSleeveNotional
-    });
     candidates.push({
       startSafeIndex: 0,
       endSafeIndex: safeBars.length - 1,
@@ -5454,7 +4390,6 @@ function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}
       strategyOutcome:
         mode === 'strategy'
           ? estimateOptionStrategyPracticeOutcome({
-              product,
               startBar: safeBars[0],
               endBar: safeBars[safeBars.length - 1],
               notional,
@@ -5462,8 +4397,6 @@ function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}
               controls: strategyControls
             })
           : null,
-      maxDrawdownRate: fallbackMaxDrawdownRate,
-      maxDrawdownPnl: roundNumber(fallbackCapitalBase * getDrawdownMagnitude(fallbackMaxDrawdownRate), 2),
       score: 0
     });
   }
@@ -5492,11 +4425,7 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
   const endBar = bars[candidate.endIndex] || safeBars[candidate.endSafeIndex];
   const caseBars = safeBars.slice(candidate.startSafeIndex, candidate.endSafeIndex + 1);
   const fallbackTriggerBar = caseBars[Math.max(1, Math.floor(caseBars.length / 2))] || caseBars[caseBars.length - 1] || endBar;
-  const optimizedTriggerBar =
-    mode === 'hedge' && Number.isInteger(candidate.hedgeStartIndex)
-      ? bars[candidate.hedgeStartIndex] || safeBars.find((bar) => bar.index === candidate.hedgeStartIndex) || null
-      : null;
-  const triggerBar = mode === 'hedge' ? optimizedTriggerBar || getHedgePracticeTriggerBar(caseBars, startBar, endBar) : fallbackTriggerBar;
+  const triggerBar = mode === 'hedge' ? getHedgePracticeTriggerBar(caseBars, startBar, endBar) : fallbackTriggerBar;
   const triggerIndex = Math.min(Math.max(triggerBar.index, candidate.startIndex + 1), candidate.endIndex);
   const holdingDays = getReplayCaseHoldingDays(startBar, endBar);
   const triggerDays = getReplayCaseHoldingDays(startBar, bars[triggerIndex]);
@@ -5545,7 +4474,6 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
     mode === 'strategy'
       ? candidate.strategyOutcome ||
         estimateOptionStrategyPracticeOutcome({
-          product,
           startBar,
           endBar,
           notional,
@@ -5561,45 +4489,6 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
     strategyOutcome?.netReturnRate ??
     candidate.returnRate;
   const displayReturnRate = outcomeReturnRate;
-  const maxDrawdownRate =
-    candidate.maxDrawdownRate !== undefined
-      ? Number(candidate.maxDrawdownRate || 0)
-      : estimatePracticePathMaxDrawdownRate({
-          mode,
-          product,
-          caseBars,
-          startBar,
-          hedgeStartBar: triggerBar,
-          endBar,
-          notional,
-          leverage,
-          marginCapital,
-          flashLoanAmount,
-          flashLoanFee,
-          hedgeSleeveNotional,
-          hedgeTicketNotional,
-          hedgeMarginCapital,
-          hedgeLeverage,
-          strategyTemplateId,
-          strategyControls
-        });
-  const capitalBase = getPracticeCapitalBase({
-    mode,
-    notional,
-    marginCapital,
-    leverage,
-    hedgeSleeveNotional
-  });
-  const maxDrawdownPnl =
-    candidate.maxDrawdownPnl !== undefined
-      ? roundNumber(Number(candidate.maxDrawdownPnl || 0), 2)
-      : roundNumber(capitalBase * getDrawdownMagnitude(maxDrawdownRate), 2);
-  const drawdownAdjustedPnl =
-    candidate.riskAdjustedPnl !== null && candidate.riskAdjustedPnl !== undefined
-      ? roundNumber(Number(candidate.riskAdjustedPnl || 0), 2)
-      : outcomePnl !== null
-        ? roundNumber(Number(outcomePnl || 0) - maxDrawdownPnl * REPLAY_PRACTICE_DRAWDOWN_PENALTY_FACTOR, 2)
-        : null;
 
   return {
     mode,
@@ -5614,10 +4503,6 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
     netReturnRate: outcomeReturnRate !== null ? roundNumber(outcomeReturnRate, 4) : null,
     outcomeReturnRate: outcomeReturnRate !== null ? roundNumber(outcomeReturnRate, 4) : null,
     outcomePnl: outcomePnl !== null ? roundNumber(outcomePnl, 2) : null,
-    maxDrawdownRate: roundNumber(maxDrawdownRate, 4),
-    maxDrawdownPnl,
-    drawdownAdjustedPnl,
-    drawdownAdjustedReturnRate: roundNumber(Number(candidate.riskAdjustedReturnRate ?? candidate.score ?? 0), 4),
     spotOutcome,
     leveragedOutcome,
     hedgeOutcome,
@@ -5637,14 +4522,10 @@ function buildReplayPracticeCases(bars = [], mode = 'spot', options = {}) {
 
   const selected = [];
   const selectedKeys = new Set();
-  const startDiversityGap = Math.max(2, Math.floor((safeBars.length || bars.length || 1) * 0.08));
-  const hasNearbySelectedStart = (candidate) =>
-    selected.some((existing) => Math.abs(Number(existing.startIndex || 0) - Number(candidate?.startIndex || 0)) < startDiversityGap);
-  const addCandidate = (candidate, scenario, scenarioLabel, scenarioRank, { allowNearbyStart = false } = {}) => {
+  const addCandidate = (candidate, scenario, scenarioLabel, scenarioRank) => {
     if (!candidate || selected.length >= 3) return;
     const key = `${candidate.startIndex}-${candidate.endIndex}`;
     if (selectedKeys.has(key)) return;
-    if (!allowNearbyStart && selected.length > 0 && hasNearbySelectedStart(candidate)) return;
     selectedKeys.add(key);
     selected.push({
       ...candidate,
@@ -5653,17 +4534,10 @@ function buildReplayPracticeCases(bars = [], mode = 'spot', options = {}) {
       scenarioRank
     });
   };
-  const getModeOutcomeScore = (candidate) => {
-    const orderedValues = [
-      candidate?.riskAdjustedPnl,
-      candidate?.riskAdjustedReturnRate,
-      candidate?.score,
-      candidate?.modeOutcomePnl,
-      candidate?.returnRate
-    ];
-    const nextValue = orderedValues.find((value) => value !== null && value !== undefined && Number.isFinite(Number(value)));
-    return Number(nextValue || 0);
-  };
+  const getModeOutcomeScore = (candidate) =>
+    candidate?.modeOutcomePnl !== null && candidate?.modeOutcomePnl !== undefined && Number.isFinite(Number(candidate.modeOutcomePnl))
+      ? Number(candidate.modeOutcomePnl)
+      : candidate?.score ?? candidate?.returnRate ?? 0;
   const isPositiveOutcome = (candidate) => getModeOutcomeScore(candidate) > 0;
   const isNegativeOutcome = (candidate) => getModeOutcomeScore(candidate) < 0;
 
@@ -5671,11 +4545,8 @@ function buildReplayPracticeCases(bars = [], mode = 'spot', options = {}) {
     const rankedStrategyCandidates = [...candidates].sort(
       (left, right) => getModeOutcomeScore(right) - getModeOutcomeScore(left) || Math.abs(right.returnRate) - Math.abs(left.returnRate)
     );
-    addCandidate(rankedStrategyCandidates[0], 'best-payoff', 'Best net/DD #1', 1, { allowNearbyStart: true });
-    rankedStrategyCandidates.slice(1).forEach((candidate) => {
-      if (selected.length >= 2) return;
-      addCandidate(candidate, 'best-payoff', `Best net/DD #${selected.length + 1}`, selected.length + 1);
-    });
+    addCandidate(rankedStrategyCandidates[0], 'best-payoff', 'Best payoff #1', 1);
+    addCandidate(rankedStrategyCandidates[1], 'best-payoff', 'Best payoff #2', 2);
 
     const stressCandidate = candidates
       .filter((candidate) => candidate.returnRate < 0)
@@ -5684,11 +4555,7 @@ function buildReplayPracticeCases(bars = [], mode = 'spot', options = {}) {
 
     rankedStrategyCandidates.forEach((candidate) => {
       const nextRank = selected.length + 1;
-      addCandidate(candidate, candidate.returnRate < 0 ? 'stress-test' : 'best-payoff', candidate.returnRate < 0 ? 'Downside test' : `Best net/DD #${nextRank}`, nextRank);
-    });
-    rankedStrategyCandidates.forEach((candidate) => {
-      const nextRank = selected.length + 1;
-      addCandidate(candidate, candidate.returnRate < 0 ? 'stress-test' : 'best-payoff', candidate.returnRate < 0 ? 'Downside test' : `Best net/DD #${nextRank}`, nextRank, { allowNearbyStart: true });
+      addCandidate(candidate, candidate.returnRate < 0 ? 'stress-test' : 'best-payoff', candidate.returnRate < 0 ? 'Downside test' : `Best payoff #${nextRank}`, nextRank);
     });
 
     return selected
@@ -5700,11 +4567,8 @@ function buildReplayPracticeCases(bars = [], mode = 'spot', options = {}) {
   const upsideCandidates = candidates
     .filter(isPositiveOutcome)
     .sort((left, right) => getModeOutcomeScore(right) - getModeOutcomeScore(left) || right.returnRate - left.returnRate);
-  addCandidate(upsideCandidates[0], 'up-most', 'Best net/DD #1', 1, { allowNearbyStart: true });
-  upsideCandidates.slice(1).forEach((candidate) => {
-    if (selected.length >= 2) return;
-    addCandidate(candidate, 'up-most', `Best net/DD #${selected.length + 1}`, selected.length + 1);
-  });
+  addCandidate(upsideCandidates[0], 'up-most', 'Up most #1', 1);
+  addCandidate(upsideCandidates[1], 'up-most', 'Up most #2', 2);
 
   const smallLossCandidate = candidates
     .filter(isNegativeOutcome)
@@ -5720,18 +4584,8 @@ function buildReplayPracticeCases(bars = [], mode = 'spot', options = {}) {
     addCandidate(
       candidate,
       isNegativeOutcome(candidate) ? 'small-loss' : 'up-most',
-      isNegativeOutcome(candidate) ? 'Small loss' : `Best net/DD #${nextRank}`,
+      isNegativeOutcome(candidate) ? 'Small loss' : `Up most #${nextRank}`,
       nextRank
-    );
-  });
-  fallbackCandidates.forEach((candidate) => {
-    const nextRank = selected.length + 1;
-    addCandidate(
-      candidate,
-      isNegativeOutcome(candidate) ? 'small-loss' : 'up-most',
-      isNegativeOutcome(candidate) ? 'Small loss' : `Best net/DD #${nextRank}`,
-      nextRank,
-      { allowNearbyStart: true }
     );
   });
 
@@ -6549,8 +5403,6 @@ function buildReplayAchievements({
   spotLoopUsed,
   leverageRouteUsed,
   hedgeRouteUsed,
-  leverageHedgeTrainingUsed,
-  strategyRouteUsed,
   spotBuySeen
 }) {
   return [
@@ -6605,34 +5457,34 @@ function buildReplayAchievements({
     {
       id: REPLAY_BADGE_TYPES.perpLeverage,
       taskNumber: 4,
-      title: 'Leverage + Hedge Drill',
+      title: 'Perp Leverage',
       contractId: 'Replay badge #9',
-      activityLabel: 'Training combo trade',
-      coverCopy: 'Combo drill learned',
+      activityLabel: 'Directional perp leg',
+      coverCopy: 'Perp tutorial viewed',
       requirement:
-        'Run one guided leverage + hedge practice trade: buy the sleeve, open the levered hedge leg, then review notional, margin, funding, liquidation, and residual exposure.',
+        'Open one directional perp tutorial leg and review notional, margin, funding, and the liquidation marker.',
       reward:
-        'Turns leverage and hedge into one training trade so the user sees the active notional, the protection sleeve, and the funding drag together.',
-      unlocked: onboardingReady && (leverageHedgeTrainingUsed || leverageRouteUsed || hedgeRouteUsed),
-      detail: leverageHedgeTrainingUsed || leverageRouteUsed || hedgeRouteUsed
-        ? 'The wallet has opened the guided leverage + hedge route and inspected how the hedge changes residual exposure after margin and funding drag.'
-        : 'Open the Leverage + Hedge route from Tutorial path, load a practice example, buy the sleeve, open the protective levered leg, and inspect notional, margin, funding, liquidation, and residual exposure before claiming.'
+        'Shows the user understands leveraged exposure as a separate risk structure with margin and liquidation math, not just a larger spot ticket.',
+      unlocked: onboardingReady && leverageRouteUsed,
+      detail: leverageRouteUsed
+        ? 'The wallet has opened the directional perp tutorial route and viewed the leverage math panel.'
+        : 'Open the Perp Leverage route from Tutorial path, choose a directional leg, and inspect notional, margin, funding, and liquidation marker before claiming.'
     },
     {
       id: REPLAY_BADGE_TYPES.protectiveHedge,
       taskNumber: 5,
-      title: 'AI Strategy Template',
+      title: 'Protective Hedge',
       contractId: 'Replay badge #10',
-      activityLabel: 'Strategy example',
-      coverCopy: 'Strategy template shipped',
+      activityLabel: 'Hedge workflow',
+      coverCopy: 'Hedge workflow learned',
       requirement:
-        'Build one strategy example or portfolio combo, review the payoff or backtest details, generate/select an AI-marked template, then upload return and drawdown metrics to the strategy leaderboard.',
+        'Choose a protected sleeve, set hedge size, and use a short or perp hedge while recognizing that hedge lowers net exposure instead of creating a second speculative position.',
       reward:
-        'Makes the strategy route feel product-ready: the example has payoff nodes or combo weights, AI feature tags, estimated win rate, expected return, max drawdown, and a leaderboard submission path.',
-      unlocked: onboardingReady && strategyRouteUsed,
-      detail: strategyRouteUsed
-        ? 'The wallet has built a strategy example or portfolio combo, generated an AI feature template, and uploaded metrics to the local strategy board.'
-        : 'Open Options / strategy for AI templates, or open Leverage + Hedge combo for portfolio combo. Review return, drawdown, and feature tags, then upload the result.'
+        'Separates portfolio protection from speculation by making the user inspect protected notional, hedge size, hedge leg, and net exposure.',
+      unlocked: onboardingReady && hedgeRouteUsed,
+      detail: hedgeRouteUsed
+        ? 'The wallet has used the protective hedge tutorial flow and has seen how the hedge reduces net exposure.'
+        : 'Open the Protective Hedge route, choose the sleeve to protect, size the hedge, and inspect how the short or perp leg reduces net exposure.'
     }
   ];
 }
@@ -6904,14 +5756,6 @@ function PaperTradingInner() {
   const [strategyUpsideCapPct, setStrategyUpsideCapPct] = useState(18);
   const [strategyPremiumPct, setStrategyPremiumPct] = useState(1.2);
   const [strategyStrikePct, setStrategyStrikePct] = useState(8);
-  const [strategyAiPrompt, setStrategyAiPrompt] = useState(DEFAULT_STRATEGY_AI_PROMPT);
-  const [selectedStrategyAiVariantId, setSelectedStrategyAiVariantId] = useState(STRATEGY_AI_TEMPLATE_VARIANTS[0]?.id || 'balanced-guardrail');
-  const [strategyAiTemplateGenerated, setStrategyAiTemplateGenerated] = useState(false);
-  const [strategyTemplateLeaderboard, setStrategyTemplateLeaderboard] = useState(() => readStoredStrategyTemplateLeaderboard());
-  const [portfolioComboStartDate, setPortfolioComboStartDate] = useState(PORTFOLIO_COMBO_DEFAULT_START_DATE);
-  const [portfolioComboEndDate, setPortfolioComboEndDate] = useState(PORTFOLIO_COMBO_DEFAULT_END_DATE);
-  const [portfolioComboSelectedIds, setPortfolioComboSelectedIds] = useState(PORTFOLIO_COMBO_DEFAULT_SELECTED_IDS);
-  const [portfolioComboWeights, setPortfolioComboWeights] = useState(() => PORTFOLIO_COMBO_DEFAULT_WEIGHTS);
   const [contractDirection, setContractDirection] = useState('long');
   const [activePerpLeg, setActivePerpLeg] = useState(null);
   const [activePerpPurpose, setActivePerpPurpose] = useState(null);
@@ -6966,11 +5810,7 @@ function PaperTradingInner() {
     leverageLessonCompleted: false,
     hedgeLessonCompleted: false,
     hedgeSizingCompleted: false,
-    hedgePositiveCloseCompleted: false,
-    strategyLessonCompleted: false,
-    strategyExampleCompleted: false,
-    strategyAiTemplateCompleted: false,
-    strategyLeaderboardUploaded: false
+    hedgePositiveCloseCompleted: false
   });
 
   const metaMaskConnector = useMemo(
@@ -7363,11 +6203,7 @@ function PaperTradingInner() {
       leverageLessonCompleted: false,
       hedgeLessonCompleted: false,
       hedgeSizingCompleted: false,
-      hedgePositiveCloseCompleted: false,
-      strategyLessonCompleted: false,
-      strategyExampleCompleted: false,
-      strategyAiTemplateCompleted: false,
-      strategyLeaderboardUploaded: false
+      hedgePositiveCloseCompleted: false
     });
     const profileProgress = readWalletProfile(address).progress;
     setProgressState({
@@ -7383,11 +6219,7 @@ function PaperTradingInner() {
       leverageLessonCompleted: Boolean(storedProgress.leverageLessonCompleted || profileProgress.leverageLessonCompleted),
       hedgeLessonCompleted: Boolean(storedProgress.hedgeLessonCompleted || profileProgress.hedgeLessonCompleted),
       hedgeSizingCompleted: Boolean(storedProgress.hedgeSizingCompleted || profileProgress.hedgeSizingCompleted),
-      hedgePositiveCloseCompleted: Boolean(storedProgress.hedgePositiveCloseCompleted || profileProgress.hedgePositiveCloseCompleted),
-      strategyLessonCompleted: Boolean(storedProgress.strategyLessonCompleted || profileProgress.strategyLessonCompleted),
-      strategyExampleCompleted: Boolean(storedProgress.strategyExampleCompleted || profileProgress.strategyExampleCompleted),
-      strategyAiTemplateCompleted: Boolean(storedProgress.strategyAiTemplateCompleted || profileProgress.strategyAiTemplateCompleted),
-      strategyLeaderboardUploaded: Boolean(storedProgress.strategyLeaderboardUploaded || profileProgress.strategyLeaderboardUploaded)
+      hedgePositiveCloseCompleted: Boolean(storedProgress.hedgePositiveCloseCompleted || profileProgress.hedgePositiveCloseCompleted)
     });
   }, [address, progressStorageKey]);
 
@@ -7863,7 +6695,6 @@ function PaperTradingInner() {
             netPnl: snapshot.netPnl,
             holdingDays: snapshot.holdingDays,
             unpaidCarry: snapshot.unpaidCarry,
-            managementFee: snapshot.managementFee,
             exitCosts: snapshot.exitCosts
           };
         })
@@ -7950,24 +6781,8 @@ function PaperTradingInner() {
   const hedgeRouteUsed =
     (Boolean(progressState.hedgeLessonCompleted) && Boolean(progressState.hedgeSizingCompleted)) ||
     Boolean(progressState.hedgePositiveCloseCompleted) ||
-    positiveHedgeCloseSeen;
-  const strategyTemplateClaimed = Boolean(replayOnchainStateById[REPLAY_BADGE_TYPES.protectiveHedge]?.onchainClaimed);
-  const leverageHedgeTrainingUsed =
-    Boolean(progressState.leverageLessonCompleted && progressState.hedgeLessonCompleted) ||
-    Boolean(progressState.hedgeLessonCompleted && progressState.hedgeSizingCompleted);
-  const strategyExampleSeen = tradeOutcomeHistory.entries.some((entry) =>
-    String(entry.actionLabel || '').toLowerCase().includes('settle')
-  );
-  const strategyBoardHasCurrentWallet = (strategyTemplateLeaderboard.entries || []).some((entry) => {
-    const normalizedEntryWallet = String(entry.walletAddress || '').toLowerCase();
-    const normalizedCurrentWallet = address ? address.toLowerCase() : 'guest';
-    return normalizedEntryWallet === normalizedCurrentWallet;
-  });
-  const strategyRouteUsed =
-    strategyTemplateClaimed ||
-    (Boolean(progressState.strategyExampleCompleted || strategyExampleSeen) &&
-      Boolean(progressState.strategyAiTemplateCompleted || strategyBoardHasCurrentWallet) &&
-      Boolean(progressState.strategyLeaderboardUploaded || strategyBoardHasCurrentWallet));
+    positiveHedgeCloseSeen ||
+    Boolean(replayOnchainStateById[REPLAY_BADGE_TYPES.protectiveHedge]?.onchainClaimed);
   const wealthReceiptPledged = Number(wealthDeskState?.pledgedProducts || 0) > 0;
   const settleOrPledgeUsed = spotSellSeen || wealthReceiptPledged || hedgeRouteUsed;
   const replayAccountLeaderboardRows = useMemo(() => {
@@ -8014,62 +6829,19 @@ function PaperTradingInner() {
     selectedRouteFocusOptions.find((option) => option.id === selectedRouteFocusByRoute[selectedAdvancedRoute]) ||
     selectedRouteFocusOptions[0] ||
     null;
-  const comboFocusActive = selectedAdvancedRoute === 'perp' && selectedRouteFocusConfig?.id === 'combo';
   const selectedPerpFocusId = selectedRouteFocusConfig?.id || visiblePerpFocusOptions[0]?.id || 'leverage';
-  const hedgeFocusActive =
-    selectedAdvancedRoute === 'perp' &&
-    (selectedRouteFocusConfig?.id === 'hedge' || selectedRouteFocusConfig?.id === 'combo');
+  const hedgeFocusActive = selectedAdvancedRoute === 'perp' && selectedRouteFocusConfig?.id === 'hedge';
+  const comboFocusActive = selectedAdvancedRoute === 'perp' && selectedRouteFocusConfig?.id === 'combo';
   const hedgeFocusProfile =
     hedgeFocusActive
       ? buildHedgeRouteProfile(selectedProduct, selectedInsight, selectedProductGuide)
       : null;
-  const comboHedgeFocusProfile =
-    comboFocusActive && hedgeFocusProfile
-      ? {
-          ...hedgeFocusProfile,
-          panelTitle: 'Leverage + hedge training route',
-          summary:
-            'Run this as a guided training trade: define the sleeve, add a levered hedge leg, then read residual exposure after margin, funding, and liquidation risk.',
-          lessons: [
-            'The sleeve is the thing being protected; the perp leg is the training hedge, not a second lottery ticket.',
-            'The useful number is residual exposure after hedge ratio, funding, and close drag.',
-            'Liquidation distance still matters because a hedge can fail if the levered leg is sized too aggressively.'
-          ],
-          walkthrough: [
-            { number: '1', title: 'Load the practice case', detail: 'Use Start case to place the chart on the training entry bar, then buy the sleeve first.' },
-            { number: '2', title: 'Jump to hedge day', detail: 'Use Hedge day to move into the risk window and let the desk size a hedge against the sleeve.' },
-            { number: '3', title: 'Open the levered hedge', detail: 'Open the short or perp hedge after margin, flash, funding, and liquidation are visible.' },
-            { number: '4', title: 'Stop day and unwind', detail: 'Use Stop day to compare hedge-only PnL with hedge + sleeve settlement and residual exposure.' }
-          ],
-          tradeConfirmCopy:
-            'Confirm the training hedge ticket. This combo route starts with a sleeve and adds a levered protection leg, so the confirmation should be read as exposure reduction after funding and margin drag.',
-          riskConfirmCopy:
-            'This is a leverage + hedge drill. The hedge can reduce net exposure, but liquidation, funding, flash premium, and close drag can still make the protection imperfect.',
-          feeSummary:
-            'Combo training asks whether protection survives margin, funding, liquidation buffer, flash premium, and close drag after the sleeve is included.',
-          autoTitle: 'Auto-unwind combo hedge',
-          holdingLabel: 'Combo hedge window',
-          targetLabel: 'Combo unwind bar',
-          sizeLabel: 'Levered hedge size'
-        }
-      : hedgeFocusProfile;
-  const activeRouteFocusConfig = comboHedgeFocusProfile
+  const activeRouteFocusConfig = hedgeFocusProfile
     ? {
         ...selectedRouteFocusConfig,
-        ...comboHedgeFocusProfile
+        ...hedgeFocusProfile
       }
     : selectedRouteFocusConfig;
-
-  useEffect(() => {
-    if (!comboFocusActive) return;
-
-    PORTFOLIO_COMBO_PRODUCT_IDS.forEach((productId) => {
-      const product = productMap[productId];
-      const view = productViews[productId];
-      if (!product || !view) return;
-      ensureReplayProductViewLoaded(productId, product, view);
-    });
-  }, [comboFocusActive, productMap, productViews]);
   const selectedStrategyTemplateId = selectedAdvancedRoute === 'borrow' ? selectedRouteFocusConfig?.id || 'collar' : 'collar';
   const strategyControlValues = useMemo(
     () =>
@@ -8225,8 +6997,6 @@ function PaperTradingInner() {
         spotLoopUsed,
         leverageRouteUsed,
         hedgeRouteUsed,
-        leverageHedgeTrainingUsed,
-        strategyRouteUsed,
         spotBuySeen,
         settleOrPledgeUsed
       }).map((achievement) => {
@@ -8340,9 +7110,7 @@ function PaperTradingInner() {
       spotLoopUsed,
       spotBuySeen,
       leverageRouteUsed,
-      hedgeRouteUsed,
-      leverageHedgeTrainingUsed,
-      strategyRouteUsed
+      hedgeRouteUsed
     ]
   );
   const selectedRewardTask = replayAchievements.find((achievement) => achievement.id === selectedRewardTaskId) || null;
@@ -8431,141 +7199,112 @@ function PaperTradingInner() {
           : selectedRewardTask.id === REPLAY_BADGE_TYPES.perpLeverage
             ? [
                 {
-                  id: 'combo-route-selected',
-                  title: 'Leverage + hedge route opened',
+                  id: 'perp-route-selected',
+                  title: 'Directional perp route opened',
                   statusText:
-                    comboFocusActive || leverageHedgeTrainingUsed || selectedRewardTask.onchainClaimed
+                    selectedAdvancedRoute === 'perp' || leverageRouteUsed || selectedRewardTask.onchainClaimed
                       ? 'Completed'
                       : 'To do',
                   statusTone:
-                    comboFocusActive || leverageHedgeTrainingUsed || selectedRewardTask.onchainClaimed
+                    selectedAdvancedRoute === 'perp' || leverageRouteUsed || selectedRewardTask.onchainClaimed
                       ? 'done'
                       : 'todo',
                   indicator:
-                    comboFocusActive || leverageHedgeTrainingUsed || selectedRewardTask.onchainClaimed
-                      ? 'COMBO'
-                      : 'COMBO',
+                    selectedAdvancedRoute === 'perp' || leverageRouteUsed || selectedRewardTask.onchainClaimed
+                      ? 'PERP'
+                      : 'PERP',
                   interactive: true,
-                  onClick: () => handleSelectLearningRoute('perp:combo'),
+                  onClick: () => handleSelectLearningRoute('perp:leverage'),
                   copy:
-                    comboFocusActive || leverageHedgeTrainingUsed || selectedRewardTask.onchainClaimed
-                      ? 'The tutorial path is already on the leverage + hedge training route.'
-                      : 'Open the Leverage + Hedge training route before treating leverage as a protected workflow.'
+                    selectedAdvancedRoute === 'perp' || leverageRouteUsed || selectedRewardTask.onchainClaimed
+                      ? 'The tutorial path is already on the directional perp route.'
+                      : 'Open the Perp Leverage tutorial route before treating leverage as an available action.'
                 },
                 {
-                  id: 'combo-sleeve',
-                  title: 'Training sleeve defined',
+                  id: 'directional-leg-opened',
+                  title: 'Directional perp leg opened',
+                  statusText: leverageRouteUsed || selectedRewardTask.onchainClaimed ? 'Completed' : 'To do',
+                  statusTone: leverageRouteUsed || selectedRewardTask.onchainClaimed ? 'done' : 'todo',
+                  indicator: leverageRouteUsed || selectedRewardTask.onchainClaimed ? 'LEG' : 'LONG',
+                  interactive: true,
+                  onClick: () => handleSelectLearningRoute('perp:leverage'),
+                  copy:
+                    'Use the Long or Short action in the perp tutorial so the wallet records a directional leveraged leg.'
+                },
+                {
+                  id: 'perp-math-viewed',
+                  title: 'Notional, margin, funding, liquidation marker viewed',
+                  statusText: leverageRouteUsed || selectedRewardTask.onchainClaimed ? 'Completed' : 'To do',
+                  statusTone: leverageRouteUsed || selectedRewardTask.onchainClaimed ? 'done' : 'todo',
+                  indicator: 'MATH',
+                  interactive: true,
+                  onClick: () => handleSelectLearningRoute('perp:leverage'),
+                  copy:
+                    'The perp panel must show why notional differs from margin, how funding drags the leg, and where liquidation sits.'
+                }
+              ]
+            : [
+                {
+                  id: 'protected-sleeve',
+                  title: 'Protected sleeve selected',
                   statusText:
-                    leverageHedgeTrainingUsed ||
+                    hedgeRouteUsed ||
                     progressState.hedgeLessonCompleted ||
-                    comboFocusActive ||
+                    selectedRouteFocusConfig?.id === 'hedge' ||
                     selectedRewardTask.onchainClaimed
                       ? 'Completed'
                       : 'To do',
                   statusTone:
-                    leverageHedgeTrainingUsed ||
+                    hedgeRouteUsed ||
                     progressState.hedgeLessonCompleted ||
-                    comboFocusActive ||
+                    selectedRouteFocusConfig?.id === 'hedge' ||
                     selectedRewardTask.onchainClaimed
                       ? 'done'
                       : 'todo',
                   indicator: 'SLEEVE',
                   interactive: true,
-                  onClick: () => handleSelectLearningRoute('perp:combo'),
+                  onClick: () => handleSelectLearningRoute('perp:hedge'),
                   copy:
-                    'Load a practice example, click Start case, and buy or define the sleeve before opening the levered hedge.'
+                    'Start the hedge flow by choosing which sleeve is being protected before opening the hedge leg.'
                 },
                 {
-                  id: 'combo-hedge-leg',
-                  title: 'Levered hedge leg opened',
-                  statusText: leverageHedgeTrainingUsed || hedgeRouteUsed || selectedRewardTask.onchainClaimed ? 'Completed' : 'To do',
-                  statusTone: leverageHedgeTrainingUsed || hedgeRouteUsed || selectedRewardTask.onchainClaimed ? 'done' : 'todo',
-                  indicator: 'HEDGE',
-                  interactive: true,
-                  onClick: () => handleSelectLearningRoute('perp:combo'),
-                  copy:
-                    'Use Hedge day, set ratio, then open the short or perp hedge so the app records a levered protection leg.'
-                },
-                {
-                  id: 'combo-math-viewed',
-                  title: 'Margin, funding, liquidation, residual exposure reviewed',
-                  statusText: leverageHedgeTrainingUsed || hedgeRouteUsed || selectedRewardTask.onchainClaimed ? 'Completed' : 'To do',
-                  statusTone: leverageHedgeTrainingUsed || hedgeRouteUsed || selectedRewardTask.onchainClaimed ? 'done' : 'todo',
-                  indicator: 'MATH',
-                  interactive: true,
-                  onClick: () => handleSelectLearningRoute('perp:combo'),
-                  copy:
-                    'Read the detail cards below the route: active notional, posted margin, funding drag, liquidation marker, hedge ratio, and net sleeve left.'
-                }
-              ]
-            : [
-                {
-                  id: 'strategy-route',
-                  title: 'Strategy route opened',
+                  id: 'hedge-size',
+                  title: 'Hedge size selected',
                   statusText:
-                    selectedAdvancedRoute === 'borrow' ||
-                    progressState.strategyLessonCompleted ||
-                    strategyRouteUsed ||
-                    selectedRewardTask.onchainClaimed
+                    hedgeRouteUsed || progressState.hedgeSizingCompleted || selectedRewardTask.onchainClaimed
                       ? 'Completed'
                       : 'To do',
                   statusTone:
-                    selectedAdvancedRoute === 'borrow' ||
-                    progressState.strategyLessonCompleted ||
-                    strategyRouteUsed ||
-                    selectedRewardTask.onchainClaimed
+                    hedgeRouteUsed || progressState.hedgeSizingCompleted || selectedRewardTask.onchainClaimed
                       ? 'done'
                       : 'todo',
-                  indicator: 'STRAT',
+                  indicator: 'SIZE',
                   interactive: true,
-                  onClick: () => handleSelectLearningRoute('borrow'),
+                  onClick: () => handleSelectLearningRoute('perp:hedge'),
                   copy:
-                    'Open Options / strategy so the practice examples and payoff templates are visible in the replay desk.'
+                    'Set a hedge ratio or use the suggested ticket so the hedge is sized against the sleeve, not guessed as a second trade.'
                 },
                 {
-                  id: 'strategy-example',
-                  title: 'Practice example built and settled',
-                  statusText:
-                    progressState.strategyExampleCompleted || strategyExampleSeen || strategyRouteUsed || selectedRewardTask.onchainClaimed
-                      ? 'Completed'
-                      : 'To do',
-                  statusTone:
-                    progressState.strategyExampleCompleted || strategyExampleSeen || strategyRouteUsed || selectedRewardTask.onchainClaimed
-                      ? 'done'
-                      : 'todo',
-                  indicator: 'EX',
+                  id: 'short-or-perp-hedge',
+                  title: 'Short or perp hedge leg used',
+                  statusText: hedgeRouteUsed || selectedRewardTask.onchainClaimed ? 'Completed' : 'To do',
+                  statusTone: hedgeRouteUsed || selectedRewardTask.onchainClaimed ? 'done' : 'todo',
+                  indicator: 'SHORT',
                   interactive: true,
-                  onClick: () => handleSelectLearningRoute('borrow'),
+                  onClick: () => handleSelectLearningRoute('perp:hedge'),
                   copy:
-                    'Use the practice example: Start case, Build paper strategy, tune the controls, then Settle strategy to write the payoff into the ledger.'
+                    'Open the protective short or perp leg only after the app has a sleeve and hedge size to protect.'
                 },
                 {
-                  id: 'ai-template',
-                  title: 'AI template feature points generated',
-                  statusText:
-                    progressState.strategyAiTemplateCompleted || strategyRouteUsed || selectedRewardTask.onchainClaimed
-                      ? 'Completed'
-                      : 'To do',
-                  statusTone:
-                    progressState.strategyAiTemplateCompleted || strategyRouteUsed || selectedRewardTask.onchainClaimed
-                      ? 'done'
-                      : 'todo',
-                  indicator: 'AI',
+                  id: 'net-exposure',
+                  title: 'Net exposure reduced, not doubled',
+                  statusText: hedgeRouteUsed || selectedRewardTask.onchainClaimed ? 'Completed' : 'To do',
+                  statusTone: hedgeRouteUsed || selectedRewardTask.onchainClaimed ? 'done' : 'todo',
+                  indicator: 'NET',
                   interactive: true,
-                  onClick: () => handleSelectLearningRoute('borrow'),
+                  onClick: () => handleSelectLearningRoute('perp:hedge'),
                   copy:
-                    'Type a strategy idea in the AI template box so the app marks signal, payoff, risk guardrail, exit rule, paper win rate, return, and drawdown.'
-                },
-                {
-                  id: 'strategy-board',
-                  title: 'Uploaded to strategy leaderboard',
-                  statusText: strategyRouteUsed || selectedRewardTask.onchainClaimed ? 'Completed' : 'To do',
-                  statusTone: strategyRouteUsed || selectedRewardTask.onchainClaimed ? 'done' : 'todo',
-                  indicator: 'RANK',
-                  interactive: true,
-                  onClick: () => handleSelectLearningRoute('borrow'),
-                  copy:
-                    'Upload the generated template so the strategy board shows paper win rate, expected return, and max drawdown.'
+                    'The goal is lower residual exposure. If the hedge behaves like a second speculative position, the task is not complete.'
                 }
               ]
     : [];
@@ -9885,8 +8624,7 @@ function PaperTradingInner() {
     tradeBar = replayFocus.bar,
     tradeInterval = selectedView?.interval,
     notional = tradeAmount,
-    unitsPreview = 0,
-    feeBreakdown = []
+    unitsPreview = 0
   } = {}) {
     if (!isConnected || !address) {
       setFeedback('Connect MetaMask first so this wallet can sign the replay trade.');
@@ -9894,8 +8632,6 @@ function PaperTradingInner() {
     }
 
     try {
-      const feeLines = formatFeeDisclosureLines(feeBreakdown);
-      const feeTotal = getFeeDisclosureTotal(feeBreakdown);
       await signMessageAsync({
         message: [
           'RiskLens replay trade confirmation',
@@ -9906,13 +8642,6 @@ function PaperTradingInner() {
           `Mark: ${formatPrice(tradeBar?.close)}`,
           `Paper notional: ${formatNotional(notional)} PT`,
           `Estimated units: ${formatUnits(unitsPreview)}`,
-          ...(feeLines.length
-            ? [
-                'Fee deduction summary:',
-                ...feeLines,
-                `Total listed deductions: ${formatNotional(feeTotal)} PT`
-              ]
-            : []),
           'This confirms a replay-only ledger update and does not send a live market order.'
         ].join('\n')
       });
@@ -9933,8 +8662,7 @@ function PaperTradingInner() {
     direction = leverageDirection,
     action = 'open',
     flashNotional = flashLoanAppliedTicketNotional,
-    reason = action === 'close' ? 'close this leveraged leg' : `open a ${direction} leveraged leg`,
-    feeBreakdown = []
+    reason = action === 'close' ? 'close this leveraged leg' : `open a ${direction} leveraged leg`
   } = {}) {
     if (!isConnected || !address) {
       setFeedback('Connect MetaMask first so this wallet can sign the leveraged replay trade.');
@@ -9942,8 +8670,6 @@ function PaperTradingInner() {
     }
 
     try {
-      const feeLines = formatFeeDisclosureLines(feeBreakdown);
-      const feeTotal = getFeeDisclosureTotal(feeBreakdown);
       await signMessageAsync({
         message: [
           'RiskLens replay leverage trade confirmation',
@@ -9959,13 +8685,6 @@ function PaperTradingInner() {
           `Route-posted margin: ${formatNotional(routeMarginCapital)} PT`,
           `Credit lane: ${selectedTradeAmountMaxLabel}`,
           `Reason: ${reason}`,
-          ...(feeLines.length
-            ? [
-                'Final settlement deductions:',
-                ...feeLines,
-                `Total listed deductions: ${formatNotional(feeTotal)} PT`
-              ]
-            : []),
           'This confirms a replay-only leverage route. It does not submit a live exchange order.'
         ].join('\n')
       });
@@ -11050,13 +9769,8 @@ function PaperTradingInner() {
       const ratio = currentPosition.units > 0 ? Math.min(1, unitsToSell / currentPosition.units) : 0;
       const loanRepayment = roundNumber(Math.max(0, Number(currentPosition.principalLoan || 0)) * ratio, 2);
       const carryAllocated = roundNumber(unpaidCarry * ratio, 2);
-      const managementFeeAllocated = calculateReplayManagementFee({
-        product: selectedProduct,
-        notional: roundNumber(Math.max(0, Number(currentPosition.grossNotional || principalReduction)) * ratio, 2),
-        holdingDays
-      });
       const grossProceeds = roundNumber(unitsToSell * price, 2);
-      const preTaxGain = roundNumber(Math.max(0, grossProceeds - principalReduction - carryAllocated - managementFeeAllocated), 2);
+      const preTaxGain = roundNumber(Math.max(0, grossProceeds - principalReduction - carryAllocated), 2);
       const sellCosts = calculateTradeCosts({
         product: selectedProduct,
         side: 'sell',
@@ -11065,10 +9779,7 @@ function PaperTradingInner() {
         holdingDays,
         units: unitsToSell
       });
-      const netProceedsBeforeLoan = roundNumber(
-        grossProceeds - carryAllocated - managementFeeAllocated - sellCosts.nonTaxCost - sellCosts.estimatedTax,
-        2
-      );
+      const netProceedsBeforeLoan = roundNumber(grossProceeds - carryAllocated - sellCosts.nonTaxCost - sellCosts.estimatedTax, 2);
       const netProceeds = roundNumber(Math.max(0, netProceedsBeforeLoan - loanRepayment), 2);
       const equityPrincipalReduction = roundNumber(Math.max(0, principalReduction - loanRepayment), 2);
       const realizedPnl = roundNumber(netProceeds - equityPrincipalReduction, 2);
@@ -11170,13 +9881,8 @@ function PaperTradingInner() {
       const loanRepayment = roundNumber(Math.max(0, Number(livePosition.principalLoan || 0)) * ratio, 2);
       const remainingPrincipalLoan = roundNumber(Math.max(0, Number(livePosition.principalLoan || 0) - loanRepayment), 2);
       const carryAllocated = roundNumber(unpaidCarry * ratio, 2);
-      const managementFeeAllocated = calculateReplayManagementFee({
-        product: selectedProduct,
-        notional: roundNumber(Math.max(0, Number(livePosition.grossNotional || principalReduction)) * ratio, 2),
-        holdingDays
-      });
       const grossProceeds = roundNumber(unitsToSell * price, 2);
-      const preTaxGain = roundNumber(Math.max(0, grossProceeds - principalReduction - carryAllocated - managementFeeAllocated), 2);
+      const preTaxGain = roundNumber(Math.max(0, grossProceeds - principalReduction - carryAllocated), 2);
       const sellCosts = calculateTradeCosts({
         product: selectedProduct,
         side: 'sell',
@@ -11185,10 +9891,7 @@ function PaperTradingInner() {
         holdingDays,
         units: unitsToSell
       });
-      const netProceedsBeforeLoan = roundNumber(
-        grossProceeds - carryAllocated - managementFeeAllocated - sellCosts.nonTaxCost - sellCosts.estimatedTax,
-        2
-      );
+      const netProceedsBeforeLoan = roundNumber(grossProceeds - carryAllocated - sellCosts.nonTaxCost - sellCosts.estimatedTax, 2);
       const netProceeds = roundNumber(Math.max(0, netProceedsBeforeLoan - loanRepayment), 2);
       const equityPrincipalReduction = roundNumber(Math.max(0, principalReduction - loanRepayment), 2);
       const realizedPnl = roundNumber(netProceeds - equityPrincipalReduction, 2);
@@ -11211,7 +9914,6 @@ function PaperTradingInner() {
 
       const overridePnl = Number(outcomeOverride?.pnl);
       const overrideExitValue = Number(outcomeOverride?.exitValue);
-      const overrideManagementFee = Number(outcomeOverride?.managementFee);
       const overrideAppliesToLedger = Boolean(outcomeOverride?.applyToLedger);
       const ledgerNetProceeds =
         overrideAppliesToLedger && Number.isFinite(overrideExitValue) ? roundNumber(overrideExitValue, 2) : netProceeds;
@@ -11243,9 +9945,6 @@ function PaperTradingInner() {
             feeTotal: sellCosts.nonTaxCost,
             taxTotal: sellCosts.estimatedTax,
             carryTotal: carryAllocated,
-            managementFeeTotal: Number.isFinite(overrideManagementFee)
-              ? roundNumber(overrideManagementFee, 2)
-              : managementFeeAllocated,
             loanRepaid: loanRepayment
           },
           ...current.trades
@@ -11443,7 +10142,6 @@ function PaperTradingInner() {
       cursor: focusedTradeIndex,
       replayStarted: false
     });
-    const sellFeePreview = buildPositionSnapshot(selectedProduct, currentPosition, focusedPrice, focusedTradeBar.ts);
     const sellSigned = await ensureReplayTradeSignature({
       side,
       tradeBar: focusedTradeBar,
@@ -11451,8 +10149,7 @@ function PaperTradingInner() {
       notional: options.forceSellAll
         ? sellNotional
         : Math.min(requestedTradeNotional, sellNotional || requestedTradeNotional),
-      unitsPreview: currentPosition.units || 0,
-      feeBreakdown: buildSpotSettlementFeeRows(sellFeePreview)
+      unitsPreview: currentPosition.units || 0
     });
 
     if (!sellSigned) return;
@@ -11498,7 +10195,6 @@ function PaperTradingInner() {
     }
 
     const strategyOutcome = estimateOptionStrategyPracticeOutcome({
-      product: selectedProduct,
       startBar: entryBar,
       endBar: targetBar,
       notional: Math.max(MIN_PAPER_TRADE, Number(currentPosition.principal || tradeAmount || MIN_PAPER_TRADE)),
@@ -11523,10 +10219,7 @@ function PaperTradingInner() {
       tradeBar: targetBar,
       tradeInterval: selectedView?.interval,
       notional: strategyOutcome.exitValue,
-      unitsPreview: currentPosition.units || 0,
-      feeBreakdown: normalizeFeeDisclosureRows([
-        { label: 'Management fee', amount: strategyOutcome.managementFee || 0 }
-      ])
+      unitsPreview: currentPosition.units || 0
     });
 
     if (!settleSigned) return;
@@ -11542,7 +10235,6 @@ function PaperTradingInner() {
         actionLabel: `Settle ${OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'strategy'}`,
         pnl: strategyOutcome.netPnl,
         exitValue: strategyOutcome.exitValue,
-        managementFee: strategyOutcome.managementFee,
         ts: targetBar.ts
       },
       customFeedback: `${OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'Strategy'} settled on ${formatReplayDate(
@@ -11552,7 +10244,6 @@ function PaperTradingInner() {
         strategyOutcome.netPnl
       )} PT after the selected payoff controls.`
     });
-    mergeProgressUpdate({ strategyLessonCompleted: true, strategyExampleCompleted: true });
   }
 
   async function executeTimedSpotExit(productId = selectedProductId) {
@@ -11586,8 +10277,7 @@ function PaperTradingInner() {
       tradeBar: targetBar,
       tradeInterval: view.interval,
       notional: targetSnapshot.netExitValue,
-      unitsPreview: currentPosition.units,
-      feeBreakdown: buildSpotSettlementFeeRows(targetSnapshot)
+      unitsPreview: currentPosition.units
     });
 
     if (!autoSellSigned) return false;
@@ -11625,9 +10315,7 @@ function PaperTradingInner() {
             realizedPnl: liveSnapshot.netPnl,
             feeTotal: liveSnapshot.exitCosts.nonTaxCost,
             taxTotal: liveSnapshot.exitCosts.estimatedTax,
-            carryTotal: liveSnapshot.unpaidCarry,
-            managementFeeTotal: liveSnapshot.managementFee,
-            loanRepaid: liveSnapshot.principalLoan
+            carryTotal: liveSnapshot.unpaidCarry
           },
           ...current.trades
         ]
@@ -11729,8 +10417,7 @@ function PaperTradingInner() {
         reason:
           closingPurpose === 'hedge'
             ? `auto-unwind the ${activePerpLeg} hedge leg after about ${simulationHoldingDays}D`
-            : `auto-close the ${activePerpLeg} leveraged leg after about ${simulationHoldingDays}D`,
-        feeBreakdown: buildLeveragedSettlementFeeRows(leveragedSnapshot, activePerpSnapshotFlashReserveCapital)
+            : `auto-close the ${activePerpLeg} leveraged leg after about ${simulationHoldingDays}D`
       });
 
       if (!closeSigned) return;
@@ -12130,9 +10817,6 @@ function PaperTradingInner() {
     const openingFlashNotional = hedgeFocusActive ? flashLoanAppliedTicketNotional : routePreviewFlashNotional;
     const openingFlashPremium = hedgeFocusActive ? flashLoanPremiumEstimate : routePreviewFlashPremiumEstimate;
     const openingTicketNotional = hedgeFocusActive ? routeEffectiveTicketNotional : routePreviewTicketNotional;
-    const closingFeeBreakdown = closingSnapshot
-      ? buildLeveragedSettlementFeeRows(closingSnapshot, activePerpSnapshotFlashReserveCapital)
-      : [];
     const tradeSigned = await ensurePerpTradeSignature({
       direction,
       action: nextLeg ? 'open' : 'close',
@@ -12143,8 +10827,7 @@ function PaperTradingInner() {
           : `open a ${direction} leveraged leg`
         : closingPurpose === 'hedge'
           ? `close the ${direction} hedge leg`
-          : `close the ${direction} leveraged leg`,
-      feeBreakdown: nextLeg ? [] : closingFeeBreakdown
+          : `close the ${direction} leveraged leg`
     });
 
     if (!tradeSigned) {
@@ -13114,7 +11797,7 @@ function PaperTradingInner() {
     }
   ];
   const routeGuideSteps =
-    hedgeFocusActive && !comboFocusActive
+    hedgeFocusActive
       ? hedgeRouteGuideSteps
       : activeRouteFocusConfig?.walkthrough?.length
       ? activeRouteFocusConfig.walkthrough
@@ -13177,17 +11860,6 @@ function PaperTradingInner() {
       strategyControlValues
     ]
   );
-  useEffect(() => {
-    setSelectedPracticeCaseIndex(0);
-  }, [
-    routePracticeMode,
-    routePracticeNotional,
-    routePracticeHedgeSleeveNotional,
-    routePracticeHedgeTicketNotional,
-    selectedAdvancedRoute,
-    selectedProductId,
-    selectedStrategyTemplateId
-  ]);
   const selectedPracticeCaseSafeIndex = Math.max(
     0,
     Math.min(selectedPracticeCaseIndex, Math.max(0, routePracticeCases.length - 1))
@@ -13200,46 +11872,40 @@ function PaperTradingInner() {
   const routePracticeOutcomePnl = getPracticeCaseOutcomePnl(routePracticeCase);
   const routePracticeOutcomeRate = getPracticeCaseOutcomeRate(routePracticeCase);
   const routePracticeOutcomeToneValue = routePracticeOutcomePnl !== null ? routePracticeOutcomePnl : routePracticeOutcomeRate;
-  const routePracticeOutcomeWithDrawdownLabel = routePracticeCase ? formatPracticeCaseOutcomeWithDrawdown(routePracticeCase) : '';
-  const routePracticeMaxDrawdownLabel = routePracticeCase ? formatPracticeDrawdownRatio(routePracticeCase.maxDrawdownRate) : '';
+  const routePracticeOutcomeLabel = routePracticeCase ? formatPracticeCaseOutcome(routePracticeCase) : '';
   const routePracticeHedgeOutcome = routePracticeCase?.hedgeOutcome || null;
   const routePracticeHedgeSettlementCopy = routePracticeHedgeOutcome
-    ? `Best final settlement is ${routePracticeOutcomeWithDrawdownLabel} via ${getHedgeSettlementModeLabel(
+    ? `Best final settlement is ${routePracticeOutcomeLabel} via ${getHedgeSettlementModeLabel(
         routePracticeHedgeOutcome.settlementMode
       )}. Hedge-only ${formatSigned(routePracticeHedgeOutcome.hedgeOnlyPnl)} PT; hedge + sleeve ${formatSigned(
         routePracticeHedgeOutcome.hedgePlusSleevePnl
       )} PT.`
-    : `Current sleeve plus hedge ticket models ${routePracticeOutcomeWithDrawdownLabel}.`;
+    : `Current sleeve plus hedge ticket models ${routePracticeOutcomeLabel}.`;
   const routePracticeBadgeCopy = routePracticeCase
     ? routePracticeCase.mode === 'spot'
-      ? `net ${formatPracticeCaseOutcomeWithDrawdown(routePracticeCase)}`
+      ? `net ${formatPracticeCaseOutcome(routePracticeCase)}`
       : routePracticeCase.mode === 'hedge'
-        ? `hedged ${formatPracticeCaseOutcomeWithDrawdown(routePracticeCase)}`
+        ? `hedged ${formatPracticeCaseOutcome(routePracticeCase)}`
         : routePracticeCase.mode === 'strategy'
-          ? `payoff ${formatPracticeCaseOutcomeWithDrawdown(routePracticeCase)}`
-          : `${routePracticeCase.direction} ${formatPracticeCaseOutcomeWithDrawdown(routePracticeCase)}`
+          ? `payoff ${formatPracticeCaseOutcome(routePracticeCase)}`
+          : `${routePracticeCase.direction} ${formatPracticeCaseOutcome(routePracticeCase)}`
     : '';
   const routePracticeCaseCopy = routePracticeCase
     ? routePracticeCase.mode === 'hedge'
-      ? comboFocusActive
-        ? `Guided ${routePracticeTicker} leverage + hedge drill: click "Start case", buy the training sleeve, then click "Hedge day" at ${formatReplayDate(
-            routePracticeCase.triggerBar?.ts,
-            selectedView?.interval
-          )} and open the levered hedge. ${routePracticeHedgeSettlementCopy} Finish with "Stop day" at ${formatReplayDate(routePracticeCase.endBar?.ts, selectedView?.interval)}.`
-        : `Guided ${routePracticeTicker} sleeve drill: click "Start case", buy the sleeve, then click "Hedge day" at ${formatReplayDate(
-            routePracticeCase.triggerBar?.ts,
-            selectedView?.interval
-          )} and press "Open hedge". ${routePracticeHedgeSettlementCopy} Finish with "Stop day" at ${formatReplayDate(routePracticeCase.endBar?.ts, selectedView?.interval)}.`
+      ? `Guided ${routePracticeTicker} sleeve drill: click "Start case", buy the sleeve, then click "Hedge day" at ${formatReplayDate(
+          routePracticeCase.triggerBar?.ts,
+          selectedView?.interval
+        )} and press "Open hedge". ${routePracticeHedgeSettlementCopy} Finish with "Stop day" at ${formatReplayDate(routePracticeCase.endBar?.ts, selectedView?.interval)}.`
       : routePracticeCase.mode === 'leverage'
         ? `Guided ${routePracticeTicker} leverage drill: click "Start case", press "Open ${routePracticeCase.direction}", then click "Stop day" at ${formatReplayDate(
             routePracticeCase.endBar?.ts,
             selectedView?.interval
-          )} and close the leg. Current principal plus flash setup models ${routePracticeOutcomeWithDrawdownLabel} after funding, close drag, and path drawdown.`
+          )} and close the leg. Current principal plus flash setup models ${routePracticeOutcomeLabel} after funding and close drag.`
         : routePracticeCase.mode === 'strategy'
           ? `Guided ${routePracticeTicker} option drill: click "Start case", press "Build paper strategy", then use "Settle day" at ${formatReplayDate(
               routePracticeCase.endBar?.ts,
               selectedView?.interval
-            )}. Historical move is ${routePracticeGrossMoveLabel}; selected ${OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'strategy'} payoff models ${routePracticeOutcomeWithDrawdownLabel}.`
+            )}. Historical move is ${routePracticeGrossMoveLabel}; selected ${OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'strategy'} payoff models ${routePracticeOutcomeLabel}.`
           : `Guided ${routePracticeTicker} buy/sell drill: click "Start case", press "Buy", then use "Stop day" at ${formatReplayDate(
               routePracticeCase.endBar?.ts,
               selectedView?.interval
@@ -13253,23 +11919,17 @@ function PaperTradingInner() {
           {
             label: '1',
             title: 'Click "Start case"',
-            copy: comboFocusActive
-              ? `Chart jumps to ${formatReplayDate(routePracticeCase.startBar?.ts, selectedView?.interval)}. Press "Buy sleeve first" to create the ${routePracticeTicker} training sleeve before leverage is added.`
-              : `Chart jumps to ${formatReplayDate(routePracticeCase.startBar?.ts, selectedView?.interval)}. Press "Buy sleeve first" to open the ${routePracticeTicker} exposure you want to protect.`
+            copy: `Chart jumps to ${formatReplayDate(routePracticeCase.startBar?.ts, selectedView?.interval)}. Press "Buy sleeve first" to open the ${routePracticeTicker} exposure you want to protect.`
           },
           {
             label: '2',
             title: 'Click "Hedge day"',
-            copy: comboFocusActive
-              ? `Chart jumps to ${formatReplayDate(routePracticeCase.triggerBar?.ts, selectedView?.interval)} and the dock window becomes ${routePracticeCase.triggerDays}D. Pick a hedge ratio, read margin and liquidation, then press "Open hedge".`
-              : `Chart jumps to ${formatReplayDate(routePracticeCase.triggerBar?.ts, selectedView?.interval)} and the dock window becomes ${routePracticeCase.triggerDays}D. Pick 25% / 50% / 75% / Max, then press "Open hedge".`
+            copy: `Chart jumps to ${formatReplayDate(routePracticeCase.triggerBar?.ts, selectedView?.interval)} and the dock window becomes ${routePracticeCase.triggerDays}D. Pick 25% / 50% / 75% / Max, then press "Open hedge".`
           },
           {
             label: '3',
             title: 'Click "Stop day"',
-            copy: comboFocusActive
-              ? `Chart jumps to ${formatReplayDate(routePracticeCase.endBar?.ts, selectedView?.interval)} and the shared dock window becomes ${routePracticeCase.holdingDays}D. Close the hedge and compare hedge-only PnL with sleeve plus hedge.`
-              : `Chart jumps to ${formatReplayDate(routePracticeCase.endBar?.ts, selectedView?.interval)} and the shared dock window becomes ${routePracticeCase.holdingDays}D. Press "Close hedge"; this case currently models ${routePracticeOutcomeWithDrawdownLabel} for sleeve plus hedge.`
+            copy: `Chart jumps to ${formatReplayDate(routePracticeCase.endBar?.ts, selectedView?.interval)} and the shared dock window becomes ${routePracticeCase.holdingDays}D. Press "Close hedge"; this case currently models ${routePracticeOutcomeLabel} for sleeve plus hedge.`
           }
         ]
       : routePracticeCase.mode === 'leverage'
@@ -13287,7 +11947,7 @@ function PaperTradingInner() {
           {
             label: '3',
             title: `Press "Close ${routePracticeCase.direction}"`,
-            copy: `The replay pauses automatically before the close signature. With current principal and flash, this case models ${routePracticeOutcomeWithDrawdownLabel} after funding, taker, flash premium, and drawdown drag.`
+            copy: `The replay pauses automatically before the close signature. With current principal and flash, this case models ${routePracticeOutcomeLabel} after funding, taker, and flash premium drag.`
           }
         ]
         : routePracticeCase.mode === 'strategy'
@@ -13305,7 +11965,7 @@ function PaperTradingInner() {
               {
                 label: '3',
                 title: 'Click "Settle day"',
-                copy: `Chart jumps to ${formatReplayDate(routePracticeCase.endBar?.ts, selectedView?.interval)}. Press "Settle strategy"; this case currently models ${routePracticeOutcomeWithDrawdownLabel}.`
+                copy: `Chart jumps to ${formatReplayDate(routePracticeCase.endBar?.ts, selectedView?.interval)}. Press "Settle strategy"; this case currently models ${routePracticeOutcomeLabel}.`
               }
             ]
         : [
@@ -13330,17 +11990,6 @@ function PaperTradingInner() {
             }
           ]
     : [];
-  const routeLearningStepRows =
-    comboFocusActive && routePracticeStepRows.length
-      ? [
-          ...routePracticeStepRows,
-          {
-            label: '4',
-            title: 'Build portfolio combo',
-            copy: 'Pick a date window, choose several tokenized stocks, compare manual weights with suggested best-return, drawdown, and balanced baskets, then upload one result to the strategy board.'
-          }
-        ]
-      : routePracticeStepRows;
 
   function handleApplyRoutePracticeCase(step = 'start') {
     if (!routePracticeCase || !selectedView?.bars?.length) {
@@ -13398,7 +12047,6 @@ function PaperTradingInner() {
     selectedAdvancedRoute === 'borrow'
       ? routePracticeCase?.strategyOutcome ||
         estimateOptionStrategyPracticeOutcome({
-          product: selectedProduct,
           startBar: strategyPreviewAnchorBar,
           endBar: strategyPreviewTargetBar,
           notional: Math.max(MIN_PAPER_TRADE, Number(selectedPosition.principal || routePracticeNotional || tradeAmount || MIN_PAPER_TRADE)),
@@ -13406,211 +12054,6 @@ function PaperTradingInner() {
           controls: strategyControlValues
         })
       : null;
-  const strategyAiTemplateOptions = useMemo(
-    () =>
-      buildStrategyAiTemplateVariants({
-        prompt: strategyAiPrompt,
-        product: selectedProduct,
-        strategyLabel: OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'Strategy',
-        strategyOutcome: optionStrategyPreview
-      }),
-    [optionStrategyPreview, selectedProduct, selectedStrategyTemplateId, strategyAiPrompt]
-  );
-  const strategyAiTemplate =
-    strategyAiTemplateOptions.find((template) => template.variantId === selectedStrategyAiVariantId) ||
-    strategyAiTemplateOptions[0] ||
-    buildStrategyAiTemplateAnalysis({
-      prompt: strategyAiPrompt,
-      product: selectedProduct,
-      strategyLabel: OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'Strategy',
-      strategyOutcome: optionStrategyPreview
-    });
-  const portfolioComboCandidates = useMemo(
-    () => PORTFOLIO_COMBO_PRODUCT_IDS.map((productId) => productMap[productId]).filter(Boolean),
-    [productMap]
-  );
-  const portfolioComboAnalysis = useMemo(
-    () =>
-      buildPortfolioComboAnalysis({
-        productIds: portfolioComboSelectedIds,
-        productMap,
-        productViews,
-        weightMap: portfolioComboWeights,
-        startDate: portfolioComboStartDate,
-        endDate: portfolioComboEndDate
-      }),
-    [portfolioComboEndDate, portfolioComboSelectedIds, portfolioComboStartDate, portfolioComboWeights, productMap, productViews]
-  );
-  const portfolioComboManualMetrics = portfolioComboAnalysis.manual;
-  const strategyTemplateLeaderboardRows = strategyTemplateLeaderboard.entries || [];
-  const strategyTemplateUploadedForCurrentPrompt = strategyTemplateLeaderboardRows.some(
-    (entry) =>
-      entry.prompt === strategyAiTemplate.prompt &&
-      entry.productLabel === strategyAiTemplate.productLabel &&
-      entry.strategyLabel === strategyAiTemplate.strategyLabel &&
-      entry.variantId === strategyAiTemplate.variantId
-  );
-
-  function handleGenerateStrategyAiTemplate() {
-    setStrategyAiTemplateGenerated(true);
-    mergeProgressUpdate({ strategyAiTemplateCompleted: true });
-    setFeedback(
-      `${strategyAiTemplate.variantLabel || 'AI template'} marked ${strategyAiTemplate.features.length} features for ${strategyAiTemplate.strategyLabel}: ${strategyAiTemplate.winRate}% paper win rate, ${formatSignedPercent(
-        strategyAiTemplate.expectedReturnPct,
-        1
-      )} expected return, -${strategyAiTemplate.maxDrawdownPct.toFixed(1)}% max drawdown.`
-    );
-  }
-
-  function handleUploadStrategyTemplate() {
-    const submittedAt = new Date().toISOString();
-    const entry = normalizeStrategyTemplateLeaderboardEntry({
-      ...strategyAiTemplate,
-      entryType: 'ai-template',
-      id: `${address || 'guest'}-${submittedAt}-${strategyAiTemplate.title}`,
-      walletAddress: address || 'guest',
-      submittedAt
-    });
-    if (!entry) return;
-
-    setStrategyAiTemplateGenerated(true);
-    setStrategyTemplateLeaderboard((current) => {
-      const next = normalizeStrategyTemplateLeaderboard({
-        entries: [entry, ...(current.entries || [])]
-      });
-      writeStorageJson(STRATEGY_TEMPLATE_LEADERBOARD_STORAGE_KEY, next);
-      return next;
-    });
-    mergeProgressUpdate({
-      strategyLessonCompleted: true,
-      strategyExampleCompleted: Boolean(progressState.strategyExampleCompleted || optionStrategyPreview),
-      strategyAiTemplateCompleted: true,
-      strategyLeaderboardUploaded: true
-    });
-    setFeedback(
-      `Uploaded "${entry.title}" to the local strategy / combo leaderboard with ${entry.winRate}% paper win rate, ${formatSignedPercent(
-        entry.expectedReturnPct,
-        1
-      )} expected return, and -${entry.maxDrawdownPct.toFixed(1)}% max drawdown.`
-    );
-  }
-
-  function handleTogglePortfolioComboProduct(productId) {
-    const isSelected = portfolioComboSelectedIds.includes(productId);
-
-    if (isSelected && portfolioComboSelectedIds.length <= 2) {
-      setFeedback('Keep at least two stocks selected so the combo stays diversified.');
-      return;
-    }
-
-    if (isSelected) {
-      setPortfolioComboSelectedIds((current) => current.filter((id) => id !== productId));
-    } else {
-      setPortfolioComboWeights((weights) => ({
-        ...weights,
-        [productId]: weights[productId] ?? 10
-      }));
-      setPortfolioComboSelectedIds((current) => [...current, productId]);
-    }
-  }
-
-  function handlePortfolioComboWeightChange(productId, nextValue) {
-    const numericValue = Number(nextValue || 0);
-
-    setPortfolioComboWeights((current) => ({
-      ...current,
-      [productId]: Number.isFinite(numericValue) ? clampNumber(numericValue, 0, 100) : 0
-    }));
-  }
-
-  function handleApplyPortfolioComboSuggestion(suggestion) {
-    const metrics = suggestion?.metrics;
-    if (!metrics?.allocation?.length) return;
-
-    setPortfolioComboSelectedIds(metrics.allocation.map((row) => row.productId));
-    setPortfolioComboWeights(Object.fromEntries(metrics.allocation.map((row) => [row.productId, roundNumber(row.weightPct, 1)])));
-    setFeedback(
-      `Applied ${suggestion.label}: ${metrics.allocation
-        .map((row) => `${row.ticker} ${row.weightPct.toFixed(0)}%`)
-        .join(' / ')}.`
-    );
-  }
-
-  function handleUploadPortfolioComboToStrategyBoard(suggestion = null) {
-    const metrics = suggestion?.metrics || portfolioComboManualMetrics;
-    if (!metrics?.allocation?.length) {
-      setFeedback(portfolioComboAnalysis.message || 'Load at least two replay series before uploading a portfolio combo.');
-      return;
-    }
-
-    const submittedAt = new Date().toISOString();
-    const allocationLabel = metrics.allocation.map((row) => `${row.ticker} ${row.weightPct.toFixed(0)}%`).join(' / ');
-    const entry = normalizeStrategyTemplateLeaderboardEntry({
-      id: `${address || 'guest'}-${submittedAt}-portfolio-combo-${getPortfolioComboAllocationKey(metrics)}`,
-      entryType: 'portfolio-combo',
-      title: `${suggestion?.label || 'Manual combo'}: ${allocationLabel}`,
-      prompt: `Portfolio combo ${metrics.startDate} to ${metrics.endDate}: ${allocationLabel}.`,
-      productLabel: 'Portfolio Combo',
-      strategyLabel: suggestion?.label || 'Manual weights',
-      variantId: suggestion?.id || 'manual-combo',
-      variantLabel: suggestion?.label || 'Manual combo',
-      dateRange: `${metrics.startDate} -> ${metrics.endDate}`,
-      walletAddress: address || 'guest',
-      submittedAt,
-      allocation: metrics.allocation,
-      features: [
-        {
-          id: 'basket',
-          label: 'Basket',
-          value: `${metrics.allocation.length} assets`,
-          copy: `Weights: ${allocationLabel}.`
-        },
-        {
-          id: 'window',
-          label: 'Backtest window',
-          value: `${metrics.days} bars`,
-          copy: `${metrics.startDate} to ${metrics.endDate} on overlapping daily replay history.`
-        },
-        {
-          id: 'return',
-          label: 'Return',
-          value: formatSignedPercent(metrics.totalReturnPct, 1),
-          copy: 'Total return from daily rebalanced weights over the selected window.'
-        },
-        {
-          id: 'drawdown',
-          label: 'Drawdown',
-          value: `-${metrics.maxDrawdownPct.toFixed(1)}%`,
-          copy: 'Worst peak-to-trough move in the combo path.'
-        }
-      ],
-      winRate: metrics.winRate,
-      expectedReturnPct: metrics.totalReturnPct,
-      maxDrawdownPct: metrics.maxDrawdownPct,
-      templateScore: metrics.templateScore
-    });
-    if (!entry) return;
-
-    setStrategyTemplateLeaderboard((current) => {
-      const next = normalizeStrategyTemplateLeaderboard({
-        entries: [entry, ...(current.entries || [])]
-      });
-      writeStorageJson(STRATEGY_TEMPLATE_LEADERBOARD_STORAGE_KEY, next);
-      return next;
-    });
-    mergeProgressUpdate({
-      strategyLessonCompleted: true,
-      strategyExampleCompleted: true,
-      strategyAiTemplateCompleted: true,
-      strategyLeaderboardUploaded: true
-    });
-    setFeedback(
-      `Uploaded ${suggestion?.label || 'manual portfolio combo'} to the strategy / combo leaderboard: ${formatSignedPercent(
-        metrics.totalReturnPct,
-        1
-      )} return, -${metrics.maxDrawdownPct.toFixed(1)}% max drawdown, ${metrics.winRate.toFixed(1)}% winning days.`
-    );
-  }
   const timedExitSpotSnapshot =
     timedExitTargetBar && selectedPosition.units > 0
       ? buildPositionSnapshot(selectedProduct, selectedPosition, Number(timedExitTargetBar.close || 0), timedExitTargetBar.ts)
@@ -13760,9 +12203,6 @@ function PaperTradingInner() {
           timedExitLeveragedSnapshot.fundingCost > 0 ? `funding ${formatNotional(timedExitLeveragedSnapshot.fundingCost)} PT` : null,
           timedExitLeveragedSnapshot.flashLoanFee > 0
             ? `flash loan premium ${formatNotional(timedExitLeveragedSnapshot.flashLoanFee)} PT`
-            : null,
-          timedExitLeveragedSnapshot.managementFee > 0
-            ? `management ${formatNotional(timedExitLeveragedSnapshot.managementFee)} PT`
             : null
         ].filter(Boolean)
       : timedExitSpotSnapshot
@@ -13773,8 +12213,7 @@ function PaperTradingInner() {
             timedExitSpotSnapshot.exitCosts.channelCost > 0 ? `routing ${formatNotional(timedExitSpotSnapshot.exitCosts.channelCost)} PT` : null,
             timedExitSpotSnapshot.exitCosts.regulatoryFee > 0
               ? `reg ${formatNotional(timedExitSpotSnapshot.exitCosts.regulatoryFee)} PT`
-              : null,
-            timedExitSpotSnapshot.managementFee > 0 ? `management ${formatNotional(timedExitSpotSnapshot.managementFee)} PT` : null
+              : null
           ].filter(Boolean)
         : [];
   const routeLearningFeeRows =
@@ -13799,12 +12238,6 @@ function PaperTradingInner() {
             value: timedExitLeveragedSnapshot?.flashLoanFee || 0,
             isCost: true,
             copy: flashLoanAppliedTicketNotional > 0 ? 'Charged upfront when extra ticket notional is attached.' : 'Optional until a flash top-up is attached.'
-          },
-          {
-            label: 'Management fee',
-            value: timedExitLeveragedSnapshot?.managementFee || 0,
-            isCost: true,
-            copy: `Route management accrues over about ${timedExitActualHoldingDays || 0}D and is included in the final close signature.`
           },
           {
             label: hedgeFocusActive ? 'Unwind fee' : 'Close fee',
@@ -13838,12 +12271,6 @@ function PaperTradingInner() {
             value: timedExitSpotSnapshot?.unpaidCarry || 0,
             isCost: true,
             copy: `Carry accumulates over about ${timedExitActualHoldingDays || 0}D before auto-sell.`
-          },
-          {
-            label: 'Management fee',
-            value: timedExitSpotSnapshot?.managementFee || 0,
-            isCost: true,
-            copy: 'Accrued route management fee is deducted from net exit and shown again in the sell signature.'
           },
           {
             label: 'Auto-sell drag',
@@ -13960,7 +12387,7 @@ function PaperTradingInner() {
                     >
                       <span>{practiceCase.scenarioLabel}</span>
                       <strong className={practiceToneValue >= 0 ? 'risk-low' : 'risk-high'}>
-                        {formatPracticeCaseOutcomeWithDrawdown(practiceCase)}
+                        {formatPracticeCaseOutcome(practiceCase)}
                       </strong>
                       <p>
                         {formatReplayDate(practiceCase.startBar?.ts, selectedView?.interval)} to {formatReplayDate(practiceCase.endBar?.ts, selectedView?.interval)}
@@ -13988,10 +12415,6 @@ function PaperTradingInner() {
               <div>
                 <span>Case days</span>
                 <strong>{routePracticeCase.holdingDays}D</strong>
-              </div>
-              <div>
-                <span>Max DD</span>
-                <strong>{routePracticeMaxDrawdownLabel}</strong>
               </div>
             </div>
             <div className="paper-shelf-learning-case-actions">
@@ -14075,7 +12498,6 @@ function PaperTradingInner() {
             selectedView?.interval
           )}. Tune the payoff controls, then use "Settle strategy" to apply the historical payoff at the selected holding period.`
         });
-        mergeProgressUpdate({ strategyLessonCompleted: true });
         return;
       }
 
@@ -14134,8 +12556,7 @@ function PaperTradingInner() {
                   timedExitLeveragedSnapshot.entryFee +
                     timedExitLeveragedSnapshot.exitFee +
                     timedExitLeveragedSnapshot.fundingCost +
-                    timedExitLeveragedSnapshot.flashLoanFee +
-                    timedExitLeveragedSnapshot.managementFee
+                    timedExitLeveragedSnapshot.flashLoanFee
                 )} PT (${timedExitCostParts.join(' / ')}).`
               : null,
             `Net margin account take-home stays ${formatSigned(timedExitEstimatedPnl)} PT.`
@@ -14147,15 +12568,10 @@ function PaperTradingInner() {
               ? `Entry drag already embedded in the open position: -${formatNotional(timedExitSpotSnapshot.entryFeeRemaining)} PT.`
               : null,
             timedExitCostParts.length
-              ? `Exit drag on this sell: -${formatNotional(
-                  timedExitSpotSnapshot.exitCosts.nonTaxCost + timedExitSpotSnapshot.managementFee
-                )} PT (${timedExitCostParts.join(' / ')}).`
+              ? `Exit drag on this sell: -${formatNotional(timedExitSpotSnapshot.exitCosts.nonTaxCost)} PT (${timedExitCostParts.join(' / ')}).`
               : null,
             timedExitSpotSnapshot.unpaidCarry > 0
               ? `Carry accrued during the hold: -${formatNotional(timedExitSpotSnapshot.unpaidCarry)} PT.`
-              : null,
-            timedExitSpotSnapshot.managementFee > 0
-              ? `Management fee accrued during the hold: -${formatNotional(timedExitSpotSnapshot.managementFee)} PT.`
               : null,
             timedExitSpotSnapshot.exitCosts.estimatedTax > 0
               ? `Estimated tax on the positive gain slice: -${formatNotional(timedExitSpotSnapshot.exitCosts.estimatedTax)} PT.`
@@ -15334,137 +13750,6 @@ function PaperTradingInner() {
               </div>
             ) : null}
 
-            {selectedAdvancedRoute === 'borrow' ? (
-              <div className="paper-inline-action-card paper-inline-action-card-compact paper-strategy-ai-card">
-                <div className="paper-inline-action-head">
-                  <div>
-                    <div className="k">AI strategy template</div>
-                    <div className="muted">
-                      Type a strategy idea; the local AI template offers five variants, marks feature points, and turns one choice into board-ready paper metrics.
-                    </div>
-                  </div>
-                  <span className={`pill ${strategyAiTemplateGenerated || progressState.strategyAiTemplateCompleted ? 'risk-low' : 'risk-medium'}`}>
-                    {strategyAiTemplateGenerated || progressState.strategyAiTemplateCompleted ? 'Generated' : 'Draft'}
-                  </span>
-                </div>
-
-                <label className="paper-strategy-ai-input">
-                  <span>Strategy idea</span>
-                  <textarea
-                    value={strategyAiPrompt}
-                    rows={3}
-                    onChange={(event) => {
-                      setStrategyAiPrompt(event.target.value);
-                      setStrategyAiTemplateGenerated(false);
-                    }}
-                  />
-                </label>
-
-                <div className="paper-strategy-ai-template-grid">
-                  {strategyAiTemplateOptions.map((template) => (
-                    <button
-                      key={template.variantId}
-                      type="button"
-                      className={`paper-strategy-ai-template-card ${template.variantId === strategyAiTemplate.variantId ? 'active' : ''}`}
-                      onClick={() => {
-                        setSelectedStrategyAiVariantId(template.variantId);
-                        setStrategyAiTemplateGenerated(false);
-                      }}
-                    >
-                      <span>{template.variantLabel}</span>
-                      <strong>{template.winRate}% win</strong>
-                      <small>
-                        {formatSignedPercent(template.expectedReturnPct, 1)} / -{template.maxDrawdownPct.toFixed(1)}% DD
-                      </small>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="paper-strategy-ai-metric-grid">
-                  <div>
-                    <span>Paper win rate</span>
-                    <strong>{strategyAiTemplate.winRate}%</strong>
-                  </div>
-                  <div>
-                    <span>Expected return</span>
-                    <strong className={strategyAiTemplate.expectedReturnPct >= 0 ? 'risk-low' : 'risk-high'}>
-                      {formatSignedPercent(strategyAiTemplate.expectedReturnPct, 1)}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Max drawdown</span>
-                    <strong className="risk-high">-{strategyAiTemplate.maxDrawdownPct.toFixed(1)}%</strong>
-                  </div>
-                  <div>
-                    <span>Template score</span>
-                    <strong>{Math.round(strategyAiTemplate.templateScore)}/100</strong>
-                  </div>
-                </div>
-
-                <div className="paper-strategy-ai-feature-grid">
-                  {strategyAiTemplate.features.map((feature) => (
-                    <div key={feature.id} className="paper-strategy-ai-feature-card">
-                      <span>{feature.label}</span>
-                      <strong>{feature.value}</strong>
-                      <p>{feature.copy}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="paper-strategy-ai-actions">
-                  <button type="button" className="ghost-btn compact" onClick={handleGenerateStrategyAiTemplate}>
-                    Generate AI template
-                  </button>
-                  <button
-                    type="button"
-                    className="primary-btn compact"
-                    onClick={handleUploadStrategyTemplate}
-                    disabled={!strategyAiPrompt.trim()}
-                  >
-                    {strategyTemplateUploadedForCurrentPrompt ? 'Upload again' : 'Upload to strategy board'}
-                  </button>
-                </div>
-
-                <div className="paper-strategy-board">
-                  <div className="paper-strategy-board-head">
-                    <span>Strategy / combo leaderboard</span>
-                    <strong>{strategyTemplateLeaderboardRows.length} entr{strategyTemplateLeaderboardRows.length === 1 ? 'y' : 'ies'}</strong>
-                  </div>
-                  {strategyTemplateLeaderboardRows.length ? (
-                    <div className="paper-strategy-board-list">
-                      {strategyTemplateLeaderboardRows.slice(0, 4).map((entry, index) => (
-                        <div key={entry.id} className="paper-strategy-board-row">
-                          <div className="paper-strategy-board-rank">#{index + 1}</div>
-                          <div className="paper-strategy-board-main">
-                            <strong>
-                              <span className="paper-strategy-board-type">
-                                {entry.entryType === 'portfolio-combo' ? 'Combo' : 'AI'}
-                              </span>
-                              {entry.title}
-                            </strong>
-                            <span>
-                              {entry.entryType === 'portfolio-combo'
-                                ? `${entry.productLabel} / ${entry.dateRange || entry.strategyLabel}`
-                                : `${entry.productLabel} / ${entry.variantLabel || entry.strategyLabel}`}
-                            </span>
-                          </div>
-                          <div className="paper-strategy-board-metrics">
-                            <span>{entry.winRate}% win</span>
-                            <span>{formatSignedPercent(entry.expectedReturnPct, 1)} return</span>
-                            <span>-{entry.maxDrawdownPct.toFixed(1)}% DD</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="paper-inline-note-box paper-inline-route-capacity-note">
-                      No strategy or combo entries uploaded yet. Generate an AI template or upload a portfolio combo to rank by score, expected return, and drawdown.
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : null}
-
             <div className="paper-inline-desk-button-strip compact">
               <button
                 type="button"
@@ -15973,8 +14258,8 @@ function PaperTradingInner() {
         </div>
 
         <div className="paper-shelf-learning-case-plan paper-shelf-learning-case-plan-sidebar">
-          {(routeLearningStepRows.length
-            ? routeLearningStepRows
+          {(routePracticeStepRows.length
+            ? routePracticeStepRows
             : routeGuideSteps.map((step) => ({
                 label: step.number,
                 title: step.title,
@@ -16051,167 +14336,6 @@ function PaperTradingInner() {
                 Lock a replay bar first. Then set the protected sleeve amount separately from the hedge ticket so the route can show before / after / residual exposure in one screen.
               </div>
             )}
-          </div>
-        ) : null}
-
-        {comboFocusActive ? (
-          <div className="paper-portfolio-combo-card">
-            <div className="paper-portfolio-combo-head">
-              <div>
-                <div className="paper-shelf-learning-subhead">Portfolio combo lab</div>
-                <div className="paper-portfolio-combo-copy">
-                  Build a diversified stock combo from the local daily replay series. Set the window, choose stocks, edit weights, then compare manual results with suggested allocations.
-                </div>
-              </div>
-              <span className={`pill ${portfolioComboAnalysis.status === 'ready' ? 'risk-low' : 'risk-medium'}`}>
-                {portfolioComboAnalysis.status === 'ready' ? `${portfolioComboAnalysis.dates.length} bars` : 'Loading'}
-              </span>
-            </div>
-
-            <div className="paper-portfolio-combo-date-grid">
-              <label>
-                <span>Start date</span>
-                <input
-                  type="date"
-                  value={portfolioComboStartDate}
-                  onChange={(event) => setPortfolioComboStartDate(event.target.value)}
-                />
-              </label>
-              <label>
-                <span>End date</span>
-                <input
-                  type="date"
-                  value={portfolioComboEndDate}
-                  onChange={(event) => setPortfolioComboEndDate(event.target.value)}
-                />
-              </label>
-            </div>
-
-            <div className="paper-portfolio-combo-chip-grid">
-              {portfolioComboCandidates.map((product) => {
-                const active = portfolioComboSelectedIds.includes(product.id);
-                const ready = Array.isArray(productViews[product.id]?.bars) && productViews[product.id].bars.length >= 2;
-
-                return (
-                  <button
-                    key={product.id}
-                    type="button"
-                    className={`paper-portfolio-combo-chip ${active ? 'active' : ''}`}
-                    onClick={() => handleTogglePortfolioComboProduct(product.id)}
-                  >
-                    <strong>{product.ticker}</strong>
-                    <span>{ready ? 'ready' : 'loading'}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="paper-portfolio-combo-weight-grid">
-              {portfolioComboSelectedIds.map((productId) => {
-                const product = productMap[productId];
-                const normalizedWeight = portfolioComboManualMetrics?.allocation?.find((row) => row.productId === productId)?.weightPct;
-
-                return (
-                  <label key={productId}>
-                    <span>{product?.ticker || productId}</span>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="5"
-                      value={portfolioComboWeights[productId] ?? 0}
-                      onChange={(event) => handlePortfolioComboWeightChange(productId, event.target.value)}
-                    />
-                    <small>{Number.isFinite(normalizedWeight) ? `${normalizedWeight.toFixed(1)}% normalized` : 'waiting for bars'}</small>
-                  </label>
-                );
-              })}
-            </div>
-
-            {portfolioComboManualMetrics ? (
-              <>
-                <div className="paper-portfolio-combo-metric-grid">
-                  <div>
-                    <span>Manual return</span>
-                    <strong className={portfolioComboManualMetrics.totalReturnPct >= 0 ? 'risk-low' : 'risk-high'}>
-                      {formatSignedPercent(portfolioComboManualMetrics.totalReturnPct, 1)}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Max drawdown</span>
-                    <strong className="risk-high">-{portfolioComboManualMetrics.maxDrawdownPct.toFixed(1)}%</strong>
-                  </div>
-                  <div>
-                    <span>Sharpe</span>
-                    <strong>{portfolioComboManualMetrics.sharpe.toFixed(2)}</strong>
-                  </div>
-                  <div>
-                    <span>Winning days</span>
-                    <strong>{portfolioComboManualMetrics.winRate.toFixed(1)}%</strong>
-                  </div>
-                </div>
-                <div className="paper-portfolio-combo-actions">
-                  <button type="button" className="ghost-btn compact" onClick={() => handleUploadPortfolioComboToStrategyBoard()}>
-                    Upload manual combo
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="paper-inline-note-box paper-inline-route-capacity-note">
-                {portfolioComboAnalysis.message || 'Select at least two products and wait for replay bars to load.'}
-              </div>
-            )}
-
-            {portfolioComboAnalysis.suggestions.length ? (
-              <div className="paper-portfolio-combo-suggestion-grid">
-                {portfolioComboAnalysis.suggestions.map((suggestion) => {
-                  const metrics = suggestion.metrics;
-
-                  return (
-                    <div key={suggestion.id} className="paper-portfolio-combo-suggestion-card">
-                      <div className="paper-portfolio-combo-suggestion-head">
-                        <div>
-                          <strong>{suggestion.label}</strong>
-                          <span>{suggestion.copy}</span>
-                        </div>
-                        <span className="pill risk-low">{metrics.templateScore}/100</span>
-                      </div>
-                      <div className="paper-portfolio-combo-allocation">
-                        {metrics.allocation.map((row) => (
-                          <span key={`${suggestion.id}-${row.productId}`}>
-                            {row.ticker} {row.weightPct.toFixed(0)}%
-                          </span>
-                        ))}
-                      </div>
-                      <div className="paper-portfolio-combo-mini-metrics">
-                        <span>{formatSignedPercent(metrics.totalReturnPct, 1)} return</span>
-                        <span>-{metrics.maxDrawdownPct.toFixed(1)}% DD</span>
-                        <span>{metrics.sharpe.toFixed(2)} Sharpe</span>
-                      </div>
-                      <div className="paper-portfolio-combo-actions">
-                        <button type="button" className="ghost-btn compact" onClick={() => handleApplyPortfolioComboSuggestion(suggestion)}>
-                          Apply weights
-                        </button>
-                        <button type="button" className="primary-btn compact" onClick={() => handleUploadPortfolioComboToStrategyBoard(suggestion)}>
-                          Upload
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : null}
-
-            {portfolioComboAnalysis.topSingles.length ? (
-              <div className="paper-portfolio-combo-single-strip">
-                {portfolioComboAnalysis.topSingles.slice(0, 3).map((row) => (
-                  <div key={`single-${row.allocation[0]?.productId || row.label}`}>
-                    <span>{row.allocation[0]?.ticker || row.label}</span>
-                    <strong>{formatSignedPercent(row.totalReturnPct, 1)}</strong>
-                  </div>
-                ))}
-              </div>
-            ) : null}
           </div>
         ) : null}
 
@@ -16295,10 +14419,6 @@ function PaperTradingInner() {
           </div>
         </div>
       </header>
-
-      <div className="demo-only-banner">
-        <strong>Demo only.</strong> Receipt balances, PT cash, subscriptions, pledges, and settlement actions on this page stay in local demo or testnet-style state. No real stablecoin or live-fund transfer happens here.
-      </div>
 
       <main>
         <section className="card wealth-hero-card">
@@ -16878,7 +14998,6 @@ function PaperTradingInner() {
                       <th>Gross value</th>
                       <th>Holding days</th>
                       <th>Carry drag</th>
-                      <th>Mgmt fee</th>
                       <th>Net exit</th>
                       <th>Gross PnL</th>
                       <th>Net PnL</th>
@@ -16897,7 +15016,6 @@ function PaperTradingInner() {
                         <td>{formatNotional(row.marketValue)} PT</td>
                         <td>{row.holdingDays.toFixed(1)}d</td>
                         <td>{formatNotional(row.unpaidCarry)} PT</td>
-                        <td>{formatNotional(row.managementFee)} PT</td>
                         <td>{formatNotional(row.netExitValue)} PT</td>
                         <td className={row.unrealizedPnl >= 0 ? 'risk-low' : 'risk-high'}>
                           {formatSigned(row.unrealizedPnl)} PT
@@ -16942,7 +15060,6 @@ function PaperTradingInner() {
                         <th>Fees</th>
                         <th>Tax</th>
                         <th>Carry</th>
-                        <th>Mgmt</th>
                         <th>Realized</th>
                       </tr>
                     </thead>
@@ -16965,7 +15082,6 @@ function PaperTradingInner() {
                             <td>{trade.feeTotal ? `${formatNotional(trade.feeTotal)} PT` : '--'}</td>
                             <td>{trade.taxTotal ? `${formatNotional(trade.taxTotal)} PT` : '--'}</td>
                             <td>{trade.carryTotal ? `${formatNotional(trade.carryTotal)} PT` : '--'}</td>
-                            <td>{trade.managementFeeTotal ? `${formatNotional(trade.managementFeeTotal)} PT` : '--'}</td>
                             <td className={trade.realizedPnl >= 0 ? 'risk-low' : trade.realizedPnl < 0 ? 'risk-high' : ''}>
                               {trade.realizedPnl ? `${formatSigned(trade.realizedPnl)} PT` : '--'}
                             </td>

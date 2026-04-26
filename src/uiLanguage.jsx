@@ -91,6 +91,69 @@ const EN_TO_ZH = {
   'RiskLens should first explain what a product is for, show a simple 1,000 USDT example, and then route users into practice instead of forcing live complexity too early.':
     'RiskLens 应该先解释产品是做什么的，用一个简单的 1,000 USDT 例子讲清楚，再把用户引导进练习，而不是过早地强行进入真实复杂流程。',
   'Review starter products first, then try one paper trade.': '先看入门产品，再尝试一笔模拟交易。',
+  'Review the reserve and strategy product briefings first, then try one paper trade.':
+    '先查看储备类和策略类产品简报，再尝试一笔模拟交易。',
+  'Explore product lanes': '探索产品路径',
+  'Start here for the real MetaMask flow.': '从这里开始真实的 MetaMask 流程。',
+  'Submit one Sepolia action after connect.': '连接后提交一次 Sepolia 操作。',
+  'Congrats - welcome badge finished. The wallet task claim is open now.':
+    '恭喜，欢迎徽章已完成。现在可以领取钱包任务徽章。',
+  'Quest Detail': '任务详情',
+  'Optional Detail': '可选模块详情',
+  'Review any 4 live product briefings from the current Wealth and Paper lanes.':
+    '从当前理财与模拟交易路径里查看任意 4 个实时产品简报。',
+  'Check ownership, return source, and first disclosure for one real product lane.':
+    '检查一个真实产品路径里的持有什么、收益来源和第一条披露。',
+  'Unlock depends on wallet, welcome mint, and product-briefing review.':
+    '解锁取决于钱包连接、欢迎徽章铸造和产品简报查看。',
+  'Beginner note: after a badge is minted, look for it in the connected wallet collectibles / NFT view. The demo state and the collectible should use the same wallet account.':
+    '新手提示：徽章铸造后，可以在已连接钱包的收藏品 / NFT 视图里查看。演示状态和收藏品应使用同一个钱包账户。',
+  'Briefing card': '简报卡片',
+  'Explain-it-back checkpoint': '复述检查点',
+  'What should the user hear first?': '用户第一句话应该听到什么？',
+  'It is a tokenized fund share with NAV and redemption rules.': '它是带净值和赎回规则的代币化基金份额。',
+  'It behaves like unrestricted cash with no gating or settlement steps.':
+    '它像不受限制的现金，没有门槛或结算步骤。',
+  'The main attraction is directional upside if risk assets rally.': '主要吸引力是风险资产上涨时的方向性收益。',
+  'Goal-based wealth hub for users who need explanation before yield':
+    '面向需要先理解再看收益的用户的目标型理财中心',
+  'Wealth path': '理财路径',
+  'Fit first, receipt second, diligence always visible': '先看适配，再看凭证，尽调始终可见',
+  'The wealth page now behaves like a guided product surface: it starts from a user goal, keeps ownership language visible, and only then opens the signed receipt flow.':
+    '理财页现在像一个引导式产品界面：先从用户目标出发，持续展示“持有什么”的语言，然后才打开签署凭证流程。',
+  'Wallet-linked demo receipts': '钱包绑定演示凭证',
+  'Demo only': '仅演示',
+  Routing: '路径',
+  Ownership: '所有权',
+  'Research layer': '研究层',
+  'Goal-first product routing': '目标优先的产品路由',
+  'Start from the user goal like stable yield, steadier principal, or buy-lower exposure, then reveal the product structure only after the fit is clear.':
+    '先从稳定收益、更稳本金或逢低买入敞口这类用户目标出发，等适配关系清楚后再展示产品结构。',
+  'Users see fit first, structure second.': '用户先看到适配，再看到结构。',
+  'Subscriptions now map to wallet-linked share tokens, so the wealth page can show ownership, redemption rights, and future reward or gating logic.':
+    '认购现在会映射为钱包绑定份额代币，因此理财页可以展示所有权、赎回权，以及未来奖励或门槛逻辑。',
+  'AI diligence and compliance layer': 'AI 尽调与合规层',
+  'Each shelf can explain underlying assets, source of return, eligibility, liquidity stress, and disclosure posture instead of hiding behind APY alone.':
+    '每个货架都能解释底层资产、收益来源、适格性、流动性压力和披露姿态，而不是只躲在 APY 后面。',
+  'Open wealth hub': '打开理财中心',
+  'Simulation mode should sit directly under discovery': '模拟模式应该直接接在发现之后',
+  'Paper trading unlock': '模拟交易解锁',
+  'Remaining tokens': '剩余代币',
+  'Reward per badge': '每枚徽章奖励',
+  'Minimum trade size': '最低交易金额',
+  'Replay entry': '回放入口',
+  'Starter simulation': '入门模拟',
+  'Practice with treasury-style or managed products before using any live wallet flow. Badge rewards increase the available simulation budget.':
+    '在使用任何真实风格钱包流程前，先用国债类或托管类产品练习。徽章奖励会提高可用模拟预算。',
+  'Budget expands as homepage badges are completed.': '主页徽章完成后，模拟预算会增加。',
+  'Education state': '学习状态',
+  'Product briefings already reviewed': '产品简报已查看',
+  'This wallet already completed the product-briefing prerequisite, so paper trading can focus on actual simulation instead of first-pass education.':
+    '这个钱包已经完成产品简报前置条件，因此模拟交易可以专注实际模拟，而不是第一遍教育。',
+  'Open replay lab': '打开回放实验室',
+  'Mint paper trading task badge': '铸造模拟交易任务徽章',
+  'After the three onboarding prerequisites are finished, this paper trading preview can mint its own badge for the current wallet.':
+    '三个 onboarding 前置条件完成后，该模拟交易预览可以为当前钱包铸造自己的徽章。',
   'Optional modules': '可选模块',
   'These can be opened in any order after the core wallet path starts.': '核心钱包路径启动后，这些模块可以按任意顺序打开。',
   'Wallet task completed': '钱包任务已完成',
@@ -179,6 +242,165 @@ const EN_TO_ZH = {
   'Try a product name, ticker-style token, underlying asset, or a fund family keyword like treasury, income, credit, or structured.':
     '可以试试产品名、类似 ticker 的代币名、底层资产，或者 treasury、income、credit、structured 这类基金家族关键词。',
   'Selected detail is expanded below.': '已在下方展开详情。',
+  Completed: '已完成',
+  completed: '已完成',
+  Done: '已就绪',
+  done: '已完成',
+  Checking: '检查中',
+  Unlocked: '已解锁',
+  Minted: '已铸造',
+  'Task guide': '任务引导',
+  'wealth task guide': '理财任务引导',
+  'Follow one guided path, then buy every product through the same receipt flow':
+    '沿着一条引导路径走完，然后所有产品都通过同一套凭证流程购买',
+  complete: '完成',
+  'Next task:': '下一步任务：',
+  'Receipt live': '凭证已生效',
+  'Receipt mint': '铸造凭证',
+  'Buy one receipt': '购买一张凭证',
+  'Choose a product, open the lifecycle desk, review the buy flow, then mint a local receipt balance in the wealth ledger.':
+    '选择一个产品，打开生命周期操作台，检查买入流程，然后在理财账本里铸造本地凭证余额。',
+  'Settle / pledge': '结算 / 质押',
+  'Simulate settle or pledge': '模拟结算或质押',
+  'Settle means close, redeem, roll, or mature the receipt. Pledge means locking it as route support before release.':
+    '结算指关闭、赎回、展期或到期处理凭证。质押指先把凭证锁定为路线支持，再释放。',
+  'This is the main wealth learning loop: pick a product for a goal, read the fit and diligence context, then sign a simulated subscription that mints a receipt in the local wallet ledger.':
+    '这是理财页的主要学习循环：先按目标挑产品，阅读适配性和尽调信息，再签署模拟认购，在本地钱包账本里铸造凭证。',
+  'How to clear it': '如何完成',
+  GO: '去做',
+  'Start from a goal like earn so the shelf already narrows into a clearer lane.':
+    '先从“赚取收益”这类目标开始，让货架自动收窄到更清晰的方向。',
+  'Open RiskLens Quant Fund #2 or any product card and review the flow, rights, and diligence pages before subscribing.':
+    '打开 RiskLens Quant Fund #2 或任意产品卡，在认购前查看流程、权利和尽调页面。',
+  'Use the lifecycle desk to sign the demo subscription so the wallet ends up with a visible receipt position.':
+    '用生命周期操作台签署演示认购，让钱包里出现可见的凭证仓位。',
+  'Review AI recommendation': '查看 AI 推荐',
+  'Wallet-linked badge carry-over': '钱包绑定徽章继承',
+  'Welcome badge: Minted': '欢迎徽章：已铸造',
+  'Briefing badge: Ready or minted': '简报徽章：可领取或已铸造',
+  'Quiz badge: Ready or minted': '测验徽章：可领取或已铸造',
+  'Beginner note: when a homepage badge is minted, look for it in the connected wallet collectibles / NFT view. Wealth keeps reading the same wallet-linked progress.':
+    '新手提示：主页徽章铸造后，可以在已连接钱包的收藏品 / NFT 视图里查看。理财页会继续读取同一个钱包进度。',
+  'Product types': '产品类型',
+  'Choose the product wrapper first': '先选择产品包装类型',
+  'Hover for the long explanation': '悬停查看完整解释',
+  'All product types': '全部产品类型',
+  'Cash & Treasury': '现金与国债',
+  'Auto / Managed': '自动 / 托管',
+  Recommended: '推荐',
+  'Click any card to open detail': '点击任意卡片打开详情',
+  'Fits this wallet because': '适合这个钱包，因为',
+  'Signals used: wallet connection, homepage learning, quiz, paper trading, flash-style sophistication, collateral, and prior settlement activity when available.':
+    '使用的信号：钱包连接、主页学习、测验、模拟交易、类闪电贷复杂度、抵押品，以及可用时的历史结算活动。',
+  'Open detail': '打开详情',
+  'My wealth positions': '我的理财仓位',
+  'Wallet-linked vault holdings': '钱包绑定金库持仓',
+  'Reset wealth demo': '重置理财演示',
+  'Recent wallet activity': '最近钱包活动',
+  'Latest signed actions': '最新签署操作',
+  'productized as a buyable wealth receipt, not as a raw strategy terminal.':
+    '被产品化为可购买的理财凭证，而不是原始策略终端。',
+  'Static demo snapshot': '静态演示快照',
+  'What you own': '你持有什么',
+  'Return source': '收益来源',
+  Liquidity: '流动性',
+  'Main risk': '主要风险',
+  Rights: '权利',
+  'Modeled premium': '模型化权利金',
+  'Modeled premium basis': '模型化权利金基础',
+  'Outcome cap': '结果上限',
+  'Modeled outcome cap': '模型化结果上限',
+  'Modeled income': '模型化收入',
+  'Modeled option-premium income': '模型化期权权利金收入',
+  'Conditional coupon': '条件票息',
+  'Modeled conditional coupon': '模型化条件票息',
+  'Base asset': '基础资产',
+  Hard: '较难',
+  'This is closer to a conditional BTC order with premium than a savings product. The important question is what asset you may receive at settlement.':
+    '这更像带权利金的条件式 BTC 订单，而不是储蓄产品。关键问题是结算时你可能收到哪种资产。',
+  'This is for learning a protected-growth style payoff: you can participate in some ETH upside, but you trade away flexibility and some upside for a defined outcome.':
+    '这是用来学习保护型成长收益结构的：你可以参与部分 ETH 上涨，但会用灵活性和部分上涨空间换取明确结果。',
+  'This is not regular interest. You are earning a modeled premium for accepting capped upside, downside exposure, and monthly settlement timing.':
+    '这不是普通利息。你获得的是模型化权利金，代价是接受上涨封顶、下行敞口和月度结算节奏。',
+  'Capped upside': '封顶上涨空间',
+  'capped upside': '封顶上涨空间',
+  'Capital gains and losses from listed-equity or ETF exposure.':
+    '来自上市股票或 ETF 敞口的资本收益和亏损。',
+  'Capital gains and losses': '资本收益和亏损',
+  'Use this when the user understands the target price and is comfortable ending the week with either ETH or USDC.':
+    '当用户理解目标价，并能接受本周结束时持有 ETH 或 USDC 任一结果时，才适合使用。',
+  'This is the higher-volatility teaching version: the premium is larger, but so is the chance that settlement asset surprises the user.':
+    '这是更高波动的教学版本：权利金更高，但结算资产让用户意外的概率也更高。',
+  'This is a timeline product. You watch observation dates and coupon conditions, then settle when the note calls or matures.':
+    '这是时间线型产品。你需要关注观察日和票息条件，然后在票据自动赎回或到期时结算。',
+  'Click this product to view details, read AI diligence, then buy or pledge from the detail page.':
+    '点击该产品查看详情、阅读 AI 尽调，然后在详情页购买或质押。',
+  'Wallet owns': '钱包持有',
+  Pledged: '已质押',
+  'Selected product': '已选产品',
+  'Latest NAV': '最新净值',
+  'Min ticket': '最低申购',
+  Available: '可用',
+  'Detail focus': '详情焦点',
+  'Buy / settle / pledge': '买入 / 结算 / 质押',
+  Overview: '概览',
+  Timeline: '时间线',
+  'AI Diligence': 'AI 尽调',
+  'What to do here. Use this after reading the overview and AI diligence. Buy, settlement, rollover, transfer, and pledge all live in the same lifecycle desk.':
+    '这里用来执行下一步。阅读概览和 AI 尽调后，在同一个生命周期操作台里完成买入、结算、展期、转让和质押。',
+  'Buy, hold, and exit flow': '买入、持有与退出流程',
+  'Subscribe amount': '认购金额',
+  'Current shares': '当前份额',
+  'Current value': '当前价值',
+  'Free to redeem': '可赎回份额',
+  'Pledged shares': '已质押份额',
+  'Route support': '路线支持额度',
+  'Redemption / settlement timing': '赎回 / 结算时间',
+  'Maturity or event only': '仅到期或事件触发',
+  '7-day target-price settlement. No ordinary early redemption in this beginner flow.':
+    '7 天目标价结算。该新手流程不提供普通提前赎回。',
+  'No early redeem': '不可提前赎回',
+  'Review and buy': '检查并买入',
+  Reset: '重置',
+  'Settlement desk': '结算操作台',
+  'Settlement action': '结算操作',
+  'Settle into PT cash': '结算为 PT 现金',
+  'Transfer target': '转入目标',
+  'Projected NAV': '预计净值',
+  'Free receipt value': '可用凭证价值',
+  'Projected gain': '预计收益',
+  'Sign settlement action': '签署结算操作',
+  'Pledge support': '质押支持',
+  'Use this receipt as collateral': '用该凭证作抵押',
+  'Support line target': '支持额度目标',
+  'Support target': '支持目标',
+  'Collateral value': '抵押价值',
+  'Max borrow': '最高借入',
+  'Current LTV': '当前 LTV',
+  'Pledge APY': '质押年化',
+  'Open support line on': '开启支持额度：',
+  'Release support': '释放支持',
+  'Flexible support can release anytime. Fixed support uses the same timeline before release.':
+    '灵活支持可随时释放；固定支持需要先走同一条时间线再释放。',
+  'Release anytime': '随时释放',
+  'Flexible': '灵活',
+  'Release can be signed without waiting for the timeline.': '无需等待时间线即可签署释放。',
+  'Return leaderboard': '收益排行榜',
+  'Top 10 shelves by displayed yield, premium, coupon, or outcome metric. AI score stays beside each row so return never appears without diligence context.':
+    '按展示收益、权利金、票息或结果指标排序的前 10 个货架。AI 分数始终在旁边，避免收益脱离尽调语境单独出现。',
+  'Click any row to open that product and jump straight to its detail section. The sidebar stays focused on the top 10 instead of paging through the shelf.':
+    '点击任意行即可打开该产品并跳到详情区。侧栏专注展示前 10 名，而不是翻完整个货架。',
+  'Product compare': '产品对比',
+  'Compare current product paths without squeezing the chart': '在不压缩图表的情况下对比当前产品路径',
+  'Use current category set': '使用当前分类集合',
+  'Compare window': '对比窗口',
+  'Add product': '添加产品',
+  'Choose a product': '选择产品',
+  Remove: '移除',
+  Latest: '最新',
+  Rebased: '重设基准后',
+  'Open support line': '开启支持额度',
+  'Await wallet': '等待钱包确认',
   'Human mode': '人话模式',
   'Protocol mode': '协议模式',
   'Top 10 shelves by displayed annual yield. AI score stays beside each row so return never appears without diligence context.':
@@ -208,6 +430,165 @@ const EN_TO_ZH = {
   'Pure price move before carry drag, fees, and estimated tax.': '仅看价格变化，不含持有成本、手续费和预估税费。',
   'Estimated net value if every open position exited at the current replay cursor.':
     '如果所有持仓都在当前回放位置卖出后的预估净值。',
+  'How buying power works': '购买力如何计算',
+  'Ranked by total replay return. Each wallet appears once using its best recorded result, and every confirmed local submission is merged into a device-local archive so other wallets stay on this board.':
+    '按总回放收益排序。每个钱包只用最佳记录出现一次，每次确认的本地提交都会合并进设备本地档案，让其他钱包继续留在榜上。',
+  'No submitted replay scores yet': '还没有提交的回放分数',
+  'Finish one positive replay loop and submit the score on Sepolia to bring the leaderboard back to life.':
+    '完成一次正收益回放闭环，并在 Sepolia 提交分数，让排行榜恢复活跃。',
+  'Replay score is now tied to the same PnL bridge used in the desk: cumulative realized PnL from closed sells plus current open net PnL from any remaining positions.':
+    '回放分数现在与操作台使用同一套 PnL 桥接：已平仓卖出的累计已实现 PnL，加上剩余持仓的当前未平仓净 PnL。',
+  'Realized closed PnL:': '已平仓实现 PnL：',
+  'Open net PnL:': '未平仓净 PnL：',
+  'Replay score:': '回放分数：',
+  'Use the same wallet that already completed onboarding, then finish at least one buy or sell replay trade in Paper Trading.':
+    '使用已完成 onboarding 的同一个钱包，然后在模拟交易里至少完成一次回放买入或卖出。',
+  'Buy / sell usage': '买入 / 卖出使用记录',
+  'Base check': '基础检查',
+  'Leaderboard usage': '排行榜使用记录',
+  'Low-buy / high-sell': '低买 / 高卖',
+  'Spot loop': '现货闭环',
+  'Directional perp leg': '方向性合约腿',
+  'Perp Leverage': '合约杠杆',
+  'Hedge workflow': '对冲流程',
+  'Protective Hedge': '保护性对冲',
+  'Wait to be minted on Sepolia': '等待在 Sepolia 铸造',
+  'Core progress': '核心进度',
+  'All core checks above are already recognized for this wallet, so the replay badge is now ready to be minted.':
+    '上面的核心检查已被该钱包识别，因此回放徽章现在可以铸造。',
+  'Wait to be minted': '等待铸造',
+  'Home-page onboarding inherited': '已继承主页 onboarding',
+  'This wallet already matches the wallet task from the Home page, so the inheritance check is complete here.':
+    '这个钱包已经匹配主页的钱包任务，因此这里的继承检查已完成。',
+  USED: '已使用',
+  OK: '完成',
+  TODO: '待办',
+  'This wallet already used at least one replay buy or sell action, so the replay surface is recognized as completed.':
+    '这个钱包已至少使用过一次回放买入或卖出操作，因此回放界面已被识别为完成。',
+  'This collectible unlocks as soon as every core checklist row above is completed for the same wallet.':
+    '同一个钱包完成上方所有核心清单后，该收藏品就会解锁。',
+  'Start from the asset layer, then move into the play layer':
+    '先从资产层开始，再进入玩法层',
+  'All risk': '全部风险',
+  'low risk': '低风险',
+  'medium risk': '中风险',
+  'high risk': '高风险',
+  risk: '风险',
+  'All lockup': '全部锁定期',
+  'Flexible exit': '灵活退出',
+  'Can lock': '可锁定',
+  'Replay shelf': '回放货架',
+  'Want to learn more?': '想了解更多？',
+  'hedge default': '默认对冲',
+  'DIRECT hedge default': '直接持仓默认对冲',
+  Crypto: '加密资产',
+  'Active on replay desk': '已在回放操作台选中',
+  '7D move': '7 日变化',
+  'Exit / lockup': '退出 / 锁定',
+  'T+0 / Direct market replay': 'T+0 / 直接市场回放',
+  'Tutorial path': '教程路径',
+  'BUY -> SELL': '买入 -> 卖出',
+  'Click "Start case"': '点击“开始案例”',
+  'Click "Stop day"': '点击“停止日”',
+  'Click "Stop day" or the dock preset': '点击“停止日”或浮动栏预设',
+  'Fees to auto-sell': '自动卖出费用',
+  'Buy entry drag': '买入进场成本',
+  'Venue, spread, FX, and routing cost paid when the base ticket opens.':
+    '基础订单打开时支付的场地、点差、汇兑和路由成本。',
+  'Carry while holding': '持有期间成本',
+  'Carry accumulates over about 30D before auto-sell.': '自动卖出前大约 30 天会累计持有成本。',
+  'Auto-sell drag': '自动卖出成本',
+  'Shows once the replay has a forward exit bar.': '当回放存在未来退出 K 线时显示。',
+  'Est. take-home': '预计到手',
+  'Net preview after the current timed exit path, around 0 PT value.':
+    '当前定时退出路径后的净额预览，约为 0 PT。',
+  'Auto-sell is the cleanest way to compare headline price move versus real take-home after route drag.':
+    '自动卖出是对比标题价格变化和扣除路由成本后真实到手金额的最清晰方式。',
+  'Replay chart': '回放图表',
+  'Asset layer': '资产层',
+  'Own vs Synthetic': '真实持有 vs 合成敞口',
+  'Direct spot exposure': '直接现货敞口',
+  'Market exposure': '市场敞口',
+  'Can Auto-Act': '可自动执行',
+  'Alerts / DCA / rebalance': '提醒 / 定投 / 再平衡',
+  Volume: '成交量',
+  'Market cap': '市值',
+  '1 hour': '1 小时',
+  '6 hour': '6 小时',
+  '1 day': '1 天',
+  '2 weeks': '2 周',
+  '1 month': '1 个月',
+  '2 months': '2 个月',
+  'Replay desk': '回放操作台',
+  'Advanced on': '高级模式开启',
+  'Route notes': '路线说明',
+  'Practice examples': '练习案例',
+  Stop: '停止',
+  'Case days': '案例天数',
+  'Start case': '开始案例',
+  'Stop day': '停止日',
+  'Available cash range': '可用现金范围',
+  Suggested: '建议值',
+  '1/4 size': '四分之一仓位',
+  'Half size': '半仓',
+  'Auto-sell after hold': '持有后自动卖出',
+  'Holding period': '持有期',
+  'Use the floating auto-sell timeline for the shared slider, 7D / 14D / 30D presets, and multi-position estimates.':
+    '使用浮动自动卖出时间线来控制共享滑杆、7D / 14D / 30D 预设和多仓位估算。',
+  'Entry anchor': '建仓锚点',
+  'Auto-sell bar': '自动卖出 K 线',
+  'Sell size': '卖出数量',
+  'Buy first for timed exit': '先买入才能定时退出',
+  'Buy first': '请先买入',
+  'What happens?': '会发生什么？',
+  Buy: '买入',
+  Sell: '卖出',
+  'Current replay ticket': '当前回放订单',
+  'Trade focus': '交易焦点',
+  'Trade date': '交易日期',
+  'Trade price': '交易价格',
+  'Ticket notional': '订单名义金额',
+  'Estimated buy size': '预计买入数量',
+  'Open position now': '当前开仓数量',
+  'Position at bar': '该 K 线持仓',
+  'Trade exit value': '交易退出价值',
+  'Trade realized PnL': '交易已实现 PnL',
+  'Trade net PnL': '交易净 PnL',
+  'Evidence before trade': '交易前证据',
+  'Structure clarity': '结构清晰度',
+  'Pricing / NAV transparency': '价格 / 净值透明度',
+  'Liquidity / redemption': '流动性 / 赎回',
+  'Underlying quality': '底层质量',
+  'above avg': '高于平均',
+  'Near avg': '接近平均',
+  'below avg': '低于平均',
+  'Direct market replay': '直接市场回放',
+  'The replay uses a bundled price path or local product proxy.':
+    '该回放使用打包价格路径或本地产品代理。',
+  'T+0 / Replay buy / sell through the spot desk': 'T+0 / 通过现货操作台回放买卖',
+  'What does the user own?': '用户持有什么？',
+  'How is return generated?': '收益如何产生？',
+  'Can the user redeem or exit?': '用户能否赎回或退出？',
+  'Current positions': '当前持仓',
+  Product: '产品',
+  Units: '数量',
+  'Avg entry': '平均入场价',
+  Mark: '标记价',
+  'Gross value': '毛价值',
+  'Holding days': '持有天数',
+  'Carry drag': '持有成本',
+  'Net exit': '净退出',
+  Realized: '已实现',
+  'Trade history': '交易记录',
+  'Replay fills': '回放成交',
+  Side: '方向',
+  Notional: '名义金额',
+  Fees: '费用',
+  Tax: '税费',
+  Carry: '持有成本',
+  Previous: '上一页',
+  Page: '页',
+  Showing: '显示',
   'Replay return leaderboard': '回放收益排行榜',
   'REPLAY LEADERBOARD': '回放排行榜',
   'Account returns': '账户收益',
@@ -479,6 +860,27 @@ const EN_TO_ZH = {
 const DYNAMIC_RULES = [
   { pattern: /^Wallet connected (.+)$/i, replace: '钱包已连接 $1' },
   {
+    pattern: /^You start with (.+) PT, each completed badge adds (.+) PT, and no real funds are involved\.$/i,
+    replace: '初始会发放 $1 PT，每完成一个徽章再增加 $2 PT，全程不涉及真实资金。'
+  },
+  {
+    pattern: /^Wallet memory: remaining (.+), total policy (.+), paper cash (.+), wealth cash (.+)\.$/i,
+    replace: '钱包记忆：剩余 $1，总策略资金 $2，模拟交易现金 $3，理财现金 $4。'
+  },
+  {
+    pattern: /^Unified wallet memory: policy (.+), remaining (.+), paper cash (.+), wealth cash (.+)\.$/i,
+    replace: '统一钱包记忆：策略资金 $1，剩余 $2，模拟交易现金 $3，理财现金 $4。'
+  },
+  {
+    pattern: /^Unified wallet memory: paper cash (.+), wealth cash (.+), remaining PT (.+)\.$/i,
+    replace: '统一钱包记忆：模拟交易现金 $1，理财现金 $2，剩余 PT $3。'
+  },
+  {
+    pattern: /^Wallet record keeps (.+) PT remaining\. Unrealized gross PnL (.+)\. Unrealized net PnL (.+)\.$/i,
+    replace: '钱包记录保留 $1 PT 剩余额度。未实现毛收益 $2。未实现净收益 $3。'
+  },
+  { pattern: /^Linked wallet cash (.+) PT included\.$/i, replace: '已包含绑定钱包现金 $1 PT。' },
+  {
     pattern: /^Core paper cash starts at (.+) PT\. Each completed onboarding milestone adds (.+) PT of replay credit\.$/i,
     replace: '基础模拟资金从 $1 PT 开始，每完成一个 onboarding 里程碑会增加 $2 PT 的回放额度。'
   },
@@ -486,13 +888,21 @@ const DYNAMIC_RULES = [
     pattern: /^Demo wealth cash starts at (.+) PT\. Each completed onboarding milestone adds (.+) PT of preview buying power\.$/i,
     replace: '理财页演示资金从 $1 PT 开始，每完成一个 onboarding 里程碑会额外增加 $2 PT 的预览购买力。'
   },
+  { pattern: /^Next task: (.+)$/i, replace: '下一步任务：$1' },
+  { pattern: /^Next wealth task: (.+)$/i, replace: '下一步理财任务：$1' },
   { pattern: /^Next replay task: (.+)$/i, replace: '下一个回放任务：$1' },
+  { pattern: /^(\d+)\/(\d+) complete$/i, replace: '$1/$2 完成' },
   { pattern: /^Task (\d+) (.+)$/i, replace: '任务 $1 $2' },
   { pattern: /^Task (\d+)$/i, replace: '任务 $1' },
   { pattern: /^#(\d+)$/i, replace: '#$1' },
   { pattern: /^(\d+) products in view$/i, replace: '$1 个产品' },
+  { pattern: /^(\d+) products$/i, replace: '$1 个产品' },
+  { pattern: /^(\d+) wallets?$/i, replace: '$1 个钱包' },
   { pattern: /^(\d+) shown$/i, replace: '显示 $1 条' },
   { pattern: /^(\d+)\/(\d+) unlocked$/i, replace: '已解锁 $1/$2' },
+  { pattern: /^Days forward: (.+) days forward$/i, replace: '时间向前：$1 天' },
+  { pattern: /^Max borrow @ (.+)$/i, replace: '最高可借 @$1' },
+  { pattern: /^Open support line on (.+)$/i, replace: '开启 $1 支持额度' },
   { pattern: /^Latest claim tx: (.+)$/i, replace: '最近一次 claim 交易：$1' },
   { pattern: /^Latest score tx: (.+)$/i, replace: '最近一次分数交易：$1' },
   { pattern: /^Replay net PnL: (.+)$/i, replace: 'Replay 净收益：$1' },
@@ -500,6 +910,24 @@ const DYNAMIC_RULES = [
   { pattern: /^Closed trades: (.+)$/i, replace: '已平仓交易：$1' },
   { pattern: /^Daily submit usage: (.+)$/i, replace: '当日提交次数：$1' },
   { pattern: /^account value (.+)$/i, replace: '账户价值 $1' },
+  { pattern: /^Open (.+) \/ Close (.+)$/i, replace: '开盘 $1 / 收盘 $2' },
+  { pattern: /^Chart jumps to (.+)\. Press "Buy" for (.+) at about (.+)\.$/i, replace: '图表跳到 $1。点击“买入”以约 $3 买入 $2。' },
+  {
+    pattern: /^Stop day is (.+)\. The dock window becomes (.+), so multiple open products move together\.$/i,
+    replace: '停止日是 $1。浮动栏窗口变为 $2，因此多个未平仓产品会一起移动。'
+  },
+  {
+    pattern: /^Net result is modeled at (.+) after (.+) of entry, exit, tax, and carry drag\.$/i,
+    replace: '模型化净结果为 $1，已扣除 $2 的进场、退出、税费和持有成本。'
+  },
+  {
+    pattern: /^Guided (.+) buy\/sell drill: click "Start case", press "Buy", then use "Stop day" at (.+) or the (.+) dock preset\. Gross move (.+); modeled route drag (.+)\.$/i,
+    replace: '引导式 $1 买卖练习：点击“开始案例”，点击“买入”，然后在 $2 使用“停止日”或 $3 浮动栏预设。毛价格变化 $4；模型化路线成本 $5。'
+  },
+  { pattern: /^net (.+)$/i, replace: '净收益 $1' },
+  { pattern: /^Up most #(\d+)$/i, replace: '上涨最多 #$1' },
+  { pattern: /^Small loss$/i, replace: '小幅亏损' },
+  { pattern: /^Page (\d+) \/ (\d+) \| Showing (.+) of (.+) fills$/i, replace: '第 $1 / $2 页 | 显示第 $3 条，共 $4 条成交' },
   { pattern: /^(\d+) tasks?$/i, replace: '$1 个任务' }
 ];
 
@@ -509,6 +937,10 @@ function translateTextNode(text) {
   const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   let translated = text;
 
+  DYNAMIC_RULES.forEach(({ pattern, replace }) => {
+    translated = translated.replace(pattern, replace);
+  });
+
   Object.entries(EN_TO_ZH)
     .sort((left, right) => String(right[0]).length - String(left[0]).length)
     .forEach(([english, chinese]) => {
@@ -517,24 +949,22 @@ function translateTextNode(text) {
       translated = translated.replace(flexiblePattern, chinese);
     });
 
-  DYNAMIC_RULES.forEach(({ pattern, replace }) => {
-    translated = translated.replace(pattern, replace);
-  });
-
   return translated;
 }
 
-function resolveOriginalNodeText(liveText, storedOriginalText, uiLanguage) {
+function resolveOriginalNodeText(liveText, storedOriginalText) {
+  const normalizedLiveText = liveText || '';
+
   if (storedOriginalText == null) {
-    return liveText || '';
+    return normalizedLiveText;
   }
 
-  if (uiLanguage === 'en') {
-    return liveText !== storedOriginalText ? liveText : storedOriginalText;
+  if (normalizedLiveText === storedOriginalText) {
+    return storedOriginalText;
   }
 
   const translatedStoredText = translateTextNode(storedOriginalText);
-  return liveText !== storedOriginalText && liveText !== translatedStoredText ? liveText : storedOriginalText;
+  return normalizedLiveText === translatedStoredText ? storedOriginalText : normalizedLiveText;
 }
 
 function walkAndTranslate(root, uiLanguage, textOriginalMap, attrOriginalMap) {
@@ -546,7 +976,7 @@ function walkAndTranslate(root, uiLanguage, textOriginalMap, attrOriginalMap) {
   while (currentNode) {
     if (currentNode.nodeType === Node.TEXT_NODE) {
       const liveText = currentNode.textContent || '';
-      const originalText = resolveOriginalNodeText(liveText, textOriginalMap.get(currentNode), uiLanguage);
+      const originalText = resolveOriginalNodeText(liveText, textOriginalMap.get(currentNode));
       const nextText = uiLanguage === 'zh' ? translateTextNode(originalText) : originalText;
 
       textOriginalMap.set(currentNode, originalText);
@@ -555,19 +985,19 @@ function walkAndTranslate(root, uiLanguage, textOriginalMap, attrOriginalMap) {
       }
     } else if (currentNode.nodeType === Node.ELEMENT_NODE) {
       const originalAttrs = attrOriginalMap.get(currentNode) || {};
+      let hasTranslatableAttr = false;
 
       TRANSLATABLE_ATTRIBUTES.forEach((attributeName) => {
         const attrValue = currentNode.getAttribute?.(attributeName);
         if (attrValue != null) {
-          originalAttrs[attributeName] = resolveOriginalNodeText(
-            attrValue,
-            originalAttrs[attributeName],
-            uiLanguage
-          );
+          hasTranslatableAttr = true;
+          originalAttrs[attributeName] = resolveOriginalNodeText(attrValue, originalAttrs[attributeName]);
         }
       });
 
-      attrOriginalMap.set(currentNode, originalAttrs);
+      if (hasTranslatableAttr) {
+        attrOriginalMap.set(currentNode, originalAttrs);
+      }
 
       TRANSLATABLE_ATTRIBUTES.forEach((attributeName) => {
         if (!(attributeName in originalAttrs)) return;
@@ -628,6 +1058,7 @@ export function useDomTranslation(uiLanguage, selectors = ['.app-shell']) {
     if (typeof window === 'undefined' || typeof document === 'undefined') return undefined;
 
     let applying = false;
+    let scheduledFrame = 0;
 
     const applyTranslation = () => {
       if (applying) return;
@@ -642,12 +1073,17 @@ export function useDomTranslation(uiLanguage, selectors = ['.app-shell']) {
       applying = false;
     };
 
+    const scheduleTranslation = () => {
+      if (applying || scheduledFrame) return;
+      scheduledFrame = window.requestAnimationFrame(() => {
+        scheduledFrame = 0;
+        applyTranslation();
+      });
+    };
+
     applyTranslation();
 
-    const observer = new MutationObserver(() => {
-      if (applying) return;
-      window.requestAnimationFrame(applyTranslation);
-    });
+    const observer = new MutationObserver(scheduleTranslation);
 
     observer.observe(document.body, {
       childList: true,
@@ -657,7 +1093,12 @@ export function useDomTranslation(uiLanguage, selectors = ['.app-shell']) {
       attributeFilter: TRANSLATABLE_ATTRIBUTES
     });
 
-    return () => observer.disconnect();
+    return () => {
+      if (scheduledFrame) {
+        window.cancelAnimationFrame(scheduledFrame);
+      }
+      observer.disconnect();
+    };
   }, [selectorKey, uiLanguage]);
 }
 

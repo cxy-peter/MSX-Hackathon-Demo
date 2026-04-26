@@ -1933,7 +1933,7 @@ export default function App() {
   const firstPendingLearnQuest =
     learnQuestCards.find((item) => item.status === 'Done' || item.status === 'To do' || item.status === 'Requires wallet' || item.status === 'Checking' || item.status.includes('/3'))?.id || 'wallet';
   const collectibleHelperCopy =
-    'Beginner note: when a homepage badge is minted, look for it in the connected wallet collectibles / NFT view. Wealth keeps reading the same wallet-linked progress.';
+    'Beginner note: after a badge is minted, look for it in the connected wallet collectibles / NFT view. The demo state and the collectible should use the same wallet account.';
 
   useEffect(() => {
     if (activeCoreQuest !== null && !['wallet', 'mint'].includes(activeCoreQuest)) {
@@ -2697,9 +2697,6 @@ export default function App() {
                       ? t('Connecting to MetaMask...', '正在连接 MetaMask...')
                       : t('Connect MetaMask', '连接 MetaMask')}
                 </button>
-                <button className="ghost-btn compact wallet-nickname-top-btn" onClick={openWalletModal}>
-                  {walletNickname ? `Nickname: ${walletNickname}` : 'Wallet nickname'}
-                </button>
               </div>
             </div>
             <div className="header-admin-row">
@@ -2711,7 +2708,7 @@ export default function App() {
         </header>
 
         <div className="demo-only-banner">
-          <strong>Demo only.</strong> Receipt balances, PT cash, subscriptions, pledges, and settlement actions on this page stay in local demo or testnet-style state. No real stablecoin or live-fund transfer happens here.
+          <strong>Demo only.</strong> Wallet connects, PT rewards, badge mints, and receipt flows here are simulated or testnet-style. No real stablecoin, bank, or live-fund transfer happens in this experience.
         </div>
 
         <main>
@@ -2941,9 +2938,6 @@ export default function App() {
                     </div>
                     <div className="learn-quest-tile-title">{quest.title}</div>
                     <div className="learn-quest-tile-copy">{quest.hint}</div>
-                    {index === 1 ? (
-                      <div className="wealth-inline-note paper-inline-note home-second-task-note">{collectibleHelperCopy}</div>
-                    ) : null}
                   </button>
                 ))}
               </div>
