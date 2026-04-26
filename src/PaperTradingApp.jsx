@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import {
   WagmiProvider,
@@ -195,6 +195,10 @@ const PORTFOLIO_COMBO_DEFAULT_START_DATE = '2025-04-21';
 const PORTFOLIO_COMBO_DEFAULT_END_DATE = '2026-04-21';
 const PORTFOLIO_COMBO_WEIGHT_STEP = 10;
 const PORTFOLIO_COMBO_MAX_SUGGESTION_ASSETS = 4;
+const REPLAY_PRACTICE_CASE_CACHE_LIMIT = 48;
+const replayPracticeCaseBarsIds = new WeakMap();
+const replayPracticeCaseCache = new Map();
+let replayPracticeCaseBarsIdCounter = 0;
 const HEDGE_PROTECTION_EFFECTIVENESS = {
   direct: 1,
   basket: 0.75,
@@ -5741,8 +5745,77 @@ function buildReplayPracticeCases(bars = [], mode = 'spot', options = {}) {
     .filter(Boolean);
 }
 
+function getReplayPracticeBarsCacheId(bars = []) {
+  if (!Array.isArray(bars)) return 'no-bars';
+  if (!replayPracticeCaseBarsIds.has(bars)) {
+    replayPracticeCaseBarsIdCounter += 1;
+    replayPracticeCaseBarsIds.set(bars, `bars-${replayPracticeCaseBarsIdCounter}`);
+  }
+
+  const firstBar = bars[0];
+  const lastBar = bars[bars.length - 1];
+  return [
+    replayPracticeCaseBarsIds.get(bars),
+    bars.length,
+    firstBar?.ts || '',
+    firstBar?.close ?? '',
+    lastBar?.ts || '',
+    lastBar?.close ?? ''
+  ].join(':');
+}
+
+function getReplayPracticeCaseCacheKey(bars = [], mode = 'spot', options = {}) {
+  const controls = options?.strategyControls || {};
+  const strategyControlKey = [
+    controls.downsidePct,
+    controls.profitHarvestPct,
+    controls.upsideCapPct,
+    controls.premiumPct,
+    controls.strikePct
+  ]
+    .map((value) => roundNumber(Number(value || 0), 4))
+    .join(',');
+
+  return [
+    getReplayPracticeBarsCacheId(bars),
+    mode,
+    options?.product?.id || '',
+    roundNumber(Number(options?.notional || 0), 2),
+    roundNumber(Number(options?.leverage || 1), 4),
+    roundNumber(Number(options?.marginCapital || 0), 2),
+    roundNumber(Number(options?.flashLoanAmount || 0), 2),
+    roundNumber(Number(options?.flashLoanFee || 0), 2),
+    roundNumber(Number(options?.hedgeSleeveNotional || 0), 2),
+    roundNumber(Number(options?.hedgeTicketNotional || 0), 2),
+    roundNumber(Number(options?.hedgeMarginCapital || 0), 2),
+    roundNumber(Number(options?.hedgeLeverage || 1), 4),
+    options?.strategyTemplateId || '',
+    strategyControlKey
+  ].join('|');
+}
+
+function buildReplayPracticeCasesCached(bars = [], mode = 'spot', options = {}) {
+  const cacheKey = getReplayPracticeCaseCacheKey(bars, mode, options);
+  if (replayPracticeCaseCache.has(cacheKey)) {
+    const cachedValue = replayPracticeCaseCache.get(cacheKey);
+    replayPracticeCaseCache.delete(cacheKey);
+    replayPracticeCaseCache.set(cacheKey, cachedValue);
+    return cachedValue;
+  }
+
+  const nextValue = buildReplayPracticeCases(bars, mode, options);
+  replayPracticeCaseCache.set(cacheKey, nextValue);
+
+  while (replayPracticeCaseCache.size > REPLAY_PRACTICE_CASE_CACHE_LIMIT) {
+    const oldestKey = replayPracticeCaseCache.keys().next().value;
+    replayPracticeCaseCache.delete(oldestKey);
+  }
+
+  return nextValue;
+}
+
 function buildReplayPracticeCase(bars = [], mode = 'spot', options = {}) {
-  return buildReplayPracticeCases(bars, mode, options)[0] || null;
+  return buildReplayPracticeCasesCached(bars, mode, options)[0] || null;
 }
 
 function formatHoldingPresetLabel(days) {
@@ -6852,6 +6925,10 @@ function PaperTradingInner() {
   const [pendingPerpDirectionAfterQuote, setPendingPerpDirectionAfterQuote] = useState(null);
   const flashLoanQuoteContextRef = useRef('');
   const tradeAmountBeforeMaxRef = useRef({ input: '2500', amount: 2500 });
+  const tradeAmountSliderFrameRef = useRef(null);
+  const tradeAmountSliderPendingRef = useRef(null);
+  const hedgeSleeveSliderFrameRef = useRef(null);
+  const hedgeSleeveSliderPendingRef = useRef(null);
   const hedgeFocusSyncedRef = useRef(false);
   const replayFillsCountRef = useRef(0);
   const [hoveredReplayIndex, setHoveredReplayIndex] = useState(null);
@@ -6972,6 +7049,18 @@ function PaperTradingInner() {
     strategyAiTemplateCompleted: false,
     strategyLeaderboardUploaded: false
   });
+
+  useEffect(() => {
+    return () => {
+      if (typeof window === 'undefined') return;
+      if (tradeAmountSliderFrameRef.current !== null) {
+        window.cancelAnimationFrame(tradeAmountSliderFrameRef.current);
+      }
+      if (hedgeSleeveSliderFrameRef.current !== null) {
+        window.cancelAnimationFrame(hedgeSleeveSliderFrameRef.current);
+      }
+    };
+  }, []);
 
   const metaMaskConnector = useMemo(
     () => connectors.find((connector) => connector.name.toLowerCase().includes('metamask')) || connectors[0],
@@ -7539,9 +7628,15 @@ function PaperTradingInner() {
   const selectedView = productViews[selectedProductId];
   const selectedRangeOptions = getRangeOptionsForInterval(selectedView?.interval || selectedProduct.defaultInterval);
   const learnMoreProduct = learnMoreProductId ? productMap[learnMoreProductId] || getProductById(learnMoreProductId) : null;
-  const learnMoreProductGuide = learnMoreProduct ? getReplayProductGuide(learnMoreProduct) : null;
-  const selectedInsight = PAPER_PRODUCT_INSIGHTS[selectedProductId] || buildFallbackProductInsight(selectedProduct);
-  const selectedProductGuide = getReplayProductGuide(selectedProduct);
+  const learnMoreProductGuide = useMemo(
+    () => (learnMoreProduct ? getReplayProductGuide(learnMoreProduct) : null),
+    [learnMoreProduct]
+  );
+  const selectedInsight = useMemo(
+    () => PAPER_PRODUCT_INSIGHTS[selectedProductId] || buildFallbackProductInsight(selectedProduct),
+    [selectedProduct, selectedProductId]
+  );
+  const selectedProductGuide = useMemo(() => getReplayProductGuide(selectedProduct), [selectedProduct]);
   const selectedPaperDiligenceProduct = useMemo(
     () => buildPaperDiligenceProduct(selectedProduct, selectedInsight, selectedProductGuide),
     [selectedProduct, selectedInsight, selectedProductGuide]
@@ -9672,27 +9767,49 @@ function PaperTradingInner() {
     flashLoanAmount: activePerpLeg ? activePerpSnapshotFlashLoanAmount : routePreviewFlashNotional,
     flashLoanFee: activePerpLeg ? activePerpSnapshotFlashLoanFee : routePreviewFlashPremiumEstimate
   });
-  const deskSimulation = buildDeskSimulation({
-    product: selectedProduct,
-    guide: selectedProductGuide,
-    routeId: selectedAdvancedRoute,
-    structureMode: effectiveDeskStructureMode,
-    amount: Number(tradeAmount || 0),
-    holdingDays: timedExitRequestedDays,
-    riskPreference: simulationRiskPreference,
-    allowLockup,
-    acceptVolatility: acceptPrincipalVolatility,
-    routeLeverage: contractLeverage,
-    routeBufferRatio,
-    routeSettlementMode,
-    focusBar: replayFocus.bar,
-    selectedView,
-    rewardCredit,
-    wealthDeskState: {
-      ...wealthDeskState,
-      paperCash: availableCash
-    }
-  });
+  const deskSimulation = useMemo(
+    () =>
+      buildDeskSimulation({
+        product: selectedProduct,
+        guide: selectedProductGuide,
+        routeId: selectedAdvancedRoute,
+        structureMode: effectiveDeskStructureMode,
+        amount: Number(tradeAmount || 0),
+        holdingDays: timedExitRequestedDays,
+        riskPreference: simulationRiskPreference,
+        allowLockup,
+        acceptVolatility: acceptPrincipalVolatility,
+        routeLeverage: contractLeverage,
+        routeBufferRatio,
+        routeSettlementMode,
+        focusBar: replayFocus.bar,
+        selectedView,
+        rewardCredit,
+        wealthDeskState: {
+          ...wealthDeskState,
+          paperCash: availableCash
+        }
+      }),
+    [
+      acceptPrincipalVolatility,
+      allowLockup,
+      availableCash,
+      contractLeverage,
+      effectiveDeskStructureMode,
+      replayFocus.bar,
+      rewardCredit,
+      routeBufferRatio,
+      routeSettlementMode,
+      selectedAdvancedRoute,
+      selectedProduct,
+      selectedProductGuide,
+      selectedView,
+      simulationRiskPreference,
+      timedExitRequestedDays,
+      tradeAmount,
+      wealthDeskState
+    ]
+  );
   const takeHomeGuideBullets = [
     `Base case net result is ${formatSignedPercent(deskSimulation.baseRate * 100)} over ${timedExitRequestedDays}D, which would return about ${formatNotional(
       deskSimulation.exitValue
@@ -9715,30 +9832,47 @@ function PaperTradingInner() {
       deskSimulation.bestRate * 100
     )} range and this liquidity note: ${deskSimulation.liquidityStatus}`
   ];
-  const feeRows = selectedProductGuide.feeBlueprint.map((row) => {
-    let amount = 0;
-    if (row.type === 'entry') amount = tradeAmount * row.rate;
-    if (row.type === 'annual') amount = tradeAmount * row.rate * (timedExitRequestedDays / 365);
-    if (row.type === 'performance') amount = deskSimulation.performanceFee;
-    if (row.type === 'conditional') amount = deskSimulation.earlyRedemptionFee;
+  const feeRows = useMemo(() => {
+    const rows = selectedProductGuide.feeBlueprint.map((row) => {
+      let amount = 0;
+      if (row.type === 'entry') amount = tradeAmount * row.rate;
+      if (row.type === 'annual') amount = tradeAmount * row.rate * (timedExitRequestedDays / 365);
+      if (row.type === 'performance') amount = deskSimulation.performanceFee;
+      if (row.type === 'conditional') amount = deskSimulation.earlyRedemptionFee;
 
-    return {
-      ...row,
-      amount: roundNumber(amount, 2)
-    };
-  });
-  if (deskSimulation.pledgeCarryCost > 0) {
-    feeRows.push({
-      label: 'Wealth pledge carry',
-      rate: deskSimulation.fundingBreakdown.wealthReceiptSupportApy,
-      type: 'annual',
-      amount: deskSimulation.pledgeCarryCost
+      return {
+        ...row,
+        amount: roundNumber(amount, 2)
+      };
     });
-  }
-  const yieldRows = selectedProductGuide.yieldSources.map((row) => ({
-    ...row,
-    amount: roundNumber(tradeAmount * row.rate * (timedExitRequestedDays / 365), 2)
-  }));
+
+    if (deskSimulation.pledgeCarryCost > 0) {
+      rows.push({
+        label: 'Wealth pledge carry',
+        rate: deskSimulation.fundingBreakdown.wealthReceiptSupportApy,
+        type: 'annual',
+        amount: deskSimulation.pledgeCarryCost
+      });
+    }
+
+    return rows;
+  }, [
+    deskSimulation.earlyRedemptionFee,
+    deskSimulation.fundingBreakdown.wealthReceiptSupportApy,
+    deskSimulation.performanceFee,
+    deskSimulation.pledgeCarryCost,
+    selectedProductGuide.feeBlueprint,
+    timedExitRequestedDays,
+    tradeAmount
+  ]);
+  const yieldRows = useMemo(
+    () =>
+      selectedProductGuide.yieldSources.map((row) => ({
+        ...row,
+        amount: roundNumber(tradeAmount * row.rate * (timedExitRequestedDays / 365), 2)
+      })),
+    [selectedProductGuide.yieldSources, timedExitRequestedDays, tradeAmount]
+  );
   const contractPreview = useMemo(() => {
     if (!replayFocus.bar || routeMarginCapital <= 0) return null;
     const previewEntryBar = activePerpLeg ? replayFocusLeverageEntryBar : replayFocus.bar;
@@ -10324,7 +10458,73 @@ function PaperTradingInner() {
     setSimulationHoldingDaysInput(String(normalizedDays));
   }
 
+  function cancelPendingTradeAmountSliderCommit() {
+    tradeAmountSliderPendingRef.current = null;
+    if (typeof window === 'undefined' || tradeAmountSliderFrameRef.current === null) return;
+    window.cancelAnimationFrame(tradeAmountSliderFrameRef.current);
+    tradeAmountSliderFrameRef.current = null;
+  }
+
+  function commitTradeAmountValue(nextAmount) {
+    setTradeAmountMaxApplied(false);
+    setTradeAmount(nextAmount);
+    setTradeAmountInput(String(nextAmount));
+  }
+
+  function scheduleTradeAmountSliderCommit(nextAmount) {
+    tradeAmountSliderPendingRef.current = nextAmount;
+
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+      const pendingAmount = tradeAmountSliderPendingRef.current;
+      tradeAmountSliderPendingRef.current = null;
+      commitTradeAmountValue(pendingAmount);
+      return;
+    }
+
+    if (tradeAmountSliderFrameRef.current !== null) return;
+
+    tradeAmountSliderFrameRef.current = window.requestAnimationFrame(() => {
+      tradeAmountSliderFrameRef.current = null;
+      const pendingAmount = tradeAmountSliderPendingRef.current;
+      tradeAmountSliderPendingRef.current = null;
+      commitTradeAmountValue(pendingAmount);
+    });
+  }
+
+  function cancelPendingHedgeSleeveSliderCommit() {
+    hedgeSleeveSliderPendingRef.current = null;
+    if (typeof window === 'undefined' || hedgeSleeveSliderFrameRef.current === null) return;
+    window.cancelAnimationFrame(hedgeSleeveSliderFrameRef.current);
+    hedgeSleeveSliderFrameRef.current = null;
+  }
+
+  function commitHedgeSleeveValue(nextAmount) {
+    setHedgePreviewSleeveNotional(nextAmount);
+    setHedgePreviewSleeveInput(String(nextAmount));
+  }
+
+  function scheduleHedgeSleeveSliderCommit(nextAmount) {
+    hedgeSleeveSliderPendingRef.current = nextAmount;
+
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+      const pendingAmount = hedgeSleeveSliderPendingRef.current;
+      hedgeSleeveSliderPendingRef.current = null;
+      commitHedgeSleeveValue(pendingAmount);
+      return;
+    }
+
+    if (hedgeSleeveSliderFrameRef.current !== null) return;
+
+    hedgeSleeveSliderFrameRef.current = window.requestAnimationFrame(() => {
+      hedgeSleeveSliderFrameRef.current = null;
+      const pendingAmount = hedgeSleeveSliderPendingRef.current;
+      hedgeSleeveSliderPendingRef.current = null;
+      commitHedgeSleeveValue(pendingAmount);
+    });
+  }
+
   function handleTradeAmountInputChange(nextValue) {
+    cancelPendingTradeAmountSliderCommit();
     const rawValue = String(nextValue ?? '');
     setTradeAmountMaxApplied(false);
     setTradeAmountInput(rawValue);
@@ -10340,6 +10540,7 @@ function PaperTradingInner() {
   }
 
   function handleHedgePreviewSleeveInputChange(nextValue) {
+    cancelPendingHedgeSleeveSliderCommit();
     const rawValue = String(nextValue ?? '');
     setHedgePreviewSleeveInput(rawValue);
 
@@ -10355,8 +10556,7 @@ function PaperTradingInner() {
 
   function handleHedgePreviewSleeveSliderChange(nextValue) {
     const nextAmount = Math.max(0, roundNumber(Number(nextValue || 0), 2));
-    setHedgePreviewSleeveNotional(nextAmount);
-    setHedgePreviewSleeveInput(String(nextAmount));
+    scheduleHedgeSleeveSliderCommit(nextAmount);
   }
 
   async function handleToggleHedgePrincipalFlash() {
@@ -10451,6 +10651,7 @@ function PaperTradingInner() {
   }
 
   function handleHedgePreviewSleeveBlur() {
+    cancelPendingHedgeSleeveSliderCommit();
     if (hedgePreviewSleeveInput === '') {
       setHedgePreviewSleeveNotional(0);
       setHedgePreviewSleeveInput('0');
@@ -10467,24 +10668,20 @@ function PaperTradingInner() {
 
   function handleTradeAmountSliderChange(nextValue) {
     const nextAmount = Math.max(0, roundNumber(Number(nextValue || 0), 2));
-    setTradeAmountMaxApplied(false);
-    setTradeAmount(nextAmount);
-    setTradeAmountInput(String(nextAmount));
+    scheduleTradeAmountSliderCommit(nextAmount);
   }
 
   function handleTradeAmountPreset(ratio) {
+    cancelPendingTradeAmountSliderCommit();
     if (!Number.isFinite(Number(ratio)) || Number(ratio) <= 0) return;
     const nextAmount = roundNumber(Math.max(0, tradeAmountSliderMax * Number(ratio)), 2);
-    setTradeAmountMaxApplied(false);
-    setTradeAmount(nextAmount);
-    setTradeAmountInput(String(nextAmount));
+    commitTradeAmountValue(nextAmount);
   }
 
   function handleApplySuggestedTradeAmount() {
+    cancelPendingTradeAmountSliderCommit();
     if (tradeAmountSuggestedValue <= 0) return;
-    setTradeAmountMaxApplied(false);
-    setTradeAmount(tradeAmountSuggestedValue);
-    setTradeAmountInput(String(tradeAmountSuggestedValue));
+    commitTradeAmountValue(tradeAmountSuggestedValue);
   }
 
   function handleApplySuggestedStrategyControls() {
@@ -10497,10 +10694,9 @@ function PaperTradingInner() {
   }
 
   function handleApplyHedgeSuggestedSize() {
+    cancelPendingTradeAmountSliderCommit();
     if (!hedgeFocusActive || !hedgeSizingReady || hedgeFundableSuggestedNotional <= 0) return;
-    setTradeAmountMaxApplied(false);
-    setTradeAmount(hedgeFundableSuggestedNotional);
-    setTradeAmountInput(String(hedgeFundableSuggestedNotional));
+    commitTradeAmountValue(hedgeFundableSuggestedNotional);
     if (leverageRouteActive && hedgeFundableSuggestedNotional > routeMaxWalletBackedNotional + 0.01) {
       setTradeAmountMaxMode(hedgeFocusActive ? 'hedge' : 'ticket');
     }
@@ -10508,6 +10704,7 @@ function PaperTradingInner() {
   }
 
   function handleHedgeRatioPreset(ratio) {
+    cancelPendingTradeAmountSliderCommit();
     const safeRatio = Number(ratio);
     if (!Number.isFinite(safeRatio) || safeRatio <= 0) return;
 
@@ -10520,9 +10717,7 @@ function PaperTradingInner() {
     if (cappedRatio !== safeRatio) {
       setHedgeRatio(cappedRatio);
     }
-    setTradeAmountMaxApplied(false);
-    setTradeAmount(nextSuggested);
-    setTradeAmountInput(String(nextSuggested));
+    commitTradeAmountValue(nextSuggested);
     if (leverageRouteActive && nextSuggested > routeMaxWalletBackedNotional + 0.01) {
       setTradeAmountMaxMode(hedgeFocusActive ? 'hedge' : 'ticket');
     }
@@ -10530,6 +10725,7 @@ function PaperTradingInner() {
   }
 
   function handleTradeAmountBlur() {
+    cancelPendingTradeAmountSliderCommit();
     setTradeAmountMaxApplied(false);
     if (tradeAmountInput === '') {
       setTradeAmount(0);
@@ -10543,6 +10739,7 @@ function PaperTradingInner() {
   }
 
   function handleTradeAmountMax() {
+    cancelPendingTradeAmountSliderCommit();
     if (tradeAmountMaxApplied) {
       const restoreInput = tradeAmountBeforeMaxRef.current?.input ?? '2500';
       const restoreAmount = Math.max(0, roundNumber(Number(tradeAmountBeforeMaxRef.current?.amount || 2500), 2));
@@ -10563,6 +10760,7 @@ function PaperTradingInner() {
   }
 
   function handleTradeAmountMaxModeChange(nextMode) {
+    cancelPendingTradeAmountSliderCommit();
     setTradeAmountMaxMode(nextMode);
     setTradeAmountMaxApplied(false);
     if (leverageRouteActive && nextMode !== 'wallet') {
@@ -12082,19 +12280,25 @@ function PaperTradingInner() {
       return;
     }
 
-    setSelectedAdvancedRoute(nextRoute.id);
     let nextRouteFeedbackLabel = nextRoute.label;
+    const nextFocusOptions = routeId === 'perp' ? visiblePerpFocusOptions : [];
+    const nextFocus = routeId === 'perp'
+      ? nextFocusOptions.find((option) => option.id === focusId) || nextFocusOptions[0]
+      : null;
     if (routeId === 'perp') {
-      const nextFocusOptions = visiblePerpFocusOptions;
-      const nextFocus = nextFocusOptions.find((option) => option.id === focusId) || nextFocusOptions[0];
-      setSelectedRouteFocusByRoute((current) => ({
-        ...current,
-        perp: nextFocus?.id || getDefaultPerpFocusForLane(selectedProduct.lane)
-      }));
       nextRouteFeedbackLabel = nextFocus?.label || nextRoute.label;
     }
-    setHoveredReplayIndex(null);
-    setSelectedReplayPanel(nextRoute.id === 'perp' ? 'contract' : 'desk');
+    startTransition(() => {
+      setSelectedAdvancedRoute(nextRoute.id);
+      if (routeId === 'perp') {
+        setSelectedRouteFocusByRoute((current) => ({
+          ...current,
+          perp: nextFocus?.id || getDefaultPerpFocusForLane(selectedProduct.lane)
+        }));
+      }
+      setHoveredReplayIndex(null);
+      setSelectedReplayPanel(nextRoute.id === 'perp' ? 'contract' : 'desk');
+    });
     setFeedback(`${nextRouteFeedbackLabel} is now selected as the replay learning path.`);
   }
 
@@ -13146,35 +13350,41 @@ function PaperTradingInner() {
         Number(hedgeStagedTicketNotional || hedgePlannedTicketNotional || routeEffectiveTicketNotional || tradeAmount || MIN_PAPER_TRADE)
       )
     : routePracticeNotional;
+  const deferredRoutePracticeFlashNotional = useDeferredValue(routePracticeFlashNotional);
+  const deferredRoutePracticeFlashPremiumEstimate = useDeferredValue(routePracticeFlashPremiumEstimate);
+  const deferredRoutePracticeNotional = useDeferredValue(routePracticeNotional);
+  const deferredRoutePracticeHedgeSleeveNotional = useDeferredValue(routePracticeHedgeSleeveNotional);
+  const deferredRoutePracticeHedgeTicketNotional = useDeferredValue(routePracticeHedgeTicketNotional);
+  const deferredStrategyControlValues = useDeferredValue(strategyControlValues);
   const routePracticeCases = useMemo(
     () =>
-      buildReplayPracticeCases(selectedView?.bars || [], routePracticeMode, {
+      buildReplayPracticeCasesCached(selectedView?.bars || [], routePracticeMode, {
         product: selectedProduct,
-        notional: routePracticeNotional,
+        notional: deferredRoutePracticeNotional,
         leverage: routeLeverageMultiple,
         marginCapital: routePostedBaseMarginCapital,
-        flashLoanAmount: routePracticeFlashNotional,
-        flashLoanFee: routePracticeFlashPremiumEstimate,
-        hedgeSleeveNotional: routePracticeHedgeSleeveNotional,
-        hedgeTicketNotional: routePracticeHedgeTicketNotional,
+        flashLoanAmount: deferredRoutePracticeFlashNotional,
+        flashLoanFee: deferredRoutePracticeFlashPremiumEstimate,
+        hedgeSleeveNotional: deferredRoutePracticeHedgeSleeveNotional,
+        hedgeTicketNotional: deferredRoutePracticeHedgeTicketNotional,
         hedgeMarginCapital: routePostedBaseMarginCapital,
         hedgeLeverage: routeLeverageMultiple,
         strategyTemplateId: selectedStrategyTemplateId,
-        strategyControls: strategyControlValues
+        strategyControls: deferredStrategyControlValues
       }),
     [
-      routePracticeFlashNotional,
-      routePracticeFlashPremiumEstimate,
+      deferredRoutePracticeFlashNotional,
+      deferredRoutePracticeFlashPremiumEstimate,
       routeLeverageMultiple,
       routePostedBaseMarginCapital,
-      routePracticeHedgeSleeveNotional,
-      routePracticeHedgeTicketNotional,
+      deferredRoutePracticeHedgeSleeveNotional,
+      deferredRoutePracticeHedgeTicketNotional,
       routePracticeMode,
-      routePracticeNotional,
+      deferredRoutePracticeNotional,
       selectedStrategyTemplateId,
       selectedProduct,
       selectedView?.bars,
-      strategyControlValues
+      deferredStrategyControlValues
     ]
   );
   useEffect(() => {
@@ -13429,17 +13639,46 @@ function PaperTradingInner() {
     () => PORTFOLIO_COMBO_PRODUCT_IDS.map((productId) => productMap[productId]).filter(Boolean),
     [productMap]
   );
+  const portfolioComboBarsSignature = portfolioComboSelectedIds
+    .map((productId) => {
+      const bars = Array.isArray(productViews[productId]?.bars) ? productViews[productId].bars : [];
+      const firstBar = bars[0];
+      const lastBar = bars[bars.length - 1];
+      return `${productId}:${bars.length}:${firstBar?.ts || ''}:${firstBar?.close ?? ''}:${lastBar?.ts || ''}:${lastBar?.close ?? ''}`;
+    })
+    .join('|');
   const portfolioComboAnalysis = useMemo(
-    () =>
-      buildPortfolioComboAnalysis({
+    () => {
+      if (!comboFocusActive) {
+        return {
+          status: 'idle',
+          message: '',
+          rows: [],
+          dates: [],
+          manual: null,
+          suggestions: [],
+          topSingles: []
+        };
+      }
+
+      return buildPortfolioComboAnalysis({
         productIds: portfolioComboSelectedIds,
         productMap,
         productViews,
         weightMap: portfolioComboWeights,
         startDate: portfolioComboStartDate,
         endDate: portfolioComboEndDate
-      }),
-    [portfolioComboEndDate, portfolioComboSelectedIds, portfolioComboStartDate, portfolioComboWeights, productMap, productViews]
+      });
+    },
+    [
+      comboFocusActive,
+      portfolioComboBarsSignature,
+      portfolioComboEndDate,
+      portfolioComboSelectedIds,
+      portfolioComboStartDate,
+      portfolioComboWeights,
+      productMap
+    ]
   );
   const portfolioComboManualMetrics = portfolioComboAnalysis.manual;
   const strategyTemplateLeaderboardRows = strategyTemplateLeaderboard.entries || [];
@@ -14689,15 +14928,17 @@ function PaperTradingInner() {
             <span>Choose template</span>
             <div className="paper-inline-structure-strip paper-inline-structure-strip-compact">
               {selectedRouteFocusOptions.map((option) => (
-                <button
+                  <button
                   key={option.id}
                   type="button"
                   className={`ghost-btn compact ${selectedRouteFocusConfig?.id === option.id ? 'active-toggle' : ''}`}
                   onClick={() =>
-                    setSelectedRouteFocusByRoute((current) => ({
-                      ...current,
-                      borrow: option.id
-                    }))
+                    startTransition(() =>
+                      setSelectedRouteFocusByRoute((current) => ({
+                        ...current,
+                        borrow: option.id
+                      }))
+                    )
                   }
                 >
                   {option.label}
