@@ -8254,7 +8254,7 @@ function PaperTradingInner() {
   const advancedActivityEnabled = replayDeveloperModeActive || replayTaskGateOpen;
   const isReplayRouteLocked = (routeId) => routeId !== 'spot' && !advancedRoutesUnlocked;
   const learningRouteOptions = availableReplayRoutes.flatMap((route) => {
-    const locked = isReplayRouteLocked(route.id);
+    const actionLocked = isReplayRouteLocked(route.id);
     const routeUi = getReplayRouteUi(route.id);
 
     if (route.id === 'perp') {
@@ -8266,7 +8266,7 @@ function PaperTradingInner() {
         helperLabel: focus.label,
         glyph: routeUi.glyph,
         actionTag: routeUi.actionTag,
-        locked
+        actionLocked
       }));
     }
 
@@ -8279,7 +8279,7 @@ function PaperTradingInner() {
         helperLabel: routeUi.helperLabel,
         glyph: routeUi.glyph,
         actionTag: routeUi.actionTag,
-        locked
+        actionLocked
       }
     ];
   });
@@ -10233,11 +10233,6 @@ function PaperTradingInner() {
   useEffect(() => {
     if (!availableReplayRoutes.some((route) => route.id === selectedAdvancedRoute)) {
       setSelectedAdvancedRoute(selectedProductRoutePlaybook.defaultRoute);
-      return;
-    }
-
-    if (isReplayRouteLocked(selectedAdvancedRoute)) {
-      setSelectedAdvancedRoute('spot');
     }
   }, [advancedRoutesUnlocked, availableReplayRoutes, selectedAdvancedRoute, selectedProductRoutePlaybook.defaultRoute]);
 
@@ -12371,16 +12366,6 @@ function PaperTradingInner() {
     const focusId = routeId === 'perp' ? focusIdRaw || getDefaultPerpFocusForLane(selectedProduct.lane) : null;
     const nextRoute = availableReplayRoutes.find((route) => route.id === routeId) || availableReplayRoutes[0] || ADVANCED_REPLAY_ROUTES[0];
 
-    if (isReplayRouteLocked(nextRoute.id)) {
-      setFeedback(
-        replayDeveloperModeActive
-          ? 'Developer mode is active, so this route should already be open.'
-          : 'Finish Base Check and open the guided tutorial route first. After the wallet has a real replay action, leverage and hedge become explained routes instead of separate mystery tasks.'
-      );
-      setSelectedRewardTaskId(REPLAY_BADGE_TYPES.perpLeverage);
-      return;
-    }
-
     let nextRouteFeedbackLabel = nextRoute.label;
     const nextFocusOptions = routeId === 'perp' ? visiblePerpFocusOptions : [];
     const nextFocus = routeId === 'perp'
@@ -12389,18 +12374,23 @@ function PaperTradingInner() {
     if (routeId === 'perp') {
       nextRouteFeedbackLabel = nextFocus?.label || nextRoute.label;
     }
+    const nextRouteActionsLocked = isReplayRouteLocked(nextRoute.id);
+    setSelectedAdvancedRoute(nextRoute.id);
+    if (routeId === 'perp') {
+      setSelectedRouteFocusByRoute((current) => ({
+        ...current,
+        perp: nextFocus?.id || getDefaultPerpFocusForLane(selectedProduct.lane)
+      }));
+    }
     startTransition(() => {
-      setSelectedAdvancedRoute(nextRoute.id);
-      if (routeId === 'perp') {
-        setSelectedRouteFocusByRoute((current) => ({
-          ...current,
-          perp: nextFocus?.id || getDefaultPerpFocusForLane(selectedProduct.lane)
-        }));
-      }
       setHoveredReplayIndex(null);
       setSelectedReplayPanel(nextRoute.id === 'perp' ? 'contract' : 'desk');
     });
-    setFeedback(`${nextRouteFeedbackLabel} is now selected as the replay learning path.`);
+    setFeedback(
+      nextRouteActionsLocked
+        ? `${nextRouteFeedbackLabel} preview is open. Advanced trade actions still need Task 1 + Task 2, but the tutorial route can be inspected now.`
+        : `${nextRouteFeedbackLabel} is now selected as the replay learning path.`
+    );
   }
 
   function handleSelectDeskStructureMode(modeId) {
@@ -12912,7 +12902,7 @@ function PaperTradingInner() {
                     <button
                       key={route.value}
                       type="button"
-                      className={`paper-route-pill ${selectedLearningRouteValue === route.value ? 'active' : ''} ${route.locked ? 'locked' : ''}`}
+                      className={`paper-route-pill ${selectedLearningRouteValue === route.value ? 'active' : ''} ${route.actionLocked ? 'locked' : ''}`}
                       onClick={() => handleSelectLearningRoute(route.value)}
                     >
                       <span className="paper-route-pill-glyph">{route.glyph}</span>
@@ -12920,7 +12910,7 @@ function PaperTradingInner() {
                         <strong>{route.label}</strong>
                         <small>{route.actionTag}</small>
                       </span>
-                      <span className="paper-route-lock">{route.locked ? 'Locked' : route.helperLabel}</span>
+                      <span className="paper-route-lock">{route.actionLocked ? 'Preview' : route.helperLabel}</span>
                     </button>
                   );
                 })}
@@ -14484,7 +14474,7 @@ function PaperTradingInner() {
 
       handlePlaceTrade('sell');
     };
-    const showAdvancedTools = selectedAdvancedRoute !== 'spot' && advancedActivityEnabled;
+    const showAdvancedTools = selectedAdvancedRoute !== 'spot';
     const timedExitLosingRows =
       leverageRouteActive && timedExitLeveragedSnapshot && timedExitEstimatedPnl < 0
         ? [
@@ -14985,7 +14975,7 @@ function PaperTradingInner() {
 
     return (
       <div
-        key={`desk-${selectedProductId}`}
+        key={`desk-${selectedProductId}-${selectedAdvancedRoute}`}
         className="paper-inline-desk"
         ref={tradeDeskRef}
       >
@@ -14999,7 +14989,7 @@ function PaperTradingInner() {
                   <span className="paper-inline-route-helper">{selectedRouteHelperLabel}</span>
                   <span className="paper-inline-route-tag">{selectedRouteUi.actionTag}</span>
                   <span className={`pill ${advancedActivityEnabled ? 'risk-low' : 'risk-medium'}`}>
-                    {advancedActivityEnabled ? 'Advanced on' : 'Spot only'}
+                    {advancedActivityEnabled ? 'Advanced on' : selectedAdvancedRoute === 'spot' ? 'Spot only' : 'Preview mode'}
                   </span>
                 </div>
               </div>
@@ -15010,12 +15000,11 @@ function PaperTradingInner() {
                   <select
                     value={selectedLearningRouteValue}
                     onChange={(event) => handleSelectLearningRoute(event.target.value)}
-                    disabled={!advancedActivityEnabled}
                   >
                     {learningRouteOptions.map((route) => {
                       return (
-                        <option key={route.value} value={route.value} disabled={route.locked}>
-                          {route.locked ? `${route.label} (Unlock after Task 1 + Task 2)` : route.label}
+                        <option key={route.value} value={route.value}>
+                          {route.actionLocked ? `${route.label} (Preview; actions locked)` : route.label}
                         </option>
                       );
                     })}
