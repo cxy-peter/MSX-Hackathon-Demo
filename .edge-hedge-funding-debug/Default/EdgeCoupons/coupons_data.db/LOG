@@ -1,5 +1,0 @@
-2026/04/25-15:13:02.349 a714 Creating DB D:\NYU\web3\msx-risklens-demo\.edge-hedge-funding-debug\Default\EdgeCoupons/coupons_data.db since it was missing.
-2026/04/25-15:13:02.356 a714 Reusing MANIFEST D:\NYU\web3\msx-risklens-demo\.edge-hedge-funding-debug\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
-2026/04/25-15:13:13.793 460c Level-0 table #5: started
-2026/04/25-15:13:13.796 460c Level-0 table #5: 682132 bytes OK
-2026/04/25-15:13:13.797 460c Delete type=0 #3
