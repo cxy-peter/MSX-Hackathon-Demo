@@ -8,8 +8,8 @@ export const MIN_PAPER_TRADE = 100;
 export const PAPER_LANE_OPTIONS = [
   { id: 'all', label: 'All assets' },
   { id: 'funding', label: 'Cash & Treasury' },
-  { id: 'public', label: 'Crypto spot' },
-  { id: 'leverage', label: 'Perp tutorial' }
+  { id: 'public', label: 'Spot & xStocks' },
+  { id: 'leverage', label: 'Leveraged routes' }
 ];
 
 export const PAPER_INTERVALS = {
@@ -1911,13 +1911,12 @@ const CURATED_EXTRA_PAPER_PRODUCTS = [
 const ALL_PAPER_PRODUCTS = [...CORE_PAPER_PRODUCTS, ...ADDITIONAL_PAPER_PRODUCTS, ...CURATED_EXTRA_PAPER_PRODUCTS];
 
 const CURATED_PAPER_PRODUCT_IDS = [
-  'benji-fobxx',
-  'backed-ib01',
   'eth-usd',
-  'btc-usd',
+  'aaplx',
+  'tslax-public',
+  'tsll-leverage',
   'spyx',
-  'jepi-income',
-  'spuu-leverage'
+  'jepi-income'
 ];
 
 const CURATED_PAPER_PRODUCT_OVERRIDES = {

@@ -1135,6 +1135,24 @@ label {
   min-height: 208px;
 }
 
+.home-quest-task-summary,
+.paper-task-cover-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.035);
+}
+
+.home-quest-task-summary .muted,
+.paper-task-cover-summary .muted {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .tile-status-badge {
   position: absolute;
   top: 20px;
@@ -2350,8 +2368,8 @@ label {
 }
 
 .wealth-product-card.active {
-  border-color: rgba(34,109,64,0.2);
-  box-shadow: inset 0 0 0 1px rgba(34,109,64,0.08);
+  border-color: rgba(122,166,255,0.24);
+  box-shadow: inset 0 0 0 1px rgba(122,166,255,0.1);
 }
 
 .paper-trading-shell .wealth-product-card.active {
@@ -3709,6 +3727,20 @@ label {
   background: rgba(255,255,255,0.028);
 }
 
+.wealth-position-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wealth-position-action-row .compact {
+  min-height: 34px;
+}
+
+.wealth-portfolio-grid.compact {
+  align-items: stretch;
+}
+
 .wealth-activity-section {
   display: grid;
   gap: 12px;
@@ -3731,6 +3763,19 @@ label {
   border-radius: 16px;
   border: 1px solid var(--border);
   background: rgba(255,255,255,0.03);
+}
+
+.wealth-activity-row.compact {
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  appearance: none;
+  font: inherit;
+}
+
+.wealth-activity-section.compact {
+  margin-top: 14px;
 }
 
 .wealth-activity-badges {
@@ -8199,6 +8244,7 @@ label {
 
 .paper-route-definition-pill,
 .paper-strategy-template-strip,
+.paper-strategy-control-card,
 .paper-inline-hedge-order-card,
 .paper-inline-hedge-compact-card,
 .paper-inline-hedge-unwind-card,
@@ -8254,6 +8300,43 @@ label {
 .paper-inline-option-preview-card {
   border-color: rgba(90, 151, 255, 0.18);
   background: rgba(10, 18, 32, 0.44);
+}
+
+.paper-strategy-control-card {
+  border-color: rgba(90, 151, 255, 0.2);
+  background: rgba(10, 18, 32, 0.38);
+}
+
+.paper-strategy-parameter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 10px;
+}
+
+.paper-strategy-parameter-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(151, 169, 191, 0.12);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.035);
+}
+
+.paper-strategy-parameter-field span {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.paper-strategy-parameter-field strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.paper-strategy-parameter-field input[type='range'] {
+  width: 100%;
 }
 
 .paper-inline-hedge-formula-strip,
@@ -9169,6 +9252,10 @@ label {
 .wealth-dual-simulator-chart {
   display: grid;
   gap: 10px;
+}
+
+.wealth-dual-simulator-chart svg {
+  max-height: 180px;
 }
 
 .wealth-dual-chart-axis {

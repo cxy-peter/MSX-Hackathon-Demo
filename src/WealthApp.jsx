@@ -61,13 +61,15 @@ const FAST_FORWARD_OPTIONS = [
 const LEADERBOARD_LIMIT = 10;
 const MAX_COMPARE_PRODUCTS = 4;
 const DEFAULT_COMPARE_PRODUCT_IDS_BY_CATEGORY = {
-  all: ['superstate-ustb', 'franklin-fobxx', 'msx-premium-income-btc', 'msx-dual-btc-usdc'],
-  cash: ['superstate-ustb', 'franklin-fobxx', 'ondo-ousg', 'blackrock-buidl'],
-  public: ['xstocks-public-holdings', 'superstate-uscc', 'msx-protected-growth-eth', 'msx-premium-income-btc'],
-  private: ['private-watchlist', 'hamilton-scope', 'apollo-acred', 'msx-quant-fund-1'],
+  all: ['superstate-ustb', 'msx-protected-growth-eth', 'spacex-secondary', 'stripe-secondary'],
+  cash: ['superstate-ustb', 'ondo-ousg', 'blackrock-buidl', 'hashnote-usyc'],
+  public: ['private-watchlist', 'spacex-secondary', 'stripe-secondary', 'bytedance-secondary'],
+  private: ['private-watchlist', 'spacex-secondary', 'stripe-secondary', 'databricks-secondary'],
   auto: ['msx-quant-fund-1', 'msx-quant-fund-2', 'superstate-ustb', 'superstate-uscc'],
   earn: ['hashnote-usyc', 'openeden-tbill', 'superstate-uscc', 'apollo-acred'],
-  dual: ['msx-dual-btc-usdc', 'msx-premium-income-btc', 'msx-protected-growth-eth', 'msx-autocall-index'],
+  dual: ['msx-dual-btc-usdc', 'msx-dual-eth-usdc', 'msx-dual-sol-usdt', 'msx-premium-income-btc'],
+  protected: ['msx-protected-growth-eth', 'msx-dual-btc-usdc', 'msx-premium-income-btc', 'msx-autocall-index'],
+  growth: ['private-watchlist', 'spacex-secondary', 'stripe-secondary', 'bytedance-secondary'],
   protectedGrowth: ['msx-protected-growth-eth', 'msx-dual-btc-usdc', 'msx-premium-income-btc', 'superstate-ustb'],
   premiumIncome: ['msx-premium-income-btc', 'msx-protected-growth-eth', 'msx-autocall-index', 'superstate-uscc'],
   autoCall: ['msx-autocall-index', 'msx-dual-btc-usdc', 'msx-premium-income-btc', 'msx-protected-growth-eth'],
@@ -125,12 +127,12 @@ const WEALTH_HOME_SURFACE_NOTES = {
     auto: 'Yield optimizer with pause rules'
   },
   public: {
-    layer: 'Listed / xStocks',
-    owns: 'Tokenized listed equity or ETF-style tracker exposure only',
-    earn: 'Price beta; not fixed treasury yield',
-    liquidity: 'Secondary venue liquidity plus market-day primary processing',
-    rights: 'Tracker / wrapper rights, not always full shareholder rights',
-    auto: 'DCA, alerts, rebalance with off-hours guardrails'
+    layer: 'Pre-IPO Growth',
+    owns: 'Late-stage private-company allocation, SPV economics, or transfer-window claim',
+    earn: 'Event-driven marks, tenders, IPO, or acquisition',
+    liquidity: 'Transfer window, tender, IPO, acquisition, or matched secondary buyer',
+    rights: 'SPV / transfer / document rights',
+    auto: 'Watchlist and alerts; auto-buy normally disabled'
   },
   private: {
     layer: 'Private',
@@ -147,6 +149,22 @@ const WEALTH_HOME_SURFACE_NOTES = {
     liquidity: 'Must inherit the underlying product liquidity',
     rights: 'Rule permissions, override rights, and pause conditions',
     auto: 'Recurring buy, rebalance, watchlist, yield optimizer, risk copilot'
+  },
+  protected: {
+    layer: 'Protected',
+    owns: 'Defined-outcome, buffer, premium-income, or barrier receipt',
+    earn: 'Option package, capped upside, conditional coupon, or premium',
+    liquidity: 'Usually term, observation, or maturity driven',
+    rights: 'Payoff rule, issuer or strategy terms, and settlement constraints',
+    auto: 'Maturity alerts, barrier monitoring, and settlement previews'
+  },
+  growth: {
+    layer: 'Growth',
+    owns: 'Pre-IPO, late-stage private-company, SPV, or transfer-window claim',
+    earn: 'Event-driven private marks and liquidity events',
+    liquidity: 'Secondary window, tender, IPO, acquisition, or transfer approval',
+    rights: 'SPV / private-share / document rights',
+    auto: 'Watchlist, evidence alerts, and next-question tracking'
   }
 };
 
@@ -158,11 +176,24 @@ const WEALTH_OPPORTUNITY_TYPES = [
     lane: 'Wealth / Protect & Grow',
     priority: 'MVP 1',
     placement: 'wealth',
-    filterCategory: 'protectedGrowth',
+    filterCategory: 'protected',
     goalId: 'public',
     productIds: ['msx-protected-growth-eth'],
     why: 'Shows downside buffer and upside cap as an outcome range instead of a high APR promise.',
     userCopy: 'For users who want BTC / ETH or index upside but want the first loss band explained before buying.'
+  },
+  {
+    id: 'growth-access',
+    label: 'Growth Access',
+    tradFi: 'Pre-IPO / late-stage private allocation',
+    lane: 'Wealth / Growth',
+    priority: 'MVP 1',
+    placement: 'wealth',
+    filterCategory: 'growth',
+    goalId: 'public',
+    productIds: ['private-watchlist', 'spacex-secondary', 'stripe-secondary', 'bytedance-secondary', 'databricks-secondary'],
+    why: 'Makes recognizable private names usable without pretending they are listed wrappers: rights, allocation path, and liquidity events come first.',
+    userCopy: 'For users who want private-growth exposure and need eligibility, documents, concentration, and exit timing explained before sizing.'
   },
   {
     id: 'premium-income',
@@ -199,7 +230,7 @@ const WEALTH_OPPORTUNITY_TYPES = [
     placement: 'wealth',
     filterCategory: 'dual',
     goalId: 'earn',
-    productIds: ['msx-dual-btc-usdc'],
+    productIds: ['msx-dual-btc-usdc', 'msx-dual-eth-usdc', 'msx-dual-sol-usdt'],
     why: 'Extends Dual Investment into buy-the-dip, take-profit, and barrier enhanced-yield plans.',
     userCopy: 'The product must show whether the user may receive original asset, converted asset, or reduced value.'
   },
@@ -212,7 +243,7 @@ const WEALTH_OPPORTUNITY_TYPES = [
     placement: 'wealth',
     filterCategory: 'cashManagement',
     goalId: 'parkCash',
-    productIds: ['superstate-ustb', 'franklin-fobxx', 'ondo-ousg', 'hashnote-usyc', 'openeden-tbill', 'blackrock-buidl'],
+    productIds: ['superstate-ustb', 'ondo-ousg', 'hashnote-usyc', 'openeden-tbill', 'blackrock-buidl'],
     why: 'Transforms tokenized treasuries from single products into a cash-management account experience.',
     userCopy: 'Best for idle cash, staged entry, liquidity reserve, and treasury ladder education.'
   },
@@ -238,7 +269,7 @@ const WEALTH_OPPORTUNITY_TYPES = [
     placement: 'both',
     filterCategory: 'taxOptimizer',
     goalId: 'auto',
-    productIds: ['xstocks-public-holdings', 'msx-quant-fund-1', 'msx-quant-fund-2'],
+    productIds: ['spacex-secondary', 'stripe-secondary', 'msx-quant-fund-1', 'msx-quant-fund-2'],
     why: 'This is more of a wallet-level advisor than a single fund: cost basis, concentration, harvest, and rebalance.',
     userCopy: 'Wealth should recommend actions; paper trading can test rebalance and harvest timing before signing.'
   },
@@ -251,7 +282,7 @@ const WEALTH_OPPORTUNITY_TYPES = [
     placement: 'wealth',
     filterCategory: 'modelPortfolio',
     goalId: 'auto',
-    productIds: ['superstate-ustb', 'hashnote-usyc', 'superstate-uscc', 'msx-quant-fund-1', 'xstocks-public-holdings'],
+    productIds: ['superstate-ustb', 'hashnote-usyc', 'spacex-secondary', 'stripe-secondary', 'msx-quant-fund-1'],
     why: 'Moves the page from a vault shelf to goal-based conservative, balanced, growth, and income portfolios.',
     userCopy: 'Use this when the user wants a goal first and product selection second.'
   },
@@ -277,7 +308,7 @@ const WEALTH_OPPORTUNITY_TYPES = [
     placement: 'paper',
     filterCategory: 'predictionMarket',
     goalId: 'public',
-    productIds: ['xstocks-public-holdings', 'private-watchlist', 'msx-quant-fund-1'],
+    productIds: ['private-watchlist', 'spacex-secondary', 'stripe-secondary', 'msx-quant-fund-1'],
     why: 'The payoff is event-probability driven, so users should rehearse outcome settlement before it appears as wealth.',
     userCopy: 'Good for paper simulations, conditional close rules, and event settlement education; not a default beginner wealth shelf.'
   }
@@ -301,15 +332,12 @@ const WEALTH_OPPORTUNITY_PRODUCT_IDS = WEALTH_OPPORTUNITY_TYPES.reduce((acc, ite
   return acc;
 }, {});
 
-const FEATURED_WEALTH_OPPORTUNITY_IDS = new Set(['protected-growth', 'premium-income']);
+const FEATURED_WEALTH_OPPORTUNITY_IDS = new Set(['protected-growth', 'growth-access']);
 const FEATURED_WEALTH_OPPORTUNITIES = WEALTH_OPPORTUNITY_TYPES.filter((type) => FEATURED_WEALTH_OPPORTUNITY_IDS.has(type.id));
 const WEALTH_PRODUCT_TYPE_FILTERS = [
-  ...CATEGORY_OPTIONS.filter((category) => !['private', 'earn'].includes(category.id)),
-  { id: 'dual', label: 'Dual Investment' },
-  { id: 'protectedGrowth', label: 'Protected Growth' },
-  { id: 'premiumIncome', label: 'Premium Income' },
-  { id: 'autoCall', label: 'Auto-Call' },
-  { id: 'privateCredit', label: 'Pre-IPO / Private Credit' },
+  ...CATEGORY_OPTIONS.filter((category) => !['public', 'private', 'earn'].includes(category.id)),
+  { id: 'protected', label: 'Protected' },
+  { id: 'growth', label: 'Growth' }
 ];
 
 const WEALTH_TASK_BADGES = { subscribe: 'W1', settlement: 'W2' };
@@ -1090,8 +1118,8 @@ function getWealthProductSurface(product = {}) {
   const text = `${product.id || ''} ${product.bucket || ''} ${product.productType || ''} ${product.underlying || ''} ${product.yieldSource || ''}`.toLowerCase();
 
   if (/dual investment|dual currency|protected growth|defined outcome|premium income|covered call|auto-call|autocall|structured note/.test(text)) return 'structured';
-  if (/xstock|listed \/ xstocks|listed equity|etf-style|public holdings/.test(text)) return 'public';
-  if (/private-watchlist|pre-ipo|spv|private share|late-stage|private credit/.test(text)) return 'private';
+  if (/private-watchlist|pre-ipo|private-growth|spv|private share|late-stage|private credit|secondary window|private growth/.test(text)) return 'private';
+  if (/listed equity|etf-style/.test(text)) return 'public';
   if (/quant|managed|strategy|auto|closed-end quant/.test(text)) return 'auto';
   if (/treasury|t-bill|money fund|liquidity fund|cash management|reserve|repo|buidl|ustb|usdy|ousg|usyc|tbill|franklin/.test(text)) return 'cash';
   if (/carry|yield|income|basis|credit spread|term premium/.test(text)) return 'earn';
@@ -1106,7 +1134,7 @@ function productMatchesWealthGoal(product, goalId) {
 
   if (goalId === 'parkCash') return surface === 'cash';
   if (goalId === 'earn') return surface === 'earn' || surface === 'cash';
-  if (goalId === 'public') return surface === 'public';
+  if (goalId === 'public') return surface === 'public' || (surface === 'private' && /pre-ipo|private-growth|late-stage|secondary window|private growth/i.test(`${product.id || ''} ${product.productType || ''} ${product.name || ''} ${product.underlying || ''}`));
   if (goalId === 'private') return surface === 'private';
   if (goalId === 'auto') return surface === 'auto';
 
@@ -1119,6 +1147,22 @@ function productMatchesWealthCategory(product, categoryId) {
   const text = `${product.id || ''} ${product.productType || ''} ${product.name || ''} ${product.yieldSource || ''}`.toLowerCase();
 
   if (categoryId === 'dual') return /dual investment|dual currency|buy-the-dip|reverse convertible/.test(text);
+  if (categoryId === 'protected') {
+    return (
+      /protected growth|defined outcome|buffer|premium income|covered call|option premium|auto-call|autocall|dual investment|dual currency|snowball/.test(text) ||
+      WEALTH_OPPORTUNITY_PRODUCT_IDS.protected?.has(product.id) ||
+      WEALTH_OPPORTUNITY_PRODUCT_IDS.protectedGrowth?.has(product.id) ||
+      WEALTH_OPPORTUNITY_PRODUCT_IDS.premiumIncome?.has(product.id) ||
+      WEALTH_OPPORTUNITY_PRODUCT_IDS.autoCall?.has(product.id) ||
+      WEALTH_OPPORTUNITY_PRODUCT_IDS.dual?.has(product.id)
+    );
+  }
+  if (categoryId === 'growth') {
+    return (
+      /pre-ipo|private-growth|late-stage|private share|secondary window|private growth|spv access/.test(text) ||
+      WEALTH_OPPORTUNITY_PRODUCT_IDS.growth?.has(product.id)
+    );
+  }
   if (categoryId === 'protectedGrowth') return /protected growth|defined outcome|buffer/.test(text) || WEALTH_OPPORTUNITY_PRODUCT_IDS[categoryId]?.has(product.id);
   if (categoryId === 'premiumIncome') return /premium income|covered call|option premium|put-write/.test(text) || WEALTH_OPPORTUNITY_PRODUCT_IDS[categoryId]?.has(product.id);
   if (categoryId === 'autoCall') return /auto-call|autocall|snowball/.test(text) || WEALTH_OPPORTUNITY_PRODUCT_IDS[categoryId]?.has(product.id);
@@ -1143,12 +1187,14 @@ function getCategoryIdForProduct(product) {
   const surface = getWealthProductSurface(product);
   const text = `${product.productType || ''} ${product.name || ''} ${product.id || ''}`.toLowerCase();
 
-  if (/dual investment|dual currency/.test(text)) return 'dual';
-  if (/protected growth|defined outcome/.test(text)) return 'protectedGrowth';
+  if (/dual investment|dual currency/.test(text)) return 'protected';
+  if (/protected growth|defined outcome|premium income|covered call|auto-call|autocall|dual investment|dual currency/.test(text)) return 'protected';
+  if (/pre-ipo|private-growth|late-stage|private share|secondary window|private growth|spv access/.test(text)) return 'growth';
   if (/premium income|covered call/.test(text)) return 'premiumIncome';
   if (/auto-call|autocall/.test(text)) return 'autoCall';
   if (/private credit|credit fund/.test(text)) return 'privateCredit';
-  if (surface === 'private' || surface === 'earn') return 'all';
+  if (surface === 'private') return 'growth';
+  if (surface === 'earn') return 'all';
   return ['cash', 'public', 'auto'].includes(surface) ? surface : 'all';
 }
 
@@ -1183,9 +1229,9 @@ function getWealthProductFactRows(product = {}) {
     surface === 'cash'
       ? 'Cash & Treasury'
       : surface === 'public'
-        ? 'Listed / xStocks'
+        ? 'Listed equity'
         : surface === 'private'
-          ? 'Private'
+          ? 'Pre-IPO Growth'
           : surface === 'auto'
             ? 'Auto / Managed'
             : 'Earn / Yield';
@@ -1939,8 +1985,8 @@ function DualOutcomeSimulator({
   }));
   const minValue = Math.min(...chartPoints.map((point) => point.quoteEquivalent), simulated.quoteEquivalent);
   const maxValue = Math.max(...chartPoints.map((point) => point.quoteEquivalent), simulated.quoteEquivalent);
-  const chartHeight = 220;
-  const chartWidth = 560;
+  const chartHeight = 168;
+  const chartWidth = 520;
   const xForMove = (move) => ((move + 12) / 24) * chartWidth;
   const yForValue = (value) => {
     if (maxValue === minValue) return chartHeight / 2;
@@ -3122,8 +3168,9 @@ function WealthInner() {
   }, [nextWealthTask.id, selectedWealthTaskId, wealthQuestRows]);
 
   useEffect(() => {
+    if (pendingFocusRequest) return;
     setPendingScrollProductId(null);
-  }, [selectedGoal, selectedCategory, shelfSearchQuery]);
+  }, [selectedGoal, selectedCategory, shelfSearchQuery, pendingFocusRequest]);
 
   useEffect(() => {
     setCompareProductIds((current) => {
@@ -3747,6 +3794,7 @@ function WealthInner() {
       setSelectedGoal(getGoalIdForProduct(targetProduct));
       setSelectedCategory(categoryOverride || getCategoryIdForProduct(targetProduct));
       setShelfSearchQuery('');
+      applyProductFocus(productId, topic);
       return;
     }
 
@@ -4288,6 +4336,30 @@ function WealthInner() {
     setFeedback('Wealth demo portfolio reset for this wallet. Starter cash and empty share balances were restored.');
   }
 
+  function handlePositionQuickAction(productId, action) {
+    const product = getProductByIdFrom(liveProducts, productId);
+    if (!product) return;
+
+    const nextSettlementAction =
+      action === 'roll' ? 'roll' : action === 'transfer' ? 'transfer' : action === 'pledge' || action === 'preview' ? 'preview' : 'exit';
+    const position = wealthState.positions?.[productId] || { shares: 0 };
+    const maxSupport = roundNumber(Number(position.shares || 0) * Number(product.nav || 0) * getCollateralAdvanceRate(product), 2);
+
+    setSettlementAction(nextSettlementAction);
+    if (action === 'pledge') {
+      setCollateralBorrowInput(maxSupport > 0 ? Math.min(1000, maxSupport) : 0);
+    }
+    focusProduct(productId, {
+      topic: 'flow',
+      categoryId: getCategoryIdForProduct(product)
+    });
+    setFeedback(
+      action === 'pledge'
+        ? `${product.shareToken} pledge view opened. Set the support target, then sign the support line if this receipt should back Paper routes.`
+        : `${product.shareToken} ${nextSettlementAction} view opened. Review the settlement desk, then sign when ready.`
+    );
+  }
+
   function renderDualCurrencyGuideSection() {
     if (selectedCategory !== 'dual') return null;
 
@@ -4548,6 +4620,129 @@ function WealthInner() {
             </div>
           ))}
         </div>
+      </section>
+    );
+  }
+
+  function renderPositionsSection() {
+    return (
+      <section className="card wealth-positions-priority-card">
+        <div className="section-head">
+          <div>
+            <div className="eyebrow">My wealth positions</div>
+            <h2>Wallet-linked vault holdings</h2>
+          </div>
+
+          <button className="ghost-btn compact" onClick={handleResetPortfolio}>
+            Reset wealth demo
+          </button>
+        </div>
+
+        {portfolioRows.length === 0 ? (
+          <div className="reason-card">
+            <div className="entry-title">No wealth positions yet</div>
+            <div className="entry-copy">
+              Buy a product from the shelf below. The position will appear here with settle, roll, and pledge controls.
+            </div>
+          </div>
+        ) : (
+          <div className="wealth-portfolio-grid compact">
+            {portfolioRows.map((row) => {
+              const rowProduct = getProductByIdFrom(liveProducts, row.id);
+              const rowPolicy = getSettlementPolicy(rowProduct || row);
+              const primaryExitLabel = rowPolicy.redeemable ? 'Redeem' : 'Settle';
+
+              return (
+                <div className="reason-card wealth-position-card" key={row.id}>
+                  <div className="wealth-position-head">
+                    <div>
+                      <div className="product-title">{row.name}</div>
+                      <div className="muted">
+                        {row.productType} / {row.shareToken}
+                      </div>
+                    </div>
+                    <span className={`pill ${riskClass(row.risk)}`}>{row.risk}</span>
+                  </div>
+
+                  <div className="wealth-position-metric-grid">
+                    <div className="wealth-position-metric">
+                      <div className="k">Shares</div>
+                      <div className="v">{formatShareBalance(row.shares, hideBalances)}</div>
+                    </div>
+                    <div className="wealth-position-metric">
+                      <div className="k">Principal</div>
+                      <div className="v">{formatValue(row.principal, hideBalances)}</div>
+                    </div>
+                    <div className="wealth-position-metric">
+                      <div className="k">Current value</div>
+                      <div className="v">{formatValue(row.currentValue, hideBalances)}</div>
+                    </div>
+                    <div className="wealth-position-metric">
+                      <div className="k">PnL</div>
+                      <div className={`v ${row.pnl >= 0 ? 'risk-low' : 'risk-high'}`}>{formatSignedValue(row.pnl, hideBalances)}</div>
+                    </div>
+                  </div>
+
+                  <div className="wealth-position-action-row">
+                    <button type="button" className="secondary-btn compact" onClick={() => handlePositionQuickAction(row.id, 'exit')}>
+                      {primaryExitLabel}
+                    </button>
+                    <button type="button" className="ghost-btn compact" onClick={() => handlePositionQuickAction(row.id, 'roll')}>
+                      Roll
+                    </button>
+                    <button type="button" className="ghost-btn compact" onClick={() => handlePositionQuickAction(row.id, 'pledge')}>
+                      Pledge
+                    </button>
+                    <button type="button" className="ghost-btn compact" onClick={() => handlePositionQuickAction(row.id, 'preview')}>
+                      Open
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {wealthState.activityLog?.length ? (
+          <div className="wealth-activity-section compact">
+            <div className="section-head compact">
+              <div>
+                <div className="eyebrow">Recent wallet activity</div>
+                <h3>Latest signed actions</h3>
+              </div>
+            </div>
+
+            <div className="wealth-activity-list compact">
+              {wealthState.activityLog.slice(0, 4).map((entry) => {
+                const entryProduct = getProductByIdFrom(liveProducts, entry.productId);
+                return (
+                  <button
+                    type="button"
+                    className="wealth-activity-row compact"
+                    key={entry.id}
+                    onClick={() =>
+                      focusProduct(entry.productId, {
+                        topic: 'flow',
+                        categoryId: entryProduct ? getCategoryIdForProduct(entryProduct) : selectedCategory
+                      })
+                    }
+                  >
+                    <div className="wealth-activity-main">
+                      <div className="product-title">{entry.productName || entry.productId}</div>
+                      <div className="muted">
+                        {formatWealthDateTime(entry.ts)} / {entry.action || entry.type} / {formatValue(entry.amount || 0, hideBalances)}
+                      </div>
+                    </div>
+                    <div className="wealth-activity-side">
+                      <strong>{formatShareBalance(entry.shares || 0, hideBalances)}</strong>
+                      <span>{entryProduct?.shareToken || 'receipt'} shares</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
       </section>
     );
   }
@@ -5527,36 +5722,13 @@ function WealthInner() {
                 <button className="primary-btn" onClick={() => handleOpenSubscribeModal()} disabled={selectedProductLocked || isWealthSigning}>
                   {isWealthSigning ? 'Await wallet' : 'Review and buy'}
                 </button>
-              </div>
-
-              <div className="starter-reasons" style={{ marginTop: 16 }}>
-                <div className="reason-card">
-                  <div className="entry-title">{selectedRedeemAllowed ? 'Settle into PT cash' : 'Scheduled settlement only'}</div>
-                  <div className="entry-copy">
-                    {selectedRedeemAllowed
-                      ? 'Use the settlement desk below with "Settle into PT cash" when you want the free receipt balance to end and return to spendable PT in Wealth.'
-                      : 'This sleeve does not support a casual early redeem path. Use the settlement desk below to model the scheduled end, roll, or transfer flow.'}
-                  </div>
-                </div>
-                <div className="reason-card">
-                  <div className="entry-title">Roll into next term</div>
-                  <div className="entry-copy">Roll means the current receipt settles at the projected NAV and immediately restarts as the same product with a refreshed basis.</div>
-                </div>
-                <div className="reason-card">
-                  <div className="entry-title">{isCollateralPilotProduct(selectedProduct) ? 'Pledge as route support' : 'Transfer into another sleeve'}</div>
-                  <div className="entry-copy">
-                    {isCollateralPilotProduct(selectedProduct)
-                      ? 'Pledge opens support for Paper routes, but it should not inflate Wealth cash or total PT.'
-                      : 'Transfer settles this receipt first, then remints the released value into another product receipt.'}
-                  </div>
-                </div>
+                <button className="ghost-btn compact" onClick={handleResetPortfolio} disabled={isWealthSigning}>
+                  Reset
+                </button>
               </div>
 
               <div className="paper-mode-card wealth-subpanel-card" style={{ marginTop: 16 }}>
-                <div className="product-title">Settlement desk: settle, roll, transfer, or preview</div>
-                <div className="muted">
-                  Choose the future window, then decide whether the free receipt balance should stay in the same product, move elsewhere, or end as PT cash.
-                </div>
+                <div className="product-title">Settlement desk</div>
 
                 <label className="wealth-field">
                   Days forward: {settlementWindowLabel}
@@ -5635,49 +5807,10 @@ function WealthInner() {
                 </div>
               </div>
 
-              <div className="product-title" style={{ marginTop: 16 }}>Approve, subscribe, and exit preview</div>
-              <FlowPreviewGrid cards={flowPreviewCards} />
-
-              <div className="product-title" style={{ marginTop: 16 }}>Future wallet call preview</div>
-              <ModeledCallGrid cards={modeledCallCards} />
-
-              <div className="env-hint">
-                <strong>Token mechanic.</strong> {selectedProduct.shareToken} is treated as the receipt: subscribe mints it, settlement burns or rolls it, and a pledge only opens route support instead of minting extra Wealth cash.
-              </div>
-
-              <div className="wealth-contract-grid" style={{ marginTop: 16 }}>
-                {onchainMechanics.map((item) => (
-                  <div className="reason-card wealth-contract-card" key={item.title}>
-                    <div className="entry-title">{item.title}</div>
-                    <div className="entry-copy">{item.copy}</div>
-                  </div>
-                ))}
-              </div>
-
               {isCollateralPilotProduct(selectedProduct) ? (
                 <div className="wealth-pilot-grid">
                   <div className="paper-mode-card wealth-subpanel-card">
-                    <div className="product-title">Use this receipt as collateral</div>
-                    <div className="muted">
-                      Buy the receipt, pledge it, open a route support line, then release that support when you want the receipt fully free again.
-                    </div>
-
-                    <div className="wealth-nav-period-strip compact">
-                      {[
-                        { id: 'flex', label: 'Flexible pledge' },
-                        { id: 'fixed', label: 'Fixed-term pledge' }
-                      ].map((option) => (
-                        <button
-                          key={option.id}
-                          type="button"
-                          className={`wealth-nav-chip compact ${pledgeTermMode === option.id ? 'active' : ''}`}
-                          onClick={() => setPledgeTermMode(option.id)}
-                        >
-                          <span>Pledge mode</span>
-                          <strong>{option.label}</strong>
-                        </button>
-                      ))}
-                    </div>
+                    <div className="product-title">Pledge support</div>
 
                     <label className="wealth-field">
                       Support line target
@@ -5719,61 +5852,9 @@ function WealthInner() {
                         Release support
                       </button>
                     </div>
-
-                    <div className="wealth-inline-note paper-inline-note">
-                      <strong>Wallet path.</strong> Buy PT into this product, mint the receipt, optionally pledge it, let Paper read the support line for route sizing, then release support before normal redemption or settlement.
-                    </div>
-                  </div>
-
-                  <div className="paper-mode-card wealth-subpanel-card">
-                    <div className="product-title">Collateral guardrails</div>
-                    <div className="starter-reasons">
-                      <div className="reason-card">
-                        <div className="entry-title">Redeem lock</div>
-                        <div className="entry-copy">
-                          Pledged receipt shares are not redeemable. Only the free share balance can burn back into PT.
-                        </div>
-                      </div>
-                      <div className="reason-card">
-                        <div className="entry-title">Borrowing power</div>
-                        <div className="entry-copy">
-                          Remaining borrow capacity is {formatValue(selectedRemainingBorrowCapacity, hideBalances)}. This keeps the demo close to a simple collateral ratio instead of letting leverage float invisibly.
-                        </div>
-                      </div>
-                      <div className="reason-card">
-                        <div className="entry-title">Risk line</div>
-                        <div className="entry-copy">
-                          Once LTV moves past {(COLLATERAL_WARNING_LTV * 100).toFixed(0)}%, the card flips into watch mode. In a live version, that is where unwind or margin-call logic would start.
-                        </div>
-                      </div>
-                    </div>
                   </div>
                 </div>
               ) : null}
-
-              <div className="wealth-rights-grid" style={{ marginTop: 16 }}>
-                <div className="paper-mode-card wealth-subpanel-card">
-                  <div className="product-title">{selectedProduct.shareToken} rights snapshot</div>
-                  <div className="starter-reasons">
-                    {selectedProduct.shareRights.map((line) => (
-                      <div className="reason-card" key={line}>
-                        <div className="entry-copy">{line}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="paper-mode-card wealth-subpanel-card">
-                  <div className="product-title">Global rights notes</div>
-                  <div className="starter-reasons">
-                    {GLOBAL_TOKEN_RIGHTS_NOTES.map((line) => (
-                      <div className="reason-card" key={line}>
-                        <div className="entry-copy">{line}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
 
               {feedback ? <div className="env-hint">{feedback}</div> : null}
             </div>
@@ -6147,7 +6228,7 @@ function WealthInner() {
                 onClick={() => setSelectedWealthTaskId(quest.id)}
               >
                 <div className="wealth-task-card-head">
-                  <span className="wealth-task-badge">{quest.badge}</span>
+                  <span className="wealth-task-badge">Task {quest.taskNumber}</span>
                   <span className={`wealth-task-status ${quest.statusTone === 'done' ? 'done' : 'todo'}`}>
                     {quest.statusLabel}
                   </span>
@@ -6312,7 +6393,7 @@ function WealthInner() {
           {selectedCategory === 'dual' ? renderDualCurrencyGuideSection() : null}
         </section>
 
-        {renderCompareSection()}
+        {renderPositionsSection()}
 
         <section className="wealth-shelf-shell">
           <div className="wealth-shelf-main">
@@ -7236,126 +7317,7 @@ function WealthInner() {
           </aside>
         </section>
 
-        <section className="card">
-          <div className="section-head">
-            <div>
-              <div className="eyebrow">My wealth positions</div>
-              <h2>Wallet-linked vault holdings</h2>
-            </div>
-
-            <button className="ghost-btn compact" onClick={handleResetPortfolio}>
-              Reset wealth demo
-            </button>
-          </div>
-
-          {portfolioRows.length === 0 ? (
-            <div className="reason-card">
-              <div className="entry-title">No wealth positions yet</div>
-              <div className="entry-copy">
-                Start with a treasury-style shelf like USTB, FOBXX, or OUSG if you want the clearest first allocation, then move into carry or private-credit sleeves after the risk and quiz steps.
-              </div>
-            </div>
-          ) : (
-            <div className="wealth-portfolio-grid">
-              {portfolioRows.map((row) => {
-                const rowProduct = getProductByIdFrom(liveProducts, row.id);
-                return (
-                  <div className="reason-card wealth-position-card" key={row.id}>
-                    <div className="wealth-position-head">
-                      <div>
-                        <div className="product-title">{row.name}</div>
-                        <div className="muted">
-                          {row.productType} / {row.shareToken}
-                        </div>
-                      </div>
-                      <div className="wealth-position-head-actions">
-                        <span className={`pill ${riskClass(row.risk)}`}>{row.risk}</span>
-                        <button
-                          type="button"
-                          className="ghost-btn compact"
-                          onClick={() =>
-                            focusProduct(row.id, {
-                              topic: 'flow',
-                              categoryId: rowProduct ? getCategoryIdForProduct(rowProduct) : selectedCategory
-                            })
-                          }
-                        >
-                          Open detail
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="wealth-position-metric-grid">
-                      <div className="wealth-position-metric">
-                        <div className="k">Shares</div>
-                        <div className="v">{formatShareBalance(row.shares, hideBalances)}</div>
-                      </div>
-                      <div className="wealth-position-metric">
-                        <div className="k">Principal</div>
-                        <div className="v">{formatValue(row.principal, hideBalances)}</div>
-                      </div>
-                      <div className="wealth-position-metric">
-                        <div className="k">Current value</div>
-                        <div className="v">{formatValue(row.currentValue, hideBalances)}</div>
-                      </div>
-                      <div className="wealth-position-metric">
-                        <div className="k">PnL</div>
-                        <div className={`v ${row.pnl >= 0 ? 'risk-low' : 'risk-high'}`}>{formatSignedValue(row.pnl, hideBalances)}</div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {wealthState.activityLog?.length ? (
-            <div className="wealth-activity-section">
-              <div className="section-head compact">
-                <div>
-                  <div className="eyebrow">Recent wallet activity</div>
-                  <h3>Settlement, subscribe, and roll history</h3>
-                </div>
-              </div>
-
-              <div className="wealth-activity-list">
-                {wealthState.activityLog.slice(0, 6).map((entry) => {
-                  const entryProduct = getProductByIdFrom(liveProducts, entry.productId);
-                  return (
-                    <div className="wealth-activity-row" key={entry.id}>
-                      <div className="wealth-activity-badges">
-                        <span className="pill risk-low">{entry.type}</span>
-                        <span className="pill risk-medium">{entry.action || 'wallet signed'}</span>
-                      </div>
-                      <div className="wealth-activity-main">
-                        <div className="product-title">{entry.productName || entry.productId}</div>
-                        <div className="muted">
-                          {formatWealthDateTime(entry.ts)} / {formatValue(entry.amount || 0, hideBalances)}
-                        </div>
-                      </div>
-                      <div className="wealth-activity-side">
-                        <strong>{formatShareBalance(entry.shares || 0, hideBalances)}</strong>
-                        <span>{entryProduct?.shareToken || 'receipt'} shares</span>
-                      </div>
-                      <button
-                        type="button"
-                        className="ghost-btn compact"
-                        onClick={() =>
-                          focusProduct(entry.productId, {
-                            topic: 'flow',
-                            categoryId: entryProduct ? getCategoryIdForProduct(entryProduct) : selectedCategory
-                          })
-                        }
-                      >
-                        View
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-        </section>
+        {renderCompareSection()}
       </main>
 
       {renderTimelineDock()}

@@ -178,6 +178,42 @@ const HEDGE_TYPE_OPTIONS = [
   }
 ];
 const HEDGE_TYPE_LABELS = Object.fromEntries(HEDGE_TYPE_OPTIONS.map((option) => [option.id, option.label]));
+const OPTION_STRATEGY_DEFAULTS = {
+  collar: {
+    downsidePct: 12,
+    profitHarvestPct: 35,
+    upsideCapPct: 18,
+    premiumPct: 1.2,
+    strikePct: 10
+  },
+  covered: {
+    downsidePct: 100,
+    profitHarvestPct: 70,
+    upsideCapPct: 12,
+    premiumPct: 2.4,
+    strikePct: 12
+  },
+  'protective-put': {
+    downsidePct: 10,
+    profitHarvestPct: 0,
+    upsideCapPct: 100,
+    premiumPct: 2.1,
+    strikePct: 10
+  },
+  'long-call': {
+    downsidePct: 100,
+    profitHarvestPct: 0,
+    upsideCapPct: 100,
+    premiumPct: 3,
+    strikePct: 8
+  }
+};
+const OPTION_STRATEGY_LABELS = {
+  collar: 'Protected Growth',
+  covered: 'Premium Income',
+  'protective-put': 'Auto Hedge / Downside Floor',
+  'long-call': 'Long Call'
+};
 const WEALTH_SURFACE_REPLAY_PRODUCT_IDS = new Set(['msx-income-ladder']);
 const REPLAY_PRODUCTS = PAPER_PRODUCTS.filter(
   (product) => !WEALTH_SURFACE_REPLAY_PRODUCT_IDS.has(product.id) && !HIDDEN_REPLAY_PRODUCT_LANES.has(product.lane)
@@ -3551,6 +3587,17 @@ const REPLAY_ROUTE_FOCUS_OPTIONS = {
         'Premium drag is the price paid for a more visible downside floor.',
         'The preview should show how much protection remains after cost.'
       ]
+    },
+    {
+      id: 'long-call',
+      label: 'Long Call',
+      panelTitle: 'Long Call route',
+      summary: 'Buy upside convexity with a fixed option premium instead of holding the full underlying sleeve.',
+      lessons: [
+        'A long call is a directional upside ticket with limited loss.',
+        'The strike and premium decide how far the underlying must move before payoff starts.',
+        'This is useful for teaching convexity without pretending the user has unlimited downside.'
+      ]
     }
   ],
   routing: [
@@ -3790,12 +3837,128 @@ function estimateHedgePracticeOutcome({
   };
 }
 
+function getOptionStrategyDefaults(templateId = 'collar') {
+  return OPTION_STRATEGY_DEFAULTS[templateId] || OPTION_STRATEGY_DEFAULTS.collar;
+}
+
+function normalizeOptionStrategyControls(rawControls = {}, templateId = 'collar') {
+  const defaults = getOptionStrategyDefaults(templateId);
+
+  return {
+    downsidePct: clampNumber(Number(rawControls.downsidePct ?? defaults.downsidePct), 0, 100),
+    profitHarvestPct: clampNumber(Number(rawControls.profitHarvestPct ?? defaults.profitHarvestPct), 0, 100),
+    upsideCapPct: clampNumber(Number(rawControls.upsideCapPct ?? defaults.upsideCapPct), 1, 100),
+    premiumPct: clampNumber(Number(rawControls.premiumPct ?? defaults.premiumPct), 0, 25),
+    strikePct: clampNumber(Number(rawControls.strikePct ?? defaults.strikePct), 0, 60)
+  };
+}
+
+function estimateOptionStrategyPracticeOutcome({ startBar, endBar, notional = MIN_PAPER_TRADE, templateId = 'collar', controls = {} }) {
+  const startPrice = getBarCloseValue(startBar);
+  const endPrice = getBarCloseValue(endBar);
+  const safeNotional = Math.max(MIN_PAPER_TRADE, Number(notional || 0));
+
+  if (startPrice <= 0 || endPrice <= 0) {
+    return null;
+  }
+
+  const normalizedControls = normalizeOptionStrategyControls(controls, templateId);
+  const grossMoveRate = endPrice / startPrice - 1;
+  const floorRate = -normalizedControls.downsidePct / 100;
+  const capRate = normalizedControls.upsideCapPct / 100;
+  const premiumRate = normalizedControls.premiumPct / 100;
+  const strikeRate = normalizedControls.strikePct / 100;
+  const harvestRate = normalizedControls.profitHarvestPct / 100;
+  let netReturnRate = grossMoveRate;
+  let maxUpsideLabel = 'Open';
+  let maxDownsideLabel = 'Equity-like';
+  let premiumLabel = 'No premium';
+  let breakevenRate = 0;
+  let copy = 'Historical replay applies the selected payoff template to the same start and settlement bars.';
+  let legs = ['Hold underlying sleeve'];
+
+  if (templateId === 'covered') {
+    const cappedMoveRate = Math.min(grossMoveRate, capRate);
+    const harvestedPremiumRate = premiumRate * Math.max(0.2, harvestRate);
+    netReturnRate = cappedMoveRate + harvestedPremiumRate;
+    maxUpsideLabel = `Capped near ${formatSignedPercent((capRate + harvestedPremiumRate) * 100, 1)}`;
+    maxDownsideLabel = `Underlying downside, softened by ${formatSignedPercent(harvestedPremiumRate * 100, 1)}`;
+    premiumLabel = `+${formatNotional(safeNotional * harvestedPremiumRate)} PT income`;
+    breakevenRate = -harvestedPremiumRate;
+    copy = 'Covered-call replay keeps the sleeve, harvests option premium, and caps gains above the selected upside level.';
+    legs = ['Hold underlying sleeve', `Sell call near +${normalizedControls.upsideCapPct.toFixed(0)}%`, 'Keep premium if settlement stays below strike'];
+  } else if (templateId === 'protective-put') {
+    const protectedMoveRate = Math.max(grossMoveRate, floorRate);
+    netReturnRate = protectedMoveRate - premiumRate;
+    maxUpsideLabel = `Open after -${normalizedControls.premiumPct.toFixed(1)}% premium`;
+    maxDownsideLabel = `Floored near ${formatSignedPercent((floorRate - premiumRate) * 100, 1)}`;
+    premiumLabel = `-${formatNotional(safeNotional * premiumRate)} PT insurance`;
+    breakevenRate = premiumRate;
+    copy = 'Protective-put replay pays premium up front so settlement cannot fall past the selected downside floor.';
+    legs = ['Hold underlying sleeve', `Buy put floor at -${normalizedControls.downsidePct.toFixed(0)}%`, 'Keep upside after premium drag'];
+  } else if (templateId === 'long-call') {
+    const intrinsicRate = Math.max(0, grossMoveRate - strikeRate);
+    const participation = 1 + harvestRate;
+    netReturnRate = intrinsicRate * participation - premiumRate;
+    maxUpsideLabel = `Open above +${normalizedControls.strikePct.toFixed(0)}% strike`;
+    maxDownsideLabel = `Limited to -${normalizedControls.premiumPct.toFixed(1)}% premium`;
+    premiumLabel = `-${formatNotional(safeNotional * premiumRate)} PT option cost`;
+    breakevenRate = strikeRate + premiumRate / Math.max(1, participation);
+    copy = 'Long-call replay buys upside convexity: loss is limited to premium, while payoff starts after the selected strike.';
+    legs = [`Buy call strike +${normalizedControls.strikePct.toFixed(0)}%`, `${participation.toFixed(1)}x upside participation above strike`, 'No underlying sleeve required for payoff math'];
+  } else {
+    const protectedMoveRate = clamp(grossMoveRate, floorRate, capRate);
+    const harvestCreditRate = Math.max(0, Math.min(grossMoveRate, capRate)) * harvestRate * 0.15;
+    const collarNetPremiumRate = premiumRate * 0.25;
+    netReturnRate = protectedMoveRate + harvestCreditRate - collarNetPremiumRate;
+    maxUpsideLabel = `Capped near ${formatSignedPercent((capRate + harvestCreditRate - collarNetPremiumRate) * 100, 1)}`;
+    maxDownsideLabel = `Floored near ${formatSignedPercent((floorRate - collarNetPremiumRate) * 100, 1)}`;
+    premiumLabel =
+      collarNetPremiumRate > 0
+        ? `-${formatNotional(safeNotional * collarNetPremiumRate)} PT net cost`
+        : 'Call sale funds the put';
+    breakevenRate = collarNetPremiumRate - harvestCreditRate;
+    copy = 'Collar replay sells part of the upside, buys a downside floor, and lets the user choose how much profit is harvested.';
+    legs = [
+      'Hold underlying sleeve',
+      `Buy put floor at -${normalizedControls.downsidePct.toFixed(0)}%`,
+      `Sell call cap near +${normalizedControls.upsideCapPct.toFixed(0)}%`
+    ];
+  }
+
+  const netPnl = roundNumber(safeNotional * netReturnRate, 2);
+  const exitValue = roundNumber(Math.max(0, safeNotional + netPnl), 2);
+
+  return {
+    templateId,
+    title: `${OPTION_STRATEGY_LABELS[templateId] || OPTION_STRATEGY_LABELS.collar} preview`,
+    copy,
+    notional: safeNotional,
+    holdingDays: getReplayCaseHoldingDays(startBar, endBar),
+    controls: normalizedControls,
+    grossMoveRate: roundNumber(grossMoveRate, 4),
+    netReturnRate: roundNumber(netReturnRate, 4),
+    netPnl,
+    exitValue,
+    rows: [
+      { label: 'Historical move', value: formatSignedPercent(grossMoveRate * 100, 1) },
+      { label: 'Strategy payoff', value: `${formatSigned(netPnl)} PT` },
+      { label: 'Max upside', value: maxUpsideLabel },
+      { label: 'Max downside', value: maxDownsideLabel },
+      { label: 'Premium', value: premiumLabel },
+      { label: 'Breakeven', value: formatSignedPercent(breakevenRate * 100, 1) }
+    ],
+    legs
+  };
+}
+
 function getPracticeCaseOutcomePnl(practiceCase) {
   const rawValue =
     practiceCase?.outcomePnl ??
     practiceCase?.spotOutcome?.netPnl ??
     practiceCase?.leveragedOutcome?.netPnl ??
-    practiceCase?.hedgeOutcome?.netPnl;
+    practiceCase?.hedgeOutcome?.netPnl ??
+    practiceCase?.strategyOutcome?.netPnl;
 
   if (rawValue === null || rawValue === undefined || rawValue === '') return null;
 
@@ -3810,6 +3973,7 @@ function getPracticeCaseOutcomeRate(practiceCase) {
     practiceCase?.spotOutcome?.netReturnRate ??
     practiceCase?.leveragedOutcome?.priceMoveRate ??
     practiceCase?.hedgeOutcome?.netReturnRate ??
+    practiceCase?.strategyOutcome?.netReturnRate ??
     practiceCase?.returnRate;
 
   if (rawValue === null || rawValue === undefined || rawValue === '') return 0;
@@ -3836,7 +4000,9 @@ function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}
     hedgeSleeveNotional = notional,
     hedgeTicketNotional = notional,
     hedgeMarginCapital = marginCapital,
-    hedgeLeverage = leverage
+    hedgeLeverage = leverage,
+    strategyTemplateId = 'collar',
+    strategyControls = {}
   } = options || {};
   if (!Array.isArray(bars) || bars.length < 2) {
     return { safeBars: [], candidates: [] };
@@ -3902,11 +4068,22 @@ function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}
               flashLoanFee
             })
           : null;
-      const modeOutcomePnl = spotOutcome?.netPnl ?? leveragedOutcome?.netPnl ?? hedgeOutcome?.netPnl ?? null;
+      const strategyOutcome =
+        mode === 'strategy'
+          ? estimateOptionStrategyPracticeOutcome({
+              startBar,
+              endBar,
+              notional,
+              templateId: strategyTemplateId,
+              controls: strategyControls
+            })
+          : null;
+      const modeOutcomePnl = spotOutcome?.netPnl ?? leveragedOutcome?.netPnl ?? hedgeOutcome?.netPnl ?? strategyOutcome?.netPnl ?? null;
       const modeOutcomeReturnRate =
         spotOutcome?.netReturnRate ??
         (leveragedOutcome && notional > 0 ? leveragedOutcome.netPnl / Math.max(1, Number(notional || 0)) : null) ??
         hedgeOutcome?.netReturnRate ??
+        strategyOutcome?.netReturnRate ??
         returnRate;
       const spotScoreReturn = spotOutcome?.netReturnRate ?? returnRate;
       const score =
@@ -3914,7 +4091,11 @@ function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}
           ? (modeOutcomePnl !== null && Number.isFinite(Number(modeOutcomePnl))
               ? Number(modeOutcomePnl) / Math.max(1, Number(hedgeSleeveNotional || notional || 1))
               : -returnRate) + spanBonus
-          : mode === 'leverage'
+          : mode === 'strategy'
+            ? (modeOutcomePnl !== null && Number.isFinite(Number(modeOutcomePnl))
+                ? Number(modeOutcomePnl) / Math.max(1, Number(notional || 1))
+                : modeOutcomeReturnRate) + spanBonus
+            : mode === 'leverage'
             ? (modeOutcomePnl !== null && Number.isFinite(Number(modeOutcomePnl))
                 ? Number(modeOutcomePnl) / Math.max(1, Number(notional || 1))
                 : absoluteMove) + spanBonus
@@ -3929,6 +4110,7 @@ function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}
         spotOutcome,
         leveragedOutcome,
         hedgeOutcome,
+        strategyOutcome,
         modeOutcomePnl,
         modeOutcomeReturnRate,
         score
@@ -3952,6 +4134,16 @@ function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}
               notional
             })
           : null,
+      strategyOutcome:
+        mode === 'strategy'
+          ? estimateOptionStrategyPracticeOutcome({
+              startBar: safeBars[0],
+              endBar: safeBars[safeBars.length - 1],
+              notional,
+              templateId: strategyTemplateId,
+              controls: strategyControls
+            })
+          : null,
       score: 0
     });
   }
@@ -3972,7 +4164,9 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
     hedgeSleeveNotional = notional,
     hedgeTicketNotional = notional,
     hedgeMarginCapital = marginCapital,
-    hedgeLeverage = leverage
+    hedgeLeverage = leverage,
+    strategyTemplateId = 'collar',
+    strategyControls = {}
   } = options || {};
   const startBar = bars[candidate.startIndex] || safeBars[candidate.startSafeIndex];
   const endBar = bars[candidate.endIndex] || safeBars[candidate.endSafeIndex];
@@ -3987,7 +4181,7 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
   const triggerIndex = Math.min(Math.max(triggerBar.index, candidate.startIndex + 1), candidate.endIndex);
   const holdingDays = getReplayCaseHoldingDays(startBar, endBar);
   const triggerDays = getReplayCaseHoldingDays(startBar, bars[triggerIndex]);
-  const direction = mode === 'hedge' ? 'short' : mode === 'leverage' ? 'long' : candidate.returnRate < 0 ? 'short' : 'long';
+  const direction = mode === 'hedge' ? 'short' : mode === 'leverage' ? 'long' : mode === 'strategy' ? 'strategy' : candidate.returnRate < 0 ? 'short' : 'long';
   const spotOutcome =
     mode === 'spot'
       ? candidate.spotOutcome ||
@@ -4027,11 +4221,23 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
           flashLoanFee
         })
       : null;
-  const outcomePnl = spotOutcome?.netPnl ?? leveragedOutcome?.netPnl ?? hedgeOutcome?.netPnl ?? null;
+  const strategyOutcome =
+    mode === 'strategy'
+      ? candidate.strategyOutcome ||
+        estimateOptionStrategyPracticeOutcome({
+          startBar,
+          endBar,
+          notional,
+          templateId: strategyTemplateId,
+          controls: strategyControls
+        })
+      : null;
+  const outcomePnl = spotOutcome?.netPnl ?? leveragedOutcome?.netPnl ?? hedgeOutcome?.netPnl ?? strategyOutcome?.netPnl ?? null;
   const outcomeReturnRate =
     spotOutcome?.netReturnRate ??
     (leveragedOutcome && notional > 0 ? leveragedOutcome.netPnl / Math.max(1, Number(notional || 0)) : null) ??
     hedgeOutcome?.netReturnRate ??
+    strategyOutcome?.netReturnRate ??
     candidate.returnRate;
   const displayReturnRate = outcomeReturnRate;
 
@@ -4051,6 +4257,7 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
     spotOutcome,
     leveragedOutcome,
     hedgeOutcome,
+    strategyOutcome,
     scenario: candidate.scenario || 'best',
     scenarioLabel: candidate.scenarioLabel || 'Best case',
     scenarioRank: candidate.scenarioRank || 1,
@@ -4082,6 +4289,29 @@ function buildReplayPracticeCases(bars = [], mode = 'spot', options = {}) {
     candidate?.modeOutcomePnl !== null && candidate?.modeOutcomePnl !== undefined && Number.isFinite(Number(candidate.modeOutcomePnl))
       ? Number(candidate.modeOutcomePnl)
       : candidate?.score ?? candidate?.returnRate ?? 0;
+
+  if (mode === 'strategy') {
+    const rankedStrategyCandidates = [...candidates].sort(
+      (left, right) => getModeOutcomeScore(right) - getModeOutcomeScore(left) || Math.abs(right.returnRate) - Math.abs(left.returnRate)
+    );
+    addCandidate(rankedStrategyCandidates[0], 'best-payoff', 'Best payoff #1', 1);
+    addCandidate(rankedStrategyCandidates[1], 'best-payoff', 'Best payoff #2', 2);
+
+    const stressCandidate = candidates
+      .filter((candidate) => candidate.returnRate < 0)
+      .sort((left, right) => getModeOutcomeScore(right) - getModeOutcomeScore(left) || right.returnRate - left.returnRate)[0];
+    addCandidate(stressCandidate, 'stress-test', 'Downside test', 3);
+
+    rankedStrategyCandidates.forEach((candidate) => {
+      const nextRank = selected.length + 1;
+      addCandidate(candidate, candidate.returnRate < 0 ? 'stress-test' : 'best-payoff', candidate.returnRate < 0 ? 'Downside test' : `Best payoff #${nextRank}`, nextRank);
+    });
+
+    return selected
+      .slice(0, 3)
+      .map((candidate) => buildReplayPracticeCaseFromCandidate(bars, safeBars, candidate, mode, options))
+      .filter(Boolean);
+  }
 
   const upsideCandidates = candidates
     .filter((candidate) => candidate.returnRate > 0)
@@ -5199,6 +5429,11 @@ function PaperTradingInner() {
   const [showAdvancedDeskControls, setShowAdvancedDeskControls] = useState(false);
   const [routeSettlementMode, setRouteSettlementMode] = useState('T+0');
   const [routeBufferRatio, setRouteBufferRatio] = useState(0.5);
+  const [strategyDownsidePct, setStrategyDownsidePct] = useState(12);
+  const [strategyProfitHarvestPct, setStrategyProfitHarvestPct] = useState(35);
+  const [strategyUpsideCapPct, setStrategyUpsideCapPct] = useState(18);
+  const [strategyPremiumPct, setStrategyPremiumPct] = useState(1.2);
+  const [strategyStrikePct, setStrategyStrikePct] = useState(8);
   const [contractDirection, setContractDirection] = useState('long');
   const [activePerpLeg, setActivePerpLeg] = useState(null);
   const [activePerpPurpose, setActivePerpPurpose] = useState(null);
@@ -6192,6 +6427,21 @@ function PaperTradingInner() {
         ...hedgeFocusProfile
       }
     : selectedRouteFocusConfig;
+  const selectedStrategyTemplateId = selectedAdvancedRoute === 'borrow' ? selectedRouteFocusConfig?.id || 'collar' : 'collar';
+  const strategyControlValues = useMemo(
+    () =>
+      normalizeOptionStrategyControls(
+        {
+          downsidePct: strategyDownsidePct,
+          profitHarvestPct: strategyProfitHarvestPct,
+          upsideCapPct: strategyUpsideCapPct,
+          premiumPct: strategyPremiumPct,
+          strikePct: strategyStrikePct
+        },
+        selectedStrategyTemplateId
+      ),
+    [selectedStrategyTemplateId, strategyDownsidePct, strategyPremiumPct, strategyProfitHarvestPct, strategyStrikePct, strategyUpsideCapPct]
+  );
   const selectedRouteLessonLines = activeRouteFocusConfig?.lessons?.length
     ? activeRouteFocusConfig.lessons
     : selectedAdvancedRouteConfig.lessons;
@@ -8061,6 +8311,16 @@ function PaperTradingInner() {
   }, [selectedAdvancedRoute, selectedRouteFocusByRoute, visiblePerpFocusOptions]);
 
   useEffect(() => {
+    if (selectedAdvancedRoute !== 'borrow') return;
+    const defaults = getOptionStrategyDefaults(selectedStrategyTemplateId);
+    setStrategyDownsidePct(defaults.downsidePct);
+    setStrategyProfitHarvestPct(defaults.profitHarvestPct);
+    setStrategyUpsideCapPct(defaults.upsideCapPct);
+    setStrategyPremiumPct(defaults.premiumPct);
+    setStrategyStrikePct(defaults.strikePct);
+  }, [selectedAdvancedRoute, selectedStrategyTemplateId]);
+
+  useEffect(() => {
     if (REPLAY_LANE_OPTIONS.some((lane) => lane.id === selectedLane)) return;
     setSelectedLane('all');
   }, [selectedLane]);
@@ -8803,7 +9063,8 @@ function PaperTradingInner() {
     notionalOverride,
     forceSellAll = false,
     customFeedback,
-    outcomeActionLabel
+    outcomeActionLabel,
+    outcomeOverride = null
   }) {
     if (!tradeBar) {
       setFeedback('Replay bars are still loading for this product.');
@@ -8981,29 +9242,36 @@ function PaperTradingInner() {
         };
       }
 
+      const overridePnl = Number(outcomeOverride?.pnl);
+      const overrideExitValue = Number(outcomeOverride?.exitValue);
+      const overrideAppliesToLedger = Boolean(outcomeOverride?.applyToLedger);
+      const ledgerNetProceeds =
+        overrideAppliesToLedger && Number.isFinite(overrideExitValue) ? roundNumber(overrideExitValue, 2) : netProceeds;
+      const ledgerRealizedPnl =
+        overrideAppliesToLedger && Number.isFinite(overridePnl) ? roundNumber(overridePnl, 2) : realizedPnl;
       sellOutcomeSummary = {
-        pnl: realizedPnl,
-        exitValue: netProceeds,
-        actionLabel: outcomeActionLabel || (forceSellAll ? 'Auto-sell' : 'Sell'),
-        ts: tradeBar.ts
+        pnl: Number.isFinite(overridePnl) ? roundNumber(overridePnl, 2) : realizedPnl,
+        exitValue: Number.isFinite(overrideExitValue) ? roundNumber(overrideExitValue, 2) : netProceeds,
+        actionLabel: outcomeOverride?.actionLabel || outcomeActionLabel || (forceSellAll ? 'Auto-sell' : 'Sell'),
+        ts: outcomeOverride?.ts || tradeBar.ts
       };
 
       return {
         ...current,
-        cash: roundNumber(current.cash + netProceeds, 2),
-        realizedPnl: roundNumber(current.realizedPnl + realizedPnl, 2),
+        cash: roundNumber(current.cash + ledgerNetProceeds, 2),
+        realizedPnl: roundNumber(current.realizedPnl + ledgerRealizedPnl, 2),
         positions: nextPositions,
         trades: [
           {
             id: `${selectedProductId}-${tradeBar.ts}-sell-${current.trades.length}`,
             productId: selectedProductId,
             side,
-            notional: grossProceeds,
+            notional: overrideAppliesToLedger ? ledgerNetProceeds : grossProceeds,
             units: unitsToSell,
             price,
             ts: tradeBar.ts,
             interval: tradeInterval,
-            realizedPnl,
+            realizedPnl: ledgerRealizedPnl,
             feeTotal: sellCosts.nonTaxCost,
             taxTotal: sellCosts.estimatedTax,
             carryTotal: carryAllocated
@@ -9113,15 +9381,17 @@ function PaperTradingInner() {
 
     const focusedPrice = Number(focusedTradeBar?.close || 0);
     const focusedUnitsPreview = focusedPrice > 0 ? roundNumber(requestedTradeNotional / focusedPrice, 6) : 0;
-    const customFeedback = focusedTradeBar
-      ? side === 'buy'
-        ? `Buy confirmed on ${formatReplayDate(focusedTradeBar.ts, selectedView?.interval)} at ${formatPrice(
-            focusedPrice
-          )}. Ticket ${formatNotional(requestedTradeNotional)} PT is about ${formatUnits(focusedUnitsPreview)} units before route costs.`
-        : `Sell confirmed on ${formatReplayDate(focusedTradeBar.ts, selectedView?.interval)} at ${formatPrice(
-            focusedPrice
-          )}. The desk will unwind only the units this wallet currently holds.`
-      : undefined;
+    const customFeedback =
+      options.customFeedback ||
+      (focusedTradeBar
+        ? side === 'buy'
+          ? `Buy confirmed on ${formatReplayDate(focusedTradeBar.ts, selectedView?.interval)} at ${formatPrice(
+              focusedPrice
+            )}. Ticket ${formatNotional(requestedTradeNotional)} PT is about ${formatUnits(focusedUnitsPreview)} units before route costs.`
+          : `Sell confirmed on ${formatReplayDate(focusedTradeBar.ts, selectedView?.interval)} at ${formatPrice(
+              focusedPrice
+            )}. The desk will unwind only the units this wallet currently holds.`
+        : undefined);
 
     if (side === 'buy' && !focusedTradeBar) {
       setFeedback('Replay bars are still loading for this product.');
@@ -9200,7 +9470,90 @@ function PaperTradingInner() {
       tradeBar: focusedTradeBar,
       tradeInterval: selectedView?.interval,
       customFeedback,
-      forceSellAll: Boolean(options.forceSellAll)
+      forceSellAll: Boolean(options.forceSellAll),
+      outcomeActionLabel: options.outcomeActionLabel,
+      outcomeOverride: options.outcomeOverride
+    });
+  }
+
+  async function handleSettleOptionStrategy() {
+    if (!advancedActivityEnabled || selectedAdvancedRoute !== 'borrow') {
+      setFeedback(advancedActivityUnlockCopy);
+      return;
+    }
+
+    const bars = selectedView?.bars || [];
+    const currentPosition = paperState.positions[selectedProductId] || { units: 0, principal: 0, entryTs: '' };
+    if (!bars.length) {
+      setFeedback('Replay bars are still loading for this product.');
+      return;
+    }
+
+    if (currentPosition.units <= 0) {
+      setFeedback('Build the paper strategy first so there is a ticket to settle.');
+      return;
+    }
+
+    const entryIndexFromTs = currentPosition.entryTs ? bars.findIndex((bar) => bar.ts === currentPosition.entryTs) : -1;
+    const entryIndex = entryIndexFromTs >= 0 ? entryIndexFromTs : Math.max(0, Math.min(selectedView.cursor || 0, bars.length - 1));
+    const targetIndex = findReplayIndexAfterDays(bars, entryIndex, simulationHoldingDays);
+    const entryBar = bars[entryIndex];
+    const targetBar = bars[targetIndex];
+
+    if (!entryBar || !targetBar || targetIndex <= entryIndex) {
+      setFeedback('The selected holding period does not reach a later settlement bar for this chart.');
+      return;
+    }
+
+    const strategyOutcome = estimateOptionStrategyPracticeOutcome({
+      startBar: entryBar,
+      endBar: targetBar,
+      notional: Math.max(MIN_PAPER_TRADE, Number(currentPosition.principal || tradeAmount || MIN_PAPER_TRADE)),
+      templateId: selectedStrategyTemplateId,
+      controls: strategyControlValues
+    });
+
+    if (!strategyOutcome) {
+      setFeedback('The option payoff could not be calculated from the selected replay bars.');
+      return;
+    }
+
+    setIsPlaying(false);
+    setHoveredReplayIndex(null);
+    updateSelectedReplay({
+      cursor: targetIndex,
+      replayStarted: false
+    });
+
+    const settleSigned = await ensureReplayTradeSignature({
+      side: `settle ${OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'strategy'}`,
+      tradeBar: targetBar,
+      tradeInterval: selectedView?.interval,
+      notional: strategyOutcome.exitValue,
+      unitsPreview: currentPosition.units || 0
+    });
+
+    if (!settleSigned) return;
+
+    executeReplayTrade({
+      side: 'sell',
+      tradeBar: targetBar,
+      tradeInterval: selectedView?.interval,
+      forceSellAll: true,
+      outcomeActionLabel: `Settle ${OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'strategy'}`,
+      outcomeOverride: {
+        applyToLedger: true,
+        actionLabel: `Settle ${OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'strategy'}`,
+        pnl: strategyOutcome.netPnl,
+        exitValue: strategyOutcome.exitValue,
+        ts: targetBar.ts
+      },
+      customFeedback: `${OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'Strategy'} settled on ${formatReplayDate(
+        targetBar.ts,
+        selectedView?.interval
+      )}. Historical move ${formatSignedPercent(strategyOutcome.grossMoveRate * 100, 1)} became ${formatSigned(
+        strategyOutcome.netPnl
+      )} PT after the selected payoff controls.`
     });
   }
 
@@ -9845,7 +10198,18 @@ function PaperTradingInner() {
     setPendingPerpRiskConfirm(null);
 
     if (completed && queuedTrade.closeSleeveAfterHedge) {
-      await handlePlaceTrade('sell', { forceSellAll: true });
+      await handlePlaceTrade('sell', {
+        forceSellAll: true,
+        outcomeActionLabel: 'Protected sleeve close',
+        outcomeOverride: {
+          actionLabel: 'Protected sleeve close',
+          pnl: timedExitEstimatedPnl,
+          exitValue: timedExitEstimatedValue
+        },
+        customFeedback: `Protected sleeve settled with the guided estimate: about ${formatNotional(
+          timedExitEstimatedValue
+        )} PT value / ${formatSigned(timedExitEstimatedPnl)} PT net.`
+      });
       return;
     }
 
@@ -10579,7 +10943,7 @@ function PaperTradingInner() {
           ? {
               title: activeRouteFocusConfig?.panelTitle || 'Options / strategy route',
               primary: 'Build paper strategy',
-              secondary: 'Stress strategy',
+              secondary: 'Settle strategy',
               copy: activeRouteFocusConfig?.summary || 'Preview capped upside, downside protection, premium, breakeven, and why each leg exists before execution.'
             }
           : selectedAdvancedRoute === 'routing'
@@ -10637,7 +11001,7 @@ function PaperTradingInner() {
             detail: step.detail
           };
         });
-  const routePracticeMode = hedgeFocusActive ? 'hedge' : leverageRouteActive ? 'leverage' : 'spot';
+  const routePracticeMode = selectedAdvancedRoute === 'borrow' ? 'strategy' : hedgeFocusActive ? 'hedge' : leverageRouteActive ? 'leverage' : 'spot';
   const routePracticeFlashNotional = routePreviewFlashNotional;
   const routePracticeFlashPremiumEstimate = routePreviewFlashPremiumEstimate;
   const routePracticePreviewTicketNotional = routePreviewTicketNotional;
@@ -10668,7 +11032,9 @@ function PaperTradingInner() {
         hedgeSleeveNotional: routePracticeHedgeSleeveNotional,
         hedgeTicketNotional: routePracticeHedgeTicketNotional,
         hedgeMarginCapital: routePostedBaseMarginCapital,
-        hedgeLeverage: routeLeverageMultiple
+        hedgeLeverage: routeLeverageMultiple,
+        strategyTemplateId: selectedStrategyTemplateId,
+        strategyControls: strategyControlValues
       }),
     [
       routePracticeFlashNotional,
@@ -10679,8 +11045,10 @@ function PaperTradingInner() {
       routePracticeHedgeTicketNotional,
       routePracticeMode,
       routePracticeNotional,
+      selectedStrategyTemplateId,
       selectedProduct,
-      selectedView?.bars
+      selectedView?.bars,
+      strategyControlValues
     ]
   );
   const selectedPracticeCaseSafeIndex = Math.max(
@@ -10701,7 +11069,9 @@ function PaperTradingInner() {
       ? `net ${formatPracticeCaseOutcome(routePracticeCase)}`
       : routePracticeCase.mode === 'hedge'
         ? `hedged ${formatPracticeCaseOutcome(routePracticeCase)}`
-        : `${routePracticeCase.direction} ${formatPracticeCaseOutcome(routePracticeCase)}`
+        : routePracticeCase.mode === 'strategy'
+          ? `payoff ${formatPracticeCaseOutcome(routePracticeCase)}`
+          : `${routePracticeCase.direction} ${formatPracticeCaseOutcome(routePracticeCase)}`
     : '';
   const routePracticeCaseCopy = routePracticeCase
     ? routePracticeCase.mode === 'hedge'
@@ -10714,12 +11084,17 @@ function PaperTradingInner() {
             routePracticeCase.endBar?.ts,
             selectedView?.interval
           )} and close the leg. Current principal plus flash setup models ${routePracticeOutcomeLabel} after funding and close drag.`
-        : `Guided ${routePracticeTicker} buy/sell drill: click "Start case", press "Buy", then use "Stop day" at ${formatReplayDate(
-            routePracticeCase.endBar?.ts,
-            selectedView?.interval
-          )} or the ${formatHoldingPresetLabel(routePracticeCase.holdingDays)} dock preset. Gross move ${routePracticeGrossMoveLabel}; modeled route drag ${
-            routePracticeCase.spotOutcome ? formatNotional(routePracticeCase.spotOutcome.totalDrag) : '0'
-          } PT.`
+        : routePracticeCase.mode === 'strategy'
+          ? `Guided ${routePracticeTicker} option drill: click "Start case", press "Build paper strategy", then use "Settle day" at ${formatReplayDate(
+              routePracticeCase.endBar?.ts,
+              selectedView?.interval
+            )}. Historical move is ${routePracticeGrossMoveLabel}; selected ${OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'strategy'} payoff models ${routePracticeOutcomeLabel}.`
+          : `Guided ${routePracticeTicker} buy/sell drill: click "Start case", press "Buy", then use "Stop day" at ${formatReplayDate(
+              routePracticeCase.endBar?.ts,
+              selectedView?.interval
+            )} or the ${formatHoldingPresetLabel(routePracticeCase.holdingDays)} dock preset. Gross move ${routePracticeGrossMoveLabel}; modeled route drag ${
+              routePracticeCase.spotOutcome ? formatNotional(routePracticeCase.spotOutcome.totalDrag) : '0'
+            } PT.`
     : 'Replay bars are still loading. The case guide will appear once the chart has enough history.';
   const routePracticeStepRows = routePracticeCase
     ? routePracticeCase.mode === 'hedge'
@@ -10758,6 +11133,24 @@ function PaperTradingInner() {
             copy: `The replay pauses automatically before the close signature. With current principal and flash, this case models ${routePracticeOutcomeLabel} after funding, taker, and flash premium drag.`
           }
         ]
+        : routePracticeCase.mode === 'strategy'
+          ? [
+              {
+                label: '1',
+                title: 'Click "Start case"',
+                copy: `Chart jumps to ${formatReplayDate(routePracticeCase.startBar?.ts, selectedView?.interval)}. Press "Build paper strategy" to stage the selected ${OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'strategy'} template.`
+              },
+              {
+                label: '2',
+                title: 'Tune payoff controls',
+                copy: `Set downside floor, profit harvest, cap, premium, or strike. The preview re-scans the same historical windows with those controls.`
+              },
+              {
+                label: '3',
+                title: 'Click "Settle day"',
+                copy: `Chart jumps to ${formatReplayDate(routePracticeCase.endBar?.ts, selectedView?.interval)}. Press "Settle strategy"; this case currently models ${routePracticeOutcomeLabel}.`
+              }
+            ]
         : [
             {
               label: '1',
@@ -10814,53 +11207,35 @@ function PaperTradingInner() {
       step === 'risk'
         ? `Case moved to the hedge decision day: ${formatReplayDate(targetBar?.ts, selectedView?.interval)}. Size the hedge, then press "Open hedge".`
         : step === 'end'
-          ? `Case moved to the planned close day: ${formatReplayDate(targetBar?.ts, selectedView?.interval)}. Press the close button here; replay is paused for the exit.`
+          ? routePracticeCase.mode === 'strategy'
+            ? `Case moved to the strategy settlement day: ${formatReplayDate(targetBar?.ts, selectedView?.interval)}. Press "Settle strategy" here to write the option payoff into the paper ledger.`
+            : `Case moved to the planned close day: ${formatReplayDate(targetBar?.ts, selectedView?.interval)}. Press the close button here; replay is paused for the exit.`
           : `Case loaded at ${formatReplayDate(targetBar?.ts, selectedView?.interval)}. ${
               routePracticeCase.mode === 'hedge'
                 ? 'Press "Buy sleeve first", then use "Hedge day".'
                 : routePracticeCase.mode === 'leverage'
                   ? `Press "Open ${routePracticeCase.direction}", then use "Stop day".`
-                  : 'Press "Buy", then use "Stop day" or the floating dock preset.'
+                  : routePracticeCase.mode === 'strategy'
+                    ? 'Press "Build paper strategy", tune controls if needed, then use "Settle day".'
+                    : 'Press "Buy", then use "Stop day" or the floating dock preset.'
             }`
     );
   }
+  const strategyPreviewAnchorBar = selectedAdvancedRoute === 'borrow' ? selectedPosition.entryTs ? selectedView?.bars?.find((bar) => bar.ts === selectedPosition.entryTs) || replayFocus.lockedBar : replayFocus.lockedBar || routePracticeCase?.startBar : null;
+  const strategyPreviewTargetBar =
+    selectedAdvancedRoute === 'borrow'
+      ? timedExitTargetBar || routePracticeCase?.endBar || replayFocus.bar
+      : null;
   const optionStrategyPreview =
     selectedAdvancedRoute === 'borrow'
-        ? {
-            collar: {
-            title: 'Protected Growth preview',
-            copy: 'Hold the underlying, sell upside, and buy downside protection.',
-            rows: [
-              { label: 'Max upside', value: 'Capped near +12%' },
-              { label: 'Max downside', value: 'Protected below -15%' },
-              { label: 'Premium', value: '+320 PT credit' },
-              { label: 'Breakeven', value: 'About -2.5%' }
-            ],
-            legs: ['Hold underlying sleeve', 'Sell 110% call', 'Buy 85% put']
-          },
-          covered: {
-            title: 'Premium Income preview',
-            copy: 'Hold the underlying and sell upside for option premium.',
-            rows: [
-              { label: 'Max upside', value: 'Capped at strike' },
-              { label: 'Max downside', value: 'Still equity-like' },
-              { label: 'Premium', value: '+income credit' },
-              { label: 'Breakeven', value: 'Entry minus premium' }
-            ],
-            legs: ['Hold underlying sleeve', 'Sell OTM call', 'Keep premium if below strike']
-          },
-          'protective-put': {
-            title: 'Auto Hedge / Downside Floor preview',
-            copy: 'Hold the underlying and pay premium for a visible downside floor.',
-            rows: [
-              { label: 'Max upside', value: 'Open after premium' },
-              { label: 'Max downside', value: 'Limited near put strike' },
-              { label: 'Premium', value: '-insurance cost' },
-              { label: 'Breakeven', value: 'Entry plus premium' }
-            ],
-            legs: ['Hold underlying sleeve', 'Buy OTM put', 'Keep upside after cost']
-          }
-        }[selectedRouteFocusConfig?.id || 'collar'] || null
+      ? routePracticeCase?.strategyOutcome ||
+        estimateOptionStrategyPracticeOutcome({
+          startBar: strategyPreviewAnchorBar,
+          endBar: strategyPreviewTargetBar,
+          notional: Math.max(MIN_PAPER_TRADE, Number(selectedPosition.principal || routePracticeNotional || tradeAmount || MIN_PAPER_TRADE)),
+          templateId: selectedStrategyTemplateId,
+          controls: strategyControlValues
+        })
       : null;
   const timedExitSpotSnapshot =
     timedExitTargetBar && selectedPosition.units > 0
@@ -11123,7 +11498,9 @@ function PaperTradingInner() {
             : 'Auto-sell is the cleanest way to compare headline price move versus real take-home after route drag.';
   const timedExitCardTitle = hedgeFocusActive
     ? activeRouteFocusConfig?.autoTitle || 'Auto-unwind hedge window'
-    : leverageRouteActive
+    : selectedAdvancedRoute === 'borrow'
+      ? 'Auto-settle strategy'
+      : leverageRouteActive
       ? 'Auto-close after hold'
       : 'Auto-sell after hold';
   const timedExitHoldingLabel = hedgeFocusActive
@@ -11131,11 +11508,15 @@ function PaperTradingInner() {
     : 'Holding period';
   const timedExitTargetLabel = hedgeFocusActive
     ? activeRouteFocusConfig?.targetLabel || 'Auto-unwind bar'
-    : leverageRouteActive
+    : selectedAdvancedRoute === 'borrow'
+      ? 'Settle bar'
+      : leverageRouteActive
       ? 'Auto-close bar'
       : 'Auto-sell bar';
   const timedExitSizeLabel = hedgeFocusActive
     ? activeRouteFocusConfig?.sizeLabel || 'Hedge size'
+    : selectedAdvancedRoute === 'borrow'
+      ? 'Strategy ticket'
     : 'Sell size';
   const timedExitActionLabel = leverageRouteActive && !activePerpLeg
     ? hedgeFocusActive
@@ -11144,14 +11525,18 @@ function PaperTradingInner() {
         : 'Pick anchor first'
       : 'Open perp first'
     : selectedPosition.units <= 0 && !leverageRouteActive
-      ? 'Buy first for timed exit'
+      ? selectedAdvancedRoute === 'borrow'
+        ? 'Build strategy first'
+        : 'Buy first for timed exit'
       : simulationHoldingDays <= 0
         ? 'Set hold first'
         : hedgeFocusActive
           ? `Unwind in ${timedExitRequestedDays}D`
-          : leverageRouteActive
-            ? `Close in ${timedExitRequestedDays}D`
-            : `Auto-sell in ${timedExitRequestedDays}D`;
+          : selectedAdvancedRoute === 'borrow'
+            ? `Settle in ${timedExitRequestedDays}D`
+            : leverageRouteActive
+              ? `Close in ${timedExitRequestedDays}D`
+              : `Auto-sell in ${timedExitRequestedDays}D`;
   const hedgeStatCards = hedgeFocusProfile?.statCards || [];
 
   function renderRoutePracticeCaseCard(extraClassName = '') {
@@ -11207,7 +11592,7 @@ function PaperTradingInner() {
                 </div>
               ) : null}
               <div>
-                <span>Stop</span>
+                <span>{routePracticeCase.mode === 'strategy' ? 'Settle' : 'Stop'}</span>
                 <strong>{formatReplayDate(routePracticeCase.endBar?.ts, selectedView?.interval)}</strong>
               </div>
               <div>
@@ -11225,7 +11610,7 @@ function PaperTradingInner() {
                 </button>
               ) : null}
               <button type="button" className="ghost-btn compact" onClick={() => handleApplyRoutePracticeCase('end')}>
-                Stop day
+                {routePracticeCase.mode === 'strategy' ? 'Settle day' : 'Stop day'}
               </button>
             </div>
           </>
@@ -11289,6 +11674,16 @@ function PaperTradingInner() {
         return;
       }
 
+      if (selectedAdvancedRoute === 'borrow') {
+        handlePlaceTrade('buy', {
+          customFeedback: `${OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'Strategy'} ticket staged at ${formatReplayDate(
+            replayFocus.bar?.ts,
+            selectedView?.interval
+          )}. Tune the payoff controls, then use "Settle strategy" to apply the historical payoff at the selected holding period.`
+        });
+        return;
+      }
+
       handlePlaceTrade('buy');
     };
     const handleSecondaryRouteAction = () => {
@@ -11314,6 +11709,11 @@ function PaperTradingInner() {
         }
 
         handlePerpShortcut(secondaryPerpDirection);
+        return;
+      }
+
+      if (selectedAdvancedRoute === 'borrow') {
+        handleSettleOptionStrategy();
         return;
       }
 
@@ -11379,7 +11779,7 @@ function PaperTradingInner() {
       : leverageRouteActive && !activePerpLeg
         ? { label: 'Open first', tone: 'risk-medium' }
       : selectedPosition.units <= 0 && !leverageRouteActive
-        ? { label: 'Buy first', tone: 'risk-medium' }
+        ? { label: selectedAdvancedRoute === 'borrow' ? 'Build first' : 'Buy first', tone: 'risk-medium' }
       : timedExitRequestedExceedsWindow
           ? { label: 'Too long', tone: 'risk-medium' }
           : !routeTimedExitAllowed
@@ -12091,6 +12491,84 @@ function PaperTradingInner() {
                   ) : null}
                 </label>
 
+                {selectedAdvancedRoute === 'borrow' ? (
+                  <div className="paper-inline-action-card paper-inline-action-card-compact paper-strategy-control-card">
+                    <div className="paper-inline-action-head">
+                      <div>
+                        <div className="k">Strategy controls</div>
+                        <div className="muted">
+                          {OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'Strategy'} uses the current historical window, then settles by holding period.
+                        </div>
+                      </div>
+                      <span className={`pill ${optionStrategyPreview?.netPnl >= 0 ? 'risk-low' : 'risk-high'}`}>
+                        {optionStrategyPreview ? `${formatSigned(optionStrategyPreview.netPnl)} PT` : 'No payoff yet'}
+                      </span>
+                    </div>
+                    <div className="paper-strategy-parameter-grid">
+                      <label className="paper-strategy-parameter-field">
+                        <span>Downside floor</span>
+                        <strong>-{strategyControlValues.downsidePct.toFixed(0)}%</strong>
+                        <input
+                          type="range"
+                          min="0"
+                          max="50"
+                          step="1"
+                          value={strategyControlValues.downsidePct}
+                          onChange={(event) => setStrategyDownsidePct(Number(event.target.value))}
+                        />
+                      </label>
+                      <label className="paper-strategy-parameter-field">
+                        <span>Profit harvest</span>
+                        <strong>{strategyControlValues.profitHarvestPct.toFixed(0)}%</strong>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="5"
+                          value={strategyControlValues.profitHarvestPct}
+                          onChange={(event) => setStrategyProfitHarvestPct(Number(event.target.value))}
+                        />
+                      </label>
+                      <label className="paper-strategy-parameter-field">
+                        <span>Upside cap</span>
+                        <strong>+{strategyControlValues.upsideCapPct.toFixed(0)}%</strong>
+                        <input
+                          type="range"
+                          min="1"
+                          max="60"
+                          step="1"
+                          value={strategyControlValues.upsideCapPct}
+                          onChange={(event) => setStrategyUpsideCapPct(Number(event.target.value))}
+                        />
+                      </label>
+                      <label className="paper-strategy-parameter-field">
+                        <span>Option premium</span>
+                        <strong>{strategyControlValues.premiumPct.toFixed(1)}%</strong>
+                        <input
+                          type="range"
+                          min="0"
+                          max="15"
+                          step="0.1"
+                          value={strategyControlValues.premiumPct}
+                          onChange={(event) => setStrategyPremiumPct(Number(event.target.value))}
+                        />
+                      </label>
+                      <label className="paper-strategy-parameter-field">
+                        <span>Strike OTM</span>
+                        <strong>+{strategyControlValues.strikePct.toFixed(0)}%</strong>
+                        <input
+                          type="range"
+                          min="0"
+                          max="40"
+                          step="1"
+                          value={strategyControlValues.strikePct}
+                          onChange={(event) => setStrategyStrikePct(Number(event.target.value))}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                ) : null}
+
                 {!hedgeFocusActive ? (
                   <div
                     className={`paper-inline-action-card paper-inline-action-card-compact paper-inline-timed-exit-card ${
@@ -12154,15 +12632,17 @@ function PaperTradingInner() {
                         <div className="paper-inline-action-metric">
                           <span>{timedExitSizeLabel}</span>
                           <strong>
-                            {leverageRouteActive && timedExitLeveragedSnapshot
+                            {selectedAdvancedRoute === 'borrow' && optionStrategyPreview
+                              ? `${formatNotional(optionStrategyPreview.notional)} PT`
+                              : leverageRouteActive && timedExitLeveragedSnapshot
                               ? `${formatNotional(timedExitLeveragedSnapshot.exposureNotional)} PT`
                               : `${formatUnits(selectedPosition.units)} units`}
                           </strong>
                         </div>
                         <div className="paper-inline-action-metric">
                           <span>Est. take-home</span>
-                          <strong className={timedExitEstimatedPnl >= 0 ? 'risk-low' : 'risk-high'}>
-                            {formatSigned(timedExitEstimatedPnl)} PT
+                          <strong className={(selectedAdvancedRoute === 'borrow' && optionStrategyPreview ? optionStrategyPreview.netPnl : timedExitEstimatedPnl) >= 0 ? 'risk-low' : 'risk-high'}>
+                            {formatSigned(selectedAdvancedRoute === 'borrow' && optionStrategyPreview ? optionStrategyPreview.netPnl : timedExitEstimatedPnl)} PT
                           </strong>
                         </div>
                       </div>
@@ -12170,14 +12650,18 @@ function PaperTradingInner() {
                         <button
                           type="button"
                           className="ghost-btn compact paper-inline-action-button"
-                          onClick={() => setAutoSellPreviewOpen(true)}
+                          onClick={selectedAdvancedRoute === 'borrow' ? handleSettleOptionStrategy : () => setAutoSellPreviewOpen(true)}
                           disabled={!timedExitReady}
                         >
                           {timedExitActionLabel}
                         </button>
                         <div className="paper-inline-help-pill paper-inline-help-pill-left paper-inline-help-pill-wide paper-inline-help-pill-anchor-row">
                           <span>What happens?</span>
-                          <div className="paper-inline-cash-tooltip paper-inline-cash-tooltip-row">{timedExitSummary}</div>
+                          <div className="paper-inline-cash-tooltip paper-inline-cash-tooltip-row">
+                            {selectedAdvancedRoute === 'borrow' && optionStrategyPreview
+                              ? `${optionStrategyPreview.copy} Settlement uses the selected holding period and writes ${formatSigned(optionStrategyPreview.netPnl)} PT into the paper ledger.`
+                              : timedExitSummary}
+                          </div>
                         </div>
                         {timedExitLosingRows.length ? (
                           <div className="paper-inline-help-pill paper-inline-help-pill-left paper-inline-help-pill-wide paper-inline-help-pill-warning paper-inline-help-pill-anchor-row">
@@ -12539,7 +13023,9 @@ function PaperTradingInner() {
                       {useTimedExitSummary
                         ? leverageRouteActive
                           ? 'Auto-close take-home'
-                          : 'Auto-sell take-home'
+                          : selectedAdvancedRoute === 'borrow'
+                            ? 'Strategy settle take-home'
+                            : 'Auto-sell take-home'
                         : 'Trade exit value'}
                     </div>
                     <div className="v">
@@ -12591,7 +13077,9 @@ function PaperTradingInner() {
                       {useTimedExitSummary
                         ? leverageRouteActive
                           ? 'Auto-close est. PnL'
-                          : 'Auto-sell est. PnL'
+                          : selectedAdvancedRoute === 'borrow'
+                            ? 'Strategy settle est. PnL'
+                            : 'Auto-sell est. PnL'
                         : 'Trade net PnL'}
                     </div>
                     <div
@@ -13191,36 +13679,24 @@ function PaperTradingInner() {
           <div className="learn-quest-optional-row paper-reward-task-row" style={{ marginTop: 18 }}>
             {replayAchievements.map((achievement) => (
               (() => {
-                const tileStatus = getReplayAchievementTileStatus(achievement);
-
                 return (
                   <button
                     key={achievement.id}
                     className={`learn-quest-tile ${selectedRewardTaskId === achievement.id ? 'active' : ''} ${
-                      tileStatus.tone === 'done' ? 'done' : tileStatus.tone === 'ready' ? 'ready' : ''
+                      achievement.unlocked || achievement.onchainClaimed || achievement.inherited ? 'done' : ''
                     }`}
                     onClick={() => handleToggleRewardTask(achievement.id)}
                   >
-                    {tileStatus.tone !== 'todo' ? (
-                      <div className={`tile-status-badge ${tileStatus.tone}`}>{tileStatus.text}</div>
-                    ) : null}
                 <div className="learn-quest-ribbon">Task {achievement.taskNumber}</div>
-                {achievement.unlocked || achievement.onchainClaimed || achievement.inherited ? (
-                  <ReplayCollectibleCover
-                    accent={achievement.coverAccent}
-                    kicker={achievement.coverKicker}
-                    title={achievement.coverTitle}
-                    subtitle={achievement.coverSubtitle}
-                    footerLines={achievement.coverFooterLines}
-                    stamp={achievement.coverStamp}
-                  />
-                ) : (
-                  <ReplayTaskPendingCover
-                    taskNumber={achievement.taskNumber}
-                    title={achievement.title}
-                    requirement={achievement.requirement}
-                  />
-                )}
+                <div className="quest-inline-status-card paper-task-cover-summary">
+                  <div>
+                    <div className="quest-panel-title">{achievement.title}</div>
+                    <div className="muted">{achievement.requirement}</div>
+                  </div>
+                  <span className={`checklist-status-badge ${achievement.unlocked || achievement.onchainClaimed || achievement.inherited ? 'done' : 'todo'}`}>
+                    {achievement.unlocked || achievement.onchainClaimed || achievement.inherited ? 'Complete' : 'To do'}
+                  </span>
+                </div>
                 <div className="learn-quest-pills">
                   <span className="badge">{achievement.activityLabel}</span>
                 </div>

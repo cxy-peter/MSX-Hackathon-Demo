@@ -2923,19 +2923,18 @@ export default function App() {
                     className={`learn-quest-tile core ${activeCoreQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' || quest.status === 'Done' || quest.status === 'Unlocked' ? 'done' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}
                     onClick={() => openLearnQuest(quest.id)}
                   >
-                    <div className={`tile-status-badge ${quest.status === 'Completed' ? 'done' : quest.status === 'Done' || quest.status === 'Unlocked' ? 'ready' : 'todo'}`}>
-                      {getQuestStatusLabel(quest.status)}
+                    <div className="home-quest-task-summary">
+                      <div>
+                        <div className="quest-panel-title">{quest.title}</div>
+                        <div className="muted">{quest.hint}</div>
+                      </div>
+                      <span className={`checklist-status-badge ${quest.status === 'Completed' ? 'done' : quest.status === 'Done' || quest.status === 'Unlocked' ? 'ready' : 'todo'}`}>
+                        {getQuestStatusLabel(quest.status)}
+                      </span>
                     </div>
-                    <HomeQuestCover
-                      kicker={quest.coverKicker}
-                      title={quest.coverTitle}
-                      subtitle={quest.coverSubtitle}
-                      accent={quest.coverAccent}
-                      footerLines={[`Step ${index + 1}`, quest.label]}
-                    />
                     <div className="learn-quest-pills">
+                      <span className="badge">Step {index + 1}</span>
                       <span className="badge">{quest.label}</span>
-                      <span className="badge">{quest.reward}</span>
                     </div>
                     <div className="learn-quest-tile-title">{quest.title}</div>
                     <div className="learn-quest-tile-copy">{quest.hint}</div>
@@ -3139,19 +3138,17 @@ export default function App() {
                   className={`learn-quest-tile ${activeOptionalQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' || quest.status === 'Done' || quest.status === 'Unlocked' ? 'done' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}
                   onClick={() => openLearnQuest(quest.id)}
                 >
-                  <div className={`tile-status-badge ${quest.status === 'Completed' ? 'done' : quest.status === 'Done' || quest.status === 'Unlocked' ? 'ready' : 'todo'}`}>
-                    {getQuestStatusLabel(quest.status)}
+                  <div className="home-quest-task-summary">
+                    <div>
+                      <div className="quest-panel-title">{quest.title}</div>
+                      <div className="muted">{quest.hint}</div>
+                    </div>
+                    <span className={`checklist-status-badge ${quest.status === 'Completed' ? 'done' : quest.status === 'Done' || quest.status === 'Unlocked' ? 'ready' : 'todo'}`}>
+                      {getQuestStatusLabel(quest.status)}
+                    </span>
                   </div>
-                  <HomeQuestCover
-                    kicker={quest.coverKicker}
-                    title={quest.coverTitle}
-                    subtitle={quest.coverSubtitle}
-                    accent={quest.coverAccent}
-                    footerLines={[quest.label, quest.reward]}
-                  />
                   <div className="learn-quest-pills">
                     <span className="badge">{quest.label}</span>
-                    <span className="badge">{quest.reward}</span>
                   </div>
                   <div className="learn-quest-tile-title">{quest.title}</div>
                   <div className="learn-quest-tile-copy">{quest.hint}</div>

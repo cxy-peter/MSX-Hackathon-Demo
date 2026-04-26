@@ -19,7 +19,7 @@ export const GOAL_OPTIONS = [
     id: 'parkCash',
     label: 'Park Cash',
     description: 'Cash & Treasury first: learn what you own, how treasury-style carry accrues, and how market-day liquidity works.',
-    recommended: ['superstate-ustb', 'franklin-fobxx', 'blackrock-buidl']
+    recommended: ['superstate-ustb', 'blackrock-buidl', 'ondo-ousg']
   },
   {
     id: 'earn',
@@ -29,15 +29,15 @@ export const GOAL_OPTIONS = [
   },
   {
     id: 'public',
-    label: 'xStocks / Public Holdings',
-    description: 'Listed equities and ETF-style exposure belong here. Treasury, carry funds, private shares, and structured notes do not.',
-    recommended: ['xstocks-public-holdings']
+    label: 'Pre-IPO Growth',
+    description: 'Late-stage private-company exposure belongs here: allocation windows, SPV rights, transfer limits, and event-driven exits.',
+    recommended: ['private-watchlist', 'spacex-secondary', 'stripe-secondary', 'bytedance-secondary']
   },
   {
     id: 'private',
     label: 'Private Watchlist',
     description: 'Track pre-IPO, SPV, late-stage private-share, and transfer-window logic without pretending it is exchange-style spot.',
-    recommended: ['private-watchlist', 'apollo-acred', 'msx-quant-fund-1']
+    recommended: ['private-watchlist', 'spacex-secondary', 'stripe-secondary', 'databricks-secondary']
   },
   {
     id: 'auto',
@@ -50,13 +50,90 @@ export const GOAL_OPTIONS = [
 export const CATEGORY_OPTIONS = [
   { id: 'all', label: 'All product types' },
   { id: 'cash', label: 'Cash & Treasury' },
-  { id: 'public', label: 'Listed / xStocks' },
+  { id: 'public', label: 'Pre-IPO Growth' },
   { id: 'private', label: 'Private' },
   { id: 'auto', label: 'Auto / Managed' },
   { id: 'earn', label: 'Earn / Yield' }
 ];
 
-export const WEALTH_PRODUCTS = [
+function buildPrivateGrowthProduct({
+  id,
+  name,
+  shortName,
+  nav,
+  theme,
+  base,
+  pressure,
+  riskNote,
+  technicalSummary,
+  humanSummary
+}) {
+  return {
+    id,
+    name,
+    shortName,
+    bucket: 'private',
+    termType: 'closed',
+    goals: ['private', 'public'],
+    productType: 'Pre-IPO / private-growth allocation',
+    status: 'Demo watchlist / gated access route',
+    liveTieIn: `${name} is modeled as a RiskLens private-growth watchlist card. It is not a live order book or a claim of current availability.`,
+    risk: 'High',
+    apyRange: 'No fixed yield / event-driven mark',
+    annualYieldRate: 0,
+    annualYieldBasis: 'No fixed payout',
+    annualYieldSource: 'Secondary marks, tenders, IPO, acquisition, or transfer-window events.',
+    riskNote,
+    baseAsset: 'USD or USDC allocation into a permissioned SPV, secondary window, or watchlist route',
+    underlying: `${name} late-stage private-company exposure, represented as gated allocation education rather than listed shares.`,
+    yieldSource: 'No recurring yield. Return depends on private-market marks and liquidity events.',
+    redemption: 'Transfer window, issuer event, tender, IPO, or acquisition. No continuous public exchange redemption.',
+    suitableFor: 'Users who can evaluate eligibility, document rights, lockup, concentration, and exit uncertainty.',
+    worstCase: 'Transfer windows close, valuations fall, documents limit rights, or no liquidity event arrives.',
+    shareToken: shortName,
+    nav,
+    minSubscription: 2500,
+    dailyYieldRate: 0,
+    technicalSummary,
+    humanSummary,
+    scenario: {
+      horizon: '270 days on 1,000 PT',
+      conservative: `${Math.max(600, Math.round(base * 0.82))} PT`,
+      base: `${base} PT`,
+      pressure: `${pressure} PT`
+    },
+    navHistory: {
+      '7d': buildHistory(nav, [0.03, 0.02, -0.01, 0.04, 0.01, 0, 0.03]),
+      '30d': buildHistory(nav * 0.96, [0.08, 0.03, -0.04, 0.06, 0.05, -0.02, 0.04, 0.01, 0.05, -0.01]),
+      '3m': buildHistory(nav * 0.91, [0.1, 0.08, -0.06, 0.12, 0.05, 0.03, -0.04, 0.11, 0.07, -0.02, 0.09, 0.04]),
+      '6m': buildHistory(nav * 0.84, [0.12, 0.09, -0.11, 0.16, 0.07, 0.05, -0.06, 0.13, 0.1, -0.03, 0.11, 0.06])
+    },
+    fees: {
+      management: 'SPV / platform dependent',
+      performance: 'Carry may apply by vehicle',
+      lockup: 'Transfer window or liquidity event only'
+    },
+    shareRights: [
+      'Represents a demo allocation or SPV economics, not listed common-stock ownership.',
+      'Information, voting, transfer, and redemption rights depend on the private documents.',
+      'Proxy hedges can reduce broad beta but cannot replicate the private-company exit path.'
+    ],
+    diligenceScore: 68,
+    diligenceChecks: [
+      { label: 'Company theme', status: 'Review', detail: theme },
+      { label: 'Eligibility', status: 'Review', detail: 'Investor checks and transfer restrictions decide whether access is possible.' },
+      { label: 'Liquidity', status: 'Review', detail: 'Exit depends on secondary windows, tender offers, IPO, or acquisition.' },
+      { label: 'Rights', status: 'Review', detail: 'SPV rights can differ materially from direct share rights.' }
+    ],
+    automation: [
+      'Watchlist alerts can monitor tender windows, document changes, and pricing updates.',
+      'Auto-buy stays disabled until eligibility and allocation documents are confirmed.',
+      'Risk copilot should flag concentration, transfer limits, and stale private marks.'
+    ]
+  };
+}
+
+const RAW_WEALTH_PRODUCTS = [
   {
     id: 'superstate-ustb',
     name: 'Superstate USTB',
@@ -968,6 +1045,76 @@ export const WEALTH_PRODUCTS = [
       'Risk copilot should highlight proxy-hedge mismatch and transfer limits.'
     ]
   },
+  buildPrivateGrowthProduct({
+    id: 'spacex-secondary',
+    name: 'SpaceX Secondary Window',
+    shortName: 'SPACEX',
+    nav: 115,
+    theme: 'Space launch, satellite internet, and defense-adjacent demand can be compelling, but valuation and transferability need careful review.',
+    base: 1180,
+    pressure: 690,
+    riskNote: 'SpaceX-style secondary exposure is high-concentration private growth with limited transfer windows and valuation opacity.',
+    technicalSummary:
+      'The card models SpaceX as a private-market allocation route with event-driven liquidity, not as listed equity or a tokenized public wrapper.',
+    humanSummary:
+      'This is a watchlist-style growth sleeve: the key questions are access, document rights, tender timing, and whether the valuation already prices in years of execution.'
+  }),
+  buildPrivateGrowthProduct({
+    id: 'stripe-secondary',
+    name: 'Stripe Pre-IPO Window',
+    shortName: 'STRIPE',
+    nav: 92,
+    theme: 'Payments infrastructure can compound with global commerce, but private marks and IPO timing drive the exit path.',
+    base: 1125,
+    pressure: 720,
+    riskNote: 'Stripe exposure depends on private-share availability, transfer approvals, valuation marks, and eventual liquidity timing.',
+    technicalSummary:
+      'The card treats Stripe as a late-stage private-company allocation with SPV and secondary-window diligence before any subscription action.',
+    humanSummary:
+      'Stripe belongs in growth access, not public-stock wrappers: users should learn why document rights and exit windows matter as much as the brand.'
+  }),
+  buildPrivateGrowthProduct({
+    id: 'bytedance-secondary',
+    name: 'ByteDance Private Growth',
+    shortName: 'BYTEDANCE',
+    nav: 88,
+    theme: 'Consumer AI, ads, and global platform scale can create upside, while jurisdiction, governance, and exit-route questions stay central.',
+    base: 1100,
+    pressure: 640,
+    riskNote: 'ByteDance exposure carries jurisdiction, governance, transfer, and liquidity-event uncertainty beyond ordinary private-company risk.',
+    technicalSummary:
+      'The card models ByteDance as a gated private-growth route with suitability, provenance, and document-review steps ahead of any simulated allocation.',
+    humanSummary:
+      'This is the kind of name users recognize quickly, so the UI needs to slow them down around access proof, restrictions, and exit assumptions.'
+  }),
+  buildPrivateGrowthProduct({
+    id: 'databricks-secondary',
+    name: 'Databricks Secondary Window',
+    shortName: 'DBRX',
+    nav: 74,
+    theme: 'Data and AI infrastructure demand is strong, but competitive pressure and valuation discipline matter before chasing the story.',
+    base: 1090,
+    pressure: 700,
+    riskNote: 'Databricks-style private exposure can be attractive but still has lockup, mark, competition, and transfer-rights risk.',
+    technicalSummary:
+      'The card separates AI infrastructure thesis from execution rights: allocation, SPV terms, and exit path remain the investable product.',
+    humanSummary:
+      'Use this to teach users that a good company thesis does not automatically mean the available private wrapper is a good product.'
+  }),
+  buildPrivateGrowthProduct({
+    id: 'openai-secondary',
+    name: 'OpenAI Private Growth',
+    shortName: 'OPENAI',
+    nav: 120,
+    theme: 'Frontier AI demand is large, but governance, structure, revenue durability, and secondary pricing are the diligence center.',
+    base: 1200,
+    pressure: 620,
+    riskNote: 'OpenAI-style exposure has exceptional narrative risk: access route, rights, governance, and valuation marks must be verified before sizing.',
+    technicalSummary:
+      'The card is a watchlist-only private-growth route that emphasizes source provenance and eligibility rather than pretending live market access exists.',
+    humanSummary:
+      'This should feel exciting but not casual: the product is the rights package and access path, not the headline name alone.'
+  }),
   {
     id: 'msx-protected-growth-eth',
     name: 'RiskLens ETH Protected Growth',
@@ -1164,6 +1311,136 @@ export const WEALTH_PRODUCTS = [
     ]
   },
   {
+    id: 'msx-dual-eth-usdc',
+    name: 'RiskLens ETH/USDC Dual Investment',
+    shortName: 'ETHDUAL',
+    bucket: 'strategy',
+    termType: 'closed',
+    goals: ['income', 'highYield'],
+    productType: 'Dual Investment',
+    status: 'Demo strategy receipt / RiskLens structured wealth',
+    liveTieIn: 'RiskLens dual-investment receipt for ETH target-price settlement and premium education.',
+    risk: 'High',
+    apyRange: '16.00% to 36.00% modeled premium',
+    annualYieldRate: 0.28,
+    annualYieldBasis: 'Modeled premium basis',
+    annualYieldSource: 'Demo target-price settlement premium model for a 7-day ETH/USDC dual investment.',
+    riskNote: 'ETH settlement can flip the user between ETH and USDC at observation, so the asset received matters more than the APR label.',
+    baseAsset: 'USDC or ETH into target-price dual-investment receipt',
+    underlying: 'ETH/USDC target-price settlement with buy-low or sell-high direction.',
+    yieldSource: 'Option-like premium for accepting conditional ETH or USDC settlement.',
+    redemption: '7-day target-price settlement. No ordinary early redemption in this beginner flow.',
+    suitableFor: 'Users who already want ETH exposure or a take-profit level and can tolerate settlement into the other asset.',
+    worstCase: 'ETH moves through the target and the wallet receives the asset the user did not want at that moment.',
+    shareToken: 'ETHDUAL',
+    nav: 10,
+    minSubscription: 1000,
+    dailyYieldRate: 0.00068,
+    technicalSummary:
+      'RiskLens ETH/USDC Dual Investment uses the same receipt mechanics as the BTC version, but the payoff examples map to ETH spot levels and conversion risk.',
+    humanSummary:
+      'Use this when the user understands the target price and is comfortable ending the week with either ETH or USDC.',
+    scenario: {
+      horizon: '7 days on 1,000 PT',
+      conservative: '992 PT plus ETH settlement risk',
+      base: '1,005 PT premium equivalent',
+      pressure: 'ETH received below target'
+    },
+    navHistory: {
+      '7d': buildHistory(10, [0.01, 0, -0.01, 0.02, -0.01, 0.01, 0.02]),
+      '30d': buildHistory(9.96, [0.01, 0.02, -0.03, 0.02, 0.02, -0.02, 0.03, 0.01, -0.01, 0.03]),
+      '3m': buildHistory(9.86, [0.03, 0.02, -0.04, 0.04, 0.02, -0.04, 0.05, 0.02, -0.02, 0.04, 0.02, 0.03]),
+      '6m': buildHistory(9.74, [0.04, 0.03, -0.06, 0.05, 0.03, -0.05, 0.06, 0.03, -0.03, 0.05, 0.02, 0.04])
+    },
+    fees: {
+      management: 'Embedded in quoted premium',
+      performance: '0%',
+      lockup: '7-day target-price settlement'
+    },
+    shareRights: [
+      'Represents a conditional-settlement ETH receipt, not a flexible yield token.',
+      'Final asset depends on target price, direction, and observation date.',
+      'The buy flow must show possible ETH or USDC settlement before signing.'
+    ],
+    diligenceScore: 71,
+    diligenceChecks: [
+      { label: 'Settlement asset', status: 'Review', detail: 'ETH or USDC payout must be explicit.' },
+      { label: 'Premium framing', status: 'Pass', detail: 'Return is modeled premium, not deposit yield.' },
+      { label: 'Liquidity rule', status: 'Review', detail: 'No generic redeem path before observation.' },
+      { label: 'Beginner fit', status: 'Review', detail: 'Best after spot ETH replay makes entry and exit clear.' }
+    ],
+    automation: [
+      'Show ETH target price and observation date in the receipt.',
+      'Preview USDC and ETH settlement outcomes.',
+      'Warn when ETH approaches the target.'
+    ]
+  },
+  {
+    id: 'msx-dual-sol-usdt',
+    name: 'RiskLens SOL/USDT Dual Investment',
+    shortName: 'SOLDUAL',
+    bucket: 'strategy',
+    termType: 'closed',
+    goals: ['income', 'highYield'],
+    productType: 'Dual Investment',
+    status: 'Demo strategy receipt / RiskLens structured wealth',
+    liveTieIn: 'RiskLens dual-investment receipt for a higher-volatility SOL target-price case.',
+    risk: 'High',
+    apyRange: '22.00% to 48.00% modeled premium',
+    annualYieldRate: 0.38,
+    annualYieldBasis: 'Modeled premium basis',
+    annualYieldSource: 'Demo target-price settlement premium model for a 7-day SOL/USDT dual investment.',
+    riskNote: 'SOL pays a higher modeled premium because the settlement asset can change quickly around the target price.',
+    baseAsset: 'USDT or SOL into target-price dual-investment receipt',
+    underlying: 'SOL/USDT target-price settlement with buy-low or sell-high direction.',
+    yieldSource: 'Higher option-like premium for accepting volatile conditional settlement.',
+    redemption: '7-day target-price settlement. No ordinary early redemption in this beginner flow.',
+    suitableFor: 'Users who understand SOL volatility and only want the product if the target conversion price is acceptable.',
+    worstCase: 'SOL crosses the target during a volatile week and the wallet receives the less desired asset.',
+    shareToken: 'SOLDUAL',
+    nav: 10,
+    minSubscription: 1000,
+    dailyYieldRate: 0.00092,
+    technicalSummary:
+      'RiskLens SOL/USDT Dual Investment keeps the same receipt mechanics but uses a more volatile pair so conversion risk is easier to see.',
+    humanSummary:
+      'This is the higher-volatility teaching version: the premium is larger, but so is the chance that settlement asset surprises the user.',
+    scenario: {
+      horizon: '7 days on 1,000 PT',
+      conservative: '986 PT plus SOL settlement risk',
+      base: '1,007 PT premium equivalent',
+      pressure: 'SOL received below target'
+    },
+    navHistory: {
+      '7d': buildHistory(10, [0.02, -0.01, -0.02, 0.03, 0.01, -0.02, 0.03]),
+      '30d': buildHistory(9.9, [0.03, 0.03, -0.05, 0.04, 0.02, -0.04, 0.06, 0.02, -0.03, 0.05]),
+      '3m': buildHistory(9.76, [0.05, 0.04, -0.08, 0.06, 0.03, -0.06, 0.08, 0.04, -0.05, 0.07, 0.02, 0.05]),
+      '6m': buildHistory(9.6, [0.06, 0.05, -0.1, 0.08, 0.04, -0.08, 0.1, 0.05, -0.06, 0.08, 0.03, 0.07])
+    },
+    fees: {
+      management: 'Embedded in quoted premium',
+      performance: '0%',
+      lockup: '7-day target-price settlement'
+    },
+    shareRights: [
+      'Represents a conditional-settlement SOL receipt, not a flexible yield token.',
+      'Final asset depends on target price, direction, and observation date.',
+      'The buy flow must show possible SOL or USDT settlement before signing.'
+    ],
+    diligenceScore: 67,
+    diligenceChecks: [
+      { label: 'Settlement asset', status: 'Review', detail: 'SOL or USDT payout must be explicit.' },
+      { label: 'Premium framing', status: 'Pass', detail: 'Premium is compensation for volatility and conversion risk.' },
+      { label: 'Liquidity rule', status: 'Review', detail: 'No generic redeem path before observation.' },
+      { label: 'Beginner fit', status: 'Review', detail: 'Use after the user has seen lower-volatility dual examples.' }
+    ],
+    automation: [
+      'Show SOL target price and observation date in the receipt.',
+      'Preview USDT and SOL settlement outcomes.',
+      'Warn when SOL approaches the target.'
+    ]
+  },
+  {
     id: 'msx-autocall-index',
     name: 'RiskLens Index Auto-Call Yield',
     shortName: 'INDEXAC',
@@ -1229,6 +1506,10 @@ export const WEALTH_PRODUCTS = [
     ]
   }
 ];
+
+const HIDDEN_WEALTH_PRODUCT_IDS = new Set(['franklin-fobxx', 'xstocks-public-holdings']);
+
+export const WEALTH_PRODUCTS = RAW_WEALTH_PRODUCTS.filter((product) => !HIDDEN_WEALTH_PRODUCT_IDS.has(product.id));
 
 export function getGoalById(goalId) {
   return GOAL_OPTIONS.find((goal) => goal.id === goalId) || GOAL_OPTIONS[0];
