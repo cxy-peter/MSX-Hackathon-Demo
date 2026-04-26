@@ -1382,11 +1382,6 @@ label {
   text-align: left;
 }
 
-.developer-wallet-profile-panel {
-  display: grid;
-  gap: 12px;
-}
-
 .developer-auth-form {
   display: grid;
   gap: 14px;
@@ -3285,10 +3280,6 @@ label {
   line-height: 1.45;
 }
 
-.developer-wallet-profile-router {
-  margin-top: 0;
-}
-
 .wealth-ai-action-row {
   display: flex;
   flex-wrap: wrap;
@@ -3556,23 +3547,6 @@ label {
 
 .wealth-dual-product-strip {
   margin-top: 14px;
-}
-
-.wealth-dual-action-list {
-  display: grid;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.wealth-dual-action-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: center;
-  padding: 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(255,255,255,0.035);
 }
 
 .wealth-product-summary {
@@ -10329,16 +10303,6 @@ label {
   background: rgba(255,255,255,0.024);
 }
 
-.wealth-dual-window-panel {
-  display: grid;
-  gap: 14px;
-  margin-top: 14px;
-  padding: 16px;
-  border-radius: 18px;
-  border: 1px solid rgba(122, 166, 255, 0.18);
-  background: rgba(122, 166, 255, 0.055);
-}
-
 .wealth-dual-simulator-head {
   display: flex;
   align-items: flex-start;
@@ -10380,10 +10344,6 @@ label {
   gap: 10px;
 }
 
-.wealth-dual-window-summary {
-  margin-top: 0;
-}
-
 .wealth-dual-sample-grid,
 .wealth-dual-flow-grid {
   display: grid;
@@ -10415,55 +10375,6 @@ label {
   align-items: center;
 }
 
-.wealth-receipt-badge-strip {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.wealth-receipt-badge {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-  padding: 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(255,255,255,0.035);
-}
-
-.wealth-receipt-badge.active,
-.wealth-receipt-badge.ready {
-  border-color: rgba(164,255,47,0.22);
-  background: rgba(164,255,47,0.07);
-}
-
-.wealth-receipt-badge-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 46px;
-  min-height: 28px;
-  border-radius: 999px;
-  background: rgba(122,166,255,0.14);
-  color: var(--text);
-  font-size: 11px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.wealth-receipt-badge strong,
-.wealth-receipt-badge small {
-  display: block;
-  line-height: 1.35;
-}
-
-.wealth-receipt-badge small {
-  margin-top: 3px;
-  color: var(--muted);
-}
-
 .wealth-diligence-compact-card {
   margin-top: 16px;
 }
@@ -10486,10 +10397,6 @@ label {
   .wealth-dual-sim-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .wealth-receipt-badge-strip {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 720px) {
@@ -10505,8 +10412,6 @@ label {
   .wealth-dual-sample-grid,
   .wealth-dual-flow-grid,
   .wealth-dual-sim-strip,
-  .wealth-dual-action-row,
-  .wealth-receipt-badge-strip,
   .wealth-position-metric-grid {
     grid-template-columns: 1fr;
   }

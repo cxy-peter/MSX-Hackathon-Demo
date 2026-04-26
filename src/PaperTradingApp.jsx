@@ -3662,6 +3662,18 @@ const ADVANCED_REPLAY_ROUTES = [
     ]
   },
   {
+    id: 'strategy-ai',
+    label: 'AI strategy template',
+    shortLabel: 'AI Template',
+    requiresBaseMint: true,
+    description: 'Turn the selected payoff template into an explainable local AI template, then upload the metrics to the strategy board.',
+    lessons: [
+      'AI templates should explain the signal, payoff shape, risk guardrail, and exit rule before ranking anything.',
+      'The result needs paper win rate, expected return, max drawdown, and a template score on separate readable lines.',
+      'Uploads stay local and deterministic so the leaderboard is auditable during the demo.'
+    ]
+  },
+  {
     id: 'routing',
     label: 'Automation / AI',
     shortLabel: 'AI',
@@ -3753,6 +3765,25 @@ const REPLAY_ROUTE_UI = {
       {
         label: '3. Build or stress strategy',
         detail: 'Only build the paper strategy after the preview shows what each leg contributes and what risk remains.'
+      }
+    ]
+  },
+  'strategy-ai': {
+    glyph: 'AI',
+    actionTag: 'AI / RANK',
+    helperLabel: 'AI strategy template',
+    walkthrough: [
+      {
+        label: '1. Keep the strategy shape',
+        detail: 'The AI template reads the current payoff template and replay outcome instead of inventing an unrelated score.'
+      },
+      {
+        label: '2. Pick a variant',
+        detail: 'Choose the local template variant that best explains signal, payoff, guardrail, and exit rule.'
+      },
+      {
+        label: '3. Upload result',
+        detail: 'Send the win rate, expected return, max drawdown, and score to the local strategy leaderboard.'
       }
     ]
   },
@@ -6447,43 +6478,43 @@ function getSuggestedTicketRatio(product = {}, routeId = 'spot') {
 const PRODUCT_ROUTE_PLAYBOOKS = {
   spot: {
     defaultRoute: 'spot',
-    routes: ['spot', 'perp', 'borrow'],
+    routes: ['spot', 'perp', 'borrow', 'strategy-ai'],
     summary: 'Spot products keep the first action simple: buy, sell, replay settlement, then add leverage, hedge, or options-style payoff templates only when the user wants structure.'
   },
   funding: {
     defaultRoute: 'spot',
-    routes: ['spot', 'perp', 'borrow', 'routing', 'lending'],
+    routes: ['spot', 'perp', 'borrow', 'strategy-ai', 'routing', 'lending'],
     summary: 'Funding rails start with calm entry and exit, then move into routing cost and reserve-backed yield logic.'
   },
   public: {
     defaultRoute: 'spot',
-    routes: ['spot', 'perp', 'borrow'],
+    routes: ['spot', 'perp', 'borrow', 'strategy-ai'],
     summary:
       'xStock and listed wrappers should start with spot-style replay, then move into leverage, hedge, or options templates when the user wants a payoff shape.'
   },
   private: {
     defaultRoute: 'spot',
-    routes: ['spot', 'perp', 'borrow', 'routing'],
+    routes: ['spot', 'perp', 'borrow', 'strategy-ai', 'routing'],
     summary: 'Private markets / pre-IPO should feel like allocation, subscription, watchlist, and exit-path learning, not like one-click listed spot trading.'
   },
   leverage: {
     defaultRoute: 'perp',
-    routes: ['spot', 'perp', 'borrow'],
+    routes: ['spot', 'perp', 'borrow', 'strategy-ai'],
     summary: 'Leverage & hedging is a play layer: use it to teach long / short direction, hedge logic, and liquidation risk on top of public exposures.'
   },
   yield: {
     defaultRoute: 'lending',
-    routes: ['spot', 'perp', 'borrow', 'lending', 'routing'],
+    routes: ['spot', 'perp', 'borrow', 'strategy-ai', 'lending', 'routing'],
     summary: 'Earn & yield is about carry source, collateral use, and payout sustainability, not just price direction.'
   },
   strategy: {
     defaultRoute: 'borrow',
-    routes: ['spot', 'perp', 'borrow', 'routing'],
+    routes: ['spot', 'perp', 'borrow', 'strategy-ai', 'routing'],
     summary: 'Options / strategy routes should read like reusable templates or payoff cards, with the structure and thesis explained before the user worries about execution.'
   },
   ai: {
     defaultRoute: 'routing',
-    routes: ['spot', 'perp', 'borrow', 'routing'],
+    routes: ['spot', 'perp', 'borrow', 'strategy-ai', 'routing'],
     summary: 'Automation / AI is the execution-and-explanation layer: DCA, alerts, rebalance rules, and risk copilots should say who decides and when humans can override.'
   }
 };
@@ -7577,6 +7608,7 @@ function PaperTradingInner() {
   const [strategyUpsideCapPct, setStrategyUpsideCapPct] = useState(18);
   const [strategyPremiumPct, setStrategyPremiumPct] = useState(1.2);
   const [strategyStrikePct, setStrategyStrikePct] = useState(8);
+  const [selectedOptionStrategyTemplateId, setSelectedOptionStrategyTemplateId] = useState('collar');
   const [strategyAiPrompt, setStrategyAiPrompt] = useState(DEFAULT_STRATEGY_AI_PROMPT);
   const [selectedStrategyAiVariantId, setSelectedStrategyAiVariantId] = useState(STRATEGY_AI_TEMPLATE_VARIANTS[0]?.id || 'balanced-guardrail');
   const [strategyAiTemplateGenerated, setStrategyAiTemplateGenerated] = useState(false);
@@ -8710,6 +8742,9 @@ function PaperTradingInner() {
     selectedRouteFocusOptions.find((option) => option.id === selectedRouteFocusByRoute[selectedAdvancedRoute]) ||
     selectedRouteFocusOptions[0] ||
     null;
+  const strategyRouteActive = selectedAdvancedRoute === 'borrow';
+  const strategyAiRouteActive = selectedAdvancedRoute === 'strategy-ai';
+  const strategyWorkspaceRouteActive = strategyRouteActive || strategyAiRouteActive;
   const comboFocusActive = selectedAdvancedRoute === 'perp' && selectedRouteFocusConfig?.id === 'combo';
   const selectedPerpFocusId = selectedRouteFocusConfig?.id || visiblePerpFocusOptions[0]?.id || 'leverage';
   const hedgeFocusActive =
@@ -8736,7 +8771,9 @@ function PaperTradingInner() {
       ensureReplayProductViewLoaded(productId, product, view);
     });
   }, [comboFocusActive, productMap, productViews]);
-  const selectedStrategyTemplateId = selectedAdvancedRoute === 'borrow' ? selectedRouteFocusConfig?.id || 'collar' : 'collar';
+  const selectedStrategyTemplateId = OPTION_STRATEGY_DEFAULTS[selectedOptionStrategyTemplateId]
+    ? selectedOptionStrategyTemplateId
+    : 'collar';
   const strategyControlValues = useMemo(
     () =>
       normalizeOptionStrategyControls(
@@ -9169,14 +9206,14 @@ function PaperTradingInner() {
                   id: 'strategy-route',
                   title: 'Strategy route opened',
                   statusText:
-                    selectedAdvancedRoute === 'borrow' ||
+                    strategyWorkspaceRouteActive ||
                     progressState.strategyLessonCompleted ||
                     strategyRouteUsed ||
                     selectedRewardTask.onchainClaimed
                       ? 'Completed'
                       : 'To do',
                   statusTone:
-                    selectedAdvancedRoute === 'borrow' ||
+                    strategyWorkspaceRouteActive ||
                     progressState.strategyLessonCompleted ||
                     strategyRouteUsed ||
                     selectedRewardTask.onchainClaimed
@@ -9218,7 +9255,7 @@ function PaperTradingInner() {
                       : 'todo',
                   indicator: 'AI',
                   interactive: true,
-                  onClick: () => handleSelectLearningRoute('borrow'),
+                  onClick: () => handleSelectLearningRoute('strategy-ai'),
                   copy:
                     'Type a strategy idea in the AI template box so the app marks signal, payoff, risk guardrail, exit rule, paper win rate, return, and drawdown.'
                 },
@@ -9229,7 +9266,7 @@ function PaperTradingInner() {
                   statusTone: strategyRouteUsed || selectedRewardTask.onchainClaimed ? 'done' : 'todo',
                   indicator: 'RANK',
                   interactive: true,
-                  onClick: () => handleSelectLearningRoute('borrow'),
+                  onClick: () => handleSelectLearningRoute('strategy-ai'),
                   copy:
                     'Upload the generated template so the strategy board shows paper win rate, expected return, and max drawdown.'
                 }
@@ -11299,12 +11336,14 @@ function PaperTradingInner() {
 
   function handleSelectStrategyTemplate(templateId) {
     const safeTemplateId = OPTION_STRATEGY_DEFAULTS[templateId] ? templateId : 'collar';
+    setSelectedOptionStrategyTemplateId(safeTemplateId);
     setSelectedRouteFocusByRoute((current) => ({
       ...current,
       borrow: safeTemplateId
     }));
     setSelectedPracticeCaseIndex(0);
     setStrategyAiTemplateGenerated(false);
+    setFeedback(`${OPTION_STRATEGY_LABELS[safeTemplateId] || 'Strategy'} template selected.`);
   }
 
   function handleApplyHedgeSuggestedSize() {
@@ -13892,6 +13931,13 @@ function PaperTradingInner() {
               secondary: 'Settle strategy',
               copy: activeRouteFocusConfig?.summary || 'Preview capped upside, downside protection, premium, breakeven, and why each leg exists before execution.'
             }
+          : selectedAdvancedRoute === 'strategy-ai'
+            ? {
+                title: 'AI strategy template route',
+                primary: 'Generate template',
+                secondary: 'Upload template',
+                copy: 'Use the current strategy payoff as context, then generate explainable AI metrics and upload the result to the local leaderboard.'
+              }
           : selectedAdvancedRoute === 'routing'
             ? {
                 title: activeRouteFocusConfig?.panelTitle || 'Automation / AI route',
@@ -13947,7 +13993,7 @@ function PaperTradingInner() {
             detail: step.detail
           };
         });
-  const routePracticeMode = selectedAdvancedRoute === 'borrow' ? 'strategy' : hedgeFocusActive ? 'hedge' : leverageRouteActive ? 'leverage' : 'spot';
+  const routePracticeMode = strategyWorkspaceRouteActive ? 'strategy' : hedgeFocusActive ? 'hedge' : leverageRouteActive ? 'leverage' : 'spot';
   const routePracticeFlashNotional = routePreviewFlashNotional;
   const routePracticeFlashPremiumEstimate = routePreviewFlashPremiumEstimate;
   const routePracticePreviewTicketNotional = routePreviewTicketNotional;
@@ -14032,6 +14078,34 @@ function PaperTradingInner() {
   const routePracticeOutcomeToneValue = routePracticeOutcomePnl !== null ? routePracticeOutcomePnl : routePracticeOutcomeRate;
   const routePracticeOutcomeWithDrawdownLabel = routePracticeCase ? formatPracticeCaseOutcomeWithDrawdown(routePracticeCase) : '';
   const routePracticeMaxDrawdownLabel = routePracticeCase ? formatPracticeDrawdownRatio(routePracticeCase.maxDrawdownRate) : '';
+  const routePracticeStrategyControls =
+    routePracticeCase?.mode === 'strategy'
+      ? routePracticeCase.strategyOutcome?.controls || strategyControlValues
+      : null;
+  const routePracticeStrategySliderRows = routePracticeStrategyControls
+    ? [
+        {
+          label: strategyParameterLabels.downside || 'Floor',
+          value: `-${Number(routePracticeStrategyControls.downsidePct || 0).toFixed(0)}%`
+        },
+        {
+          label: strategyParameterLabels.harvest || 'Harvest',
+          value: `${Number(routePracticeStrategyControls.profitHarvestPct || 0).toFixed(0)}%`
+        },
+        {
+          label: strategyParameterLabels.cap || 'Cap',
+          value: `+${Number(routePracticeStrategyControls.upsideCapPct || 0).toFixed(0)}%`
+        },
+        {
+          label: strategyParameterLabels.premium || 'Premium',
+          value: `${Number(routePracticeStrategyControls.premiumPct || 0).toFixed(1)}%`
+        },
+        {
+          label: strategyParameterLabels.strike || 'Strike',
+          value: `+${Number(routePracticeStrategyControls.strikePct || 0).toFixed(0)}%`
+        }
+      ]
+    : [];
   const routePracticeHedgeOutcome = routePracticeCase?.hedgeOutcome || null;
   const routePracticeHedgeSettlementCopy = routePracticeHedgeOutcome
     ? `Best final settlement is ${routePracticeOutcomeWithDrawdownLabel} via ${getHedgeSettlementModeLabel(
@@ -14219,13 +14293,29 @@ function PaperTradingInner() {
             }`
     );
   }
-  const strategyPreviewAnchorBar = selectedAdvancedRoute === 'borrow' ? selectedPosition.entryTs ? selectedView?.bars?.find((bar) => bar.ts === selectedPosition.entryTs) || replayFocus.lockedBar : replayFocus.lockedBar || routePracticeCase?.startBar : null;
+
+  function handleApplyPracticeStrategyControls() {
+    if (!routePracticeStrategyControls) return;
+
+    setStrategyDownsidePct(routePracticeStrategyControls.downsidePct);
+    setStrategyProfitHarvestPct(routePracticeStrategyControls.profitHarvestPct);
+    setStrategyUpsideCapPct(routePracticeStrategyControls.upsideCapPct);
+    setStrategyPremiumPct(routePracticeStrategyControls.premiumPct);
+    setStrategyStrikePct(routePracticeStrategyControls.strikePct);
+    setFeedback('Practice example sliders applied to the strategy controls.');
+  }
+
+  const strategyPreviewAnchorBar = strategyWorkspaceRouteActive
+    ? selectedPosition.entryTs
+      ? selectedView?.bars?.find((bar) => bar.ts === selectedPosition.entryTs) || replayFocus.lockedBar
+      : replayFocus.lockedBar || routePracticeCase?.startBar
+    : null;
   const strategyPreviewTargetBar =
-    selectedAdvancedRoute === 'borrow'
+    strategyWorkspaceRouteActive
       ? timedExitTargetBar || routePracticeCase?.endBar || replayFocus.bar
       : null;
   const optionStrategyPreview = useMemo(() => {
-    if (selectedAdvancedRoute !== 'borrow') return null;
+    if (!strategyWorkspaceRouteActive) return null;
     const cachedStrategyOutcome =
       routePracticeCase?.strategyOutcome?.templateId === selectedStrategyTemplateId
         ? routePracticeCase.strategyOutcome
@@ -14244,7 +14334,7 @@ function PaperTradingInner() {
     deferredRoutePracticeNotional,
     deferredStrategyControlValues,
     routePracticeCase?.strategyOutcome,
-    selectedAdvancedRoute,
+    strategyWorkspaceRouteActive,
     selectedPosition.principal,
     selectedProduct,
     selectedStrategyTemplateId,
@@ -14869,6 +14959,27 @@ function PaperTradingInner() {
                 <strong>{routePracticeMaxDrawdownLabel}</strong>
               </div>
             </div>
+            {routePracticeStrategySliderRows.length ? (
+              <div className="paper-practice-strategy-slider-card">
+                <div className="paper-practice-strategy-slider-head">
+                  <div>
+                    <span>Profitable slider setup</span>
+                    <strong>{routePracticeCase.strategyOutcome?.netPnl >= 0 ? 'Use this case' : 'Current case'}</strong>
+                  </div>
+                  <button type="button" className="ghost-btn compact" onClick={handleApplyPracticeStrategyControls}>
+                    Apply sliders
+                  </button>
+                </div>
+                <div className="paper-practice-strategy-slider-grid">
+                  {routePracticeStrategySliderRows.map((row) => (
+                    <div key={row.label}>
+                      <span>{row.label}</span>
+                      <strong>{row.value}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="paper-shelf-learning-case-actions">
               <button type="button" className="ghost-btn compact" onClick={() => handleApplyRoutePracticeCase('start')}>
                 Start case
@@ -15554,27 +15665,28 @@ function PaperTradingInner() {
               </div>
             </div>
 
+            {strategyRouteActive && selectedRouteFocusOptions.length ? (
+              <div className="paper-strategy-template-strip paper-strategy-template-strip-desk">
+                <span>Choose template</span>
+                <div className="paper-inline-structure-strip paper-inline-structure-strip-compact">
+                  {selectedRouteFocusOptions.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={`ghost-btn compact ${selectedStrategyTemplateId === option.id ? 'active-toggle' : ''}`}
+                      onClick={() => handleSelectStrategyTemplate(option.id)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             {renderRoutePracticeCaseCard('paper-desk-practice-case-card-inline')}
+            {comboFocusActive ? renderPortfolioComboLab('paper-portfolio-combo-card paper-portfolio-combo-card-desk') : null}
           </div>
         </div>
-
-        {selectedAdvancedRoute === 'borrow' && selectedRouteFocusOptions.length ? (
-          <div className="paper-strategy-template-strip">
-            <span>Choose template</span>
-            <div className="paper-inline-structure-strip paper-inline-structure-strip-compact">
-              {selectedRouteFocusOptions.map((option) => (
-                  <button
-                  key={option.id}
-                  type="button"
-                  className={`ghost-btn compact ${selectedStrategyTemplateId === option.id ? 'active-toggle' : ''}`}
-                  onClick={() => handleSelectStrategyTemplate(option.id)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
 
         <div className="paper-inline-desk-grid paper-inline-desk-grid-expanded">
           <div className="paper-inline-desk-panel">
@@ -15665,6 +15777,7 @@ function PaperTradingInner() {
                     </div>
                   </div>
                 ) : null}
+                {!strategyAiRouteActive ? (
                 <label className="wealth-field paper-inline-desk-field">
                   <div className="paper-inline-desk-label-row">
                     <span className="paper-inline-desk-label-tight">{tradeAmountFieldLabel}</span>
@@ -15902,8 +16015,43 @@ function PaperTradingInner() {
                     </div>
                   ) : null}
                 </label>
+                ) : (
+                  <div className="paper-inline-action-card paper-inline-action-card-compact paper-strategy-ai-route-summary">
+                    <div className="paper-inline-action-head">
+                      <div>
+                        <div className="k">AI template result</div>
+                        <div className="muted">
+                          Uses {OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'the selected strategy'} on the current replay example.
+                        </div>
+                      </div>
+                      <span className={`pill ${strategyAiTemplate.templateScore >= 70 ? 'risk-low' : 'risk-medium'}`}>
+                        {Math.round(strategyAiTemplate.templateScore)}/100
+                      </span>
+                    </div>
+                    <div className="paper-strategy-ai-metric-grid paper-strategy-ai-result-list">
+                      <div>
+                        <span>Paper win rate</span>
+                        <strong>{strategyAiTemplate.winRate}%</strong>
+                      </div>
+                      <div>
+                        <span>Expected return</span>
+                        <strong className={strategyAiTemplate.expectedReturnPct >= 0 ? 'risk-low' : 'risk-high'}>
+                          {formatSignedPercent(strategyAiTemplate.expectedReturnPct, 1)}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Max drawdown</span>
+                        <strong className="risk-high">-{strategyAiTemplate.maxDrawdownPct.toFixed(1)}%</strong>
+                      </div>
+                      <div>
+                        <span>Template score</span>
+                        <strong>{Math.round(strategyAiTemplate.templateScore)}/100</strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
-                {selectedAdvancedRoute === 'borrow' ? (
+                {strategyRouteActive ? (
                   <div className="paper-inline-action-card paper-inline-action-card-compact paper-strategy-control-card">
                     <div className="paper-inline-action-head">
                       <div>
@@ -15986,7 +16134,7 @@ function PaperTradingInner() {
                   </div>
                 ) : null}
 
-                {!hedgeFocusActive ? (
+                {!hedgeFocusActive && !strategyAiRouteActive ? (
                   <div
                     className={`paper-inline-action-card paper-inline-action-card-compact paper-inline-timed-exit-card ${
                       timedExitReady ? 'ready' : 'locked'
@@ -16112,7 +16260,19 @@ function PaperTradingInner() {
           </div>
 
           <div className="paper-inline-preview-panel paper-inline-trade-panel">
-            {comboFocusActive ? renderPortfolioComboLab('paper-portfolio-combo-card paper-portfolio-combo-card-right') : null}
+            {comboFocusActive ? (
+              <div className="paper-inline-action-card paper-inline-action-card-compact paper-combo-side-note">
+                <div className="paper-inline-action-head">
+                  <div>
+                    <div className="k">Combo lab moved</div>
+                    <div className="muted">
+                      Allocation, cached results, suggestions, and the combo leaderboard now sit inside the Replay desk so this rail no longer shows a hedge ticket.
+                    </div>
+                  </div>
+                  <span className="pill risk-low">Desk first</span>
+                </div>
+              </div>
+            ) : null}
 
             {hedgeFocusActive ? (
               <div className={`paper-inline-action-card paper-inline-action-card-compact paper-inline-hedge-compact-card ${hedgeSizingReady ? 'ready' : 'locked'}`.trim()}>
@@ -16167,7 +16327,7 @@ function PaperTradingInner() {
               </div>
             ) : null}
 
-            {optionStrategyPreview ? (
+            {strategyRouteActive && optionStrategyPreview ? (
               <div className="paper-inline-action-card paper-inline-action-card-compact paper-inline-option-preview-card">
                 <div className="paper-inline-action-head">
                   <div>
@@ -16177,35 +16337,31 @@ function PaperTradingInner() {
                 </div>
                 {optionStrategyPreview.nodes?.length ? (
                   <div className="paper-strategy-node-grid">
-                    {optionStrategyPreview.nodes.map((node) => (
+                    {optionStrategyPreview.nodes.slice(0, 3).map((node) => (
                       <div key={`${node.label}-${node.value}`} className="paper-strategy-node-card">
                         <span>{node.label}</span>
                         <strong>{node.value}</strong>
-                        <small>{node.copy}</small>
                       </div>
                     ))}
                   </div>
                 ) : null}
                 <div className="paper-inline-hedge-summary-strip">
-                  {optionStrategyPreview.rows.map((row) => (
+                  {optionStrategyPreview.rows
+                    .filter((row) => ['Historical move', 'Strategy payoff', 'Max upside', 'Max downside'].includes(row.label))
+                    .map((row) => (
                     <div key={row.label} className="paper-inline-hedge-summary-cell">
                       <span>{row.label}</span>
                       <strong>{row.value}</strong>
                     </div>
                   ))}
                 </div>
-                <div className="paper-inline-support-list compact paper-inline-option-leg-list">
-                  {optionStrategyPreview.legs.map((leg, index) => (
-                    <div key={leg} className="paper-inline-support-row">
-                      <span>Leg {index + 1}</span>
-                      <strong>{leg}</strong>
-                    </div>
-                  ))}
+                <div className="paper-inline-note-box paper-inline-route-capacity-note paper-inline-option-leg-summary">
+                  {optionStrategyPreview.legs.slice(0, 3).join(' / ')}
                 </div>
               </div>
             ) : null}
 
-            {selectedAdvancedRoute === 'borrow' ? (
+            {strategyAiRouteActive ? (
               <div className="paper-inline-action-card paper-inline-action-card-compact paper-strategy-ai-card">
                 <div className="paper-inline-action-head">
                   <div>
@@ -16251,7 +16407,7 @@ function PaperTradingInner() {
                   ))}
                 </div>
 
-                <div className="paper-strategy-ai-metric-grid">
+                <div className="paper-strategy-ai-metric-grid paper-strategy-ai-result-list">
                   <div>
                     <span>Paper win rate</span>
                     <strong>{strategyAiTemplate.winRate}%</strong>
@@ -16323,6 +16479,7 @@ function PaperTradingInner() {
                             <span>{entry.winRate}% win</span>
                             <span>{formatSignedPercent(entry.expectedReturnPct, 1)} return</span>
                             <span>-{entry.maxDrawdownPct.toFixed(1)}% DD</span>
+                            <span>{Math.round(entry.templateScore)}/100 score</span>
                           </div>
                         </div>
                       ))}
@@ -16336,6 +16493,8 @@ function PaperTradingInner() {
               </div>
             ) : null}
 
+            {!comboFocusActive && !strategyAiRouteActive ? (
+              <>
             <div className="paper-inline-desk-button-strip compact">
               <button
                 type="button"
@@ -16556,6 +16715,8 @@ function PaperTradingInner() {
                 </>
               </div>
             )}
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -16993,6 +17154,45 @@ function PaperTradingInner() {
             })}
           </div>
         ) : null}
+
+        <div className="paper-strategy-board paper-strategy-board-combo">
+          <div className="paper-strategy-board-head">
+            <span>Combo / AI leaderboard</span>
+            <strong>{strategyTemplateLeaderboardRows.length} entr{strategyTemplateLeaderboardRows.length === 1 ? 'y' : 'ies'}</strong>
+          </div>
+          {strategyTemplateLeaderboardRows.length ? (
+            <div className="paper-strategy-board-list">
+              {strategyTemplateLeaderboardRows.slice(0, 3).map((entry, index) => (
+                <div key={`combo-board-${entry.id}`} className="paper-strategy-board-row">
+                  <div className="paper-strategy-board-rank">#{index + 1}</div>
+                  <div className="paper-strategy-board-main">
+                    <strong>
+                      <span className="paper-strategy-board-type">
+                        {entry.entryType === 'portfolio-combo' ? 'Combo' : 'AI'}
+                      </span>
+                      {entry.title}
+                    </strong>
+                    <span>
+                      {entry.entryType === 'portfolio-combo'
+                        ? `${entry.productLabel} / ${entry.dateRange || entry.strategyLabel}`
+                        : `${entry.productLabel} / ${entry.variantLabel || entry.strategyLabel}`}
+                    </span>
+                  </div>
+                  <div className="paper-strategy-board-metrics">
+                    <span>{entry.winRate}% win</span>
+                    <span>{formatSignedPercent(entry.expectedReturnPct, 1)} return</span>
+                    <span>-{entry.maxDrawdownPct.toFixed(1)}% DD</span>
+                    <span>{Math.round(entry.templateScore)}/100 score</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="paper-inline-note-box paper-inline-route-capacity-note">
+              Upload a suggested combo or AI template to start the board.
+            </div>
+          )}
+        </div>
 
         {portfolioComboAnalysis.topSingles.length ? (
           <div className="paper-portfolio-combo-single-strip">

@@ -113,19 +113,14 @@ const DUAL_CURRENCY_DIRECTION_OPTIONS = [
   { id: 'sell-high', label: 'Sell high', copy: 'User earns premium but may sell the base asset into quote if price finishes above target.' }
 ];
 const DETAIL_TOPIC_OPTIONS = [
-  { id: 'flow', label: 'Buy / settle / pledge', helper: 'Buy, settlement, rollover, transfer, and pledge live in the same product action row.' },
+  { id: 'flow', label: 'Buy / settle / pledge', helper: 'Use this after reading the overview and AI diligence. Buy, settlement, rollover, transfer, and pledge all live in the same lifecycle desk.' },
   { id: 'snapshot', label: 'Overview', helper: 'Read the compact one-screen summary: what the product is, what it earns from, and how difficult it is.' },
   { id: 'nav', label: 'Timeline', helper: 'Check the NAV path and time-window result without duplicating the order controls.' },
+  { id: 'receipt', label: 'Receipt', helper: 'Open the wallet-facing receipt view: what the user owns, how it exits, and what pledge means.' },
   { id: 'diligence', label: 'AI Diligence', helper: 'Use this before buying: compact fit, key evidence, and the AI memo without opening a long checklist.' },
-  { id: 'onchain', label: 'Onchain', helper: 'Show allowance, vault, and wallet-signing mechanics as a detail page rather than inline clutter.' }
+  { id: 'onchain', label: 'Onchain', helper: 'Show allowance, vault, and wallet-signing mechanics as a detail page rather than inline clutter.' },
+  { id: 'automation', label: 'Monitor', helper: 'Show alert, rebalance, and follow-up controls after the product fit is clear.' }
 ];
-const DETAIL_TOPIC_IDS = new Set(DETAIL_TOPIC_OPTIONS.map((topic) => topic.id));
-
-function normalizeDetailTopicId(topicId, fallback = 'flow') {
-  if (DETAIL_TOPIC_IDS.has(topicId)) return topicId;
-  if (fallback && DETAIL_TOPIC_IDS.has(fallback)) return fallback;
-  return '';
-}
 
 const WEALTH_HOME_SURFACE_NOTES = {
   parkCash: {
@@ -1018,8 +1013,7 @@ function DeveloperModeModal({
   noticeText,
   isConnected,
   walletDisplayName,
-  remainingPt,
-  walletProfilePanel
+  remainingPt
 }) {
   if (!open) return null;
 
@@ -1084,11 +1078,6 @@ function DeveloperModeModal({
               <div className="wealth-inline-note">
                 Wealth developer review is open for this signed-in use, so you can inspect wallet-linked cash, holdings, and routing behavior without making the page default to admin mode.
               </div>
-              {walletProfilePanel ? (
-                <div className="developer-wallet-profile-panel">
-                  {walletProfilePanel}
-                </div>
-              ) : null}
               <div className="toolbar">
                 <button className="secondary-btn" onClick={onClose}>
                   Close panel
@@ -2520,119 +2509,6 @@ function getLatestNav(points = [], fallback = 0) {
   return points.length ? roundNumber(points[points.length - 1].value, 3) : roundNumber(fallback, 3);
 }
 
-function getNavPeriodDays(periodId = '30d') {
-  if (periodId === '7d') return 7;
-  if (periodId === '3m') return 90;
-  if (periodId === '6m') return 180;
-  return 30;
-}
-
-function getDualWindowMoveLimit(periodId = '30d') {
-  if (periodId === '7d') return 16;
-  if (periodId === '3m') return 38;
-  if (periodId === '6m') return 52;
-  return 24;
-}
-
-function formatSignedPercent(value, digits = 0) {
-  const numericValue = Number(value || 0);
-  return `${numericValue >= 0 ? '+' : ''}${numericValue.toFixed(digits)}%`;
-}
-
-function getDualPairForProduct(product = {}, fallbackPair = DUAL_CURRENCY_PAIR_OPTIONS[0]) {
-  const text = `${product.id || ''} ${product.name || ''} ${product.shortName || ''} ${product.underlying || ''} ${product.baseAsset || ''}`.toLowerCase();
-  return (
-    DUAL_CURRENCY_PAIR_OPTIONS.find(
-      (pair) => text.includes(pair.base.toLowerCase()) && text.includes(pair.quote.toLowerCase())
-    ) ||
-    DUAL_CURRENCY_PAIR_OPTIONS.find((pair) => text.includes(pair.base.toLowerCase())) ||
-    fallbackPair
-  );
-}
-
-function getDirectionalDualTargetPct(direction = 'buy-low', targetPct = 0) {
-  const numericTarget = Number(targetPct);
-  if (Number.isFinite(numericTarget) && numericTarget !== 0) {
-    if (direction === 'sell-high' && numericTarget > 0) return numericTarget;
-    if (direction !== 'sell-high' && numericTarget < 0) return numericTarget;
-  }
-
-  return direction === 'sell-high' ? 5 : -4;
-}
-
-function getDualWindowReturnPreview({
-  product = {},
-  pair = DUAL_CURRENCY_PAIR_OPTIONS[0],
-  direction = 'buy-low',
-  targetPct = -4,
-  priceMovePct = 0,
-  navPoints = [],
-  periodId = '30d',
-  principal = 1000
-} = {}) {
-  const periodDays = getNavPeriodDays(periodId);
-  const startNav = Number(navPoints[0]?.value || product.nav || 1);
-  const endNav = Number(navPoints[navPoints.length - 1]?.value || product.nav || startNav);
-  const navRatio = startNav > 0 ? endNav / startNav : 1;
-  const navMarkedValue = principal * navRatio;
-  const navGain = navMarkedValue - principal;
-  const annualPremiumRate = Math.max(0.01, Number(product.annualYieldRate || getAnnualYieldRate(product) || 0));
-  const targetDistanceBoost = Math.abs(Number(targetPct || 0)) / 100;
-  const termPremiumRate = annualPremiumRate * (1 + targetDistanceBoost * 0.4) * (periodDays / 365);
-  const premiumValue = principal * termPremiumRate;
-  const referencePrice = Math.max(0.01, Number(pair.referencePrice || 1));
-  const targetPrice = Math.max(0.01, referencePrice * (1 + Number(targetPct || 0) / 100));
-  const settlementPrice = Math.max(0.01, referencePrice * (1 + Number(priceMovePct || 0) / 100));
-  let quoteEquivalent = navMarkedValue + premiumValue;
-  let settlementAsset = pair.quote;
-  let settlementAmount = quoteEquivalent;
-  let triggered = false;
-
-  if (direction === 'sell-high') {
-    const markedBaseAmount = navMarkedValue / referencePrice;
-    triggered = settlementPrice >= targetPrice;
-    settlementAsset = triggered ? pair.quote : pair.base;
-    quoteEquivalent = triggered
-      ? markedBaseAmount * targetPrice + premiumValue
-      : markedBaseAmount * settlementPrice + premiumValue;
-    settlementAmount = triggered ? quoteEquivalent : markedBaseAmount;
-  } else {
-    triggered = settlementPrice <= targetPrice;
-    settlementAsset = triggered ? pair.base : pair.quote;
-    quoteEquivalent = triggered
-      ? ((navMarkedValue + premiumValue) / targetPrice) * settlementPrice
-      : navMarkedValue + premiumValue;
-    settlementAmount = triggered ? (navMarkedValue + premiumValue) / targetPrice : quoteEquivalent;
-  }
-
-  const pnl = quoteEquivalent - principal;
-  const returnPct = principal > 0 ? (pnl / principal) * 100 : 0;
-  const tone = pnl > 15 ? 'risk-low' : pnl < -15 ? 'risk-high' : 'risk-medium';
-
-  return {
-    periodDays,
-    startNav: roundNumber(startNav, 3),
-    endNav: roundNumber(endNav, 3),
-    navMarkedValue: roundNumber(navMarkedValue, 2),
-    navGain: roundNumber(navGain, 2),
-    premiumValue: roundNumber(premiumValue, 2),
-    termPremiumRate,
-    referencePrice: roundNumber(referencePrice, 2),
-    targetPrice: roundNumber(targetPrice, 2),
-    settlementPrice: roundNumber(settlementPrice, 2),
-    priceMovePct: roundNumber(priceMovePct, 1),
-    quoteEquivalent: roundNumber(quoteEquivalent, 2),
-    settlementAmount: roundNumber(settlementAmount, 6),
-    settlementAsset,
-    pnl: roundNumber(pnl, 2),
-    returnPct: roundNumber(returnPct, 2),
-    triggered,
-    tone,
-    outcomeLabel: triggered ? 'Target triggered' : 'Target not triggered',
-    directionLabel: direction === 'sell-high' ? 'Sell-high' : 'Buy-low'
-  };
-}
-
 function parseScenarioValue(text, fallback = 1000) {
   const match = String(text || '').match(/([\d,]+)\s*PT/i);
   return match ? Number(match[1].replace(/,/g, '')) : fallback;
@@ -3128,7 +3004,6 @@ function WealthInner() {
   const [dualCurrencyDirection, setDualCurrencyDirection] = useState('buy-low');
   const [dualCurrencyTargetPct, setDualCurrencyTargetPct] = useState(-2);
   const [dualCurrencySettlementMovePct, setDualCurrencySettlementMovePct] = useState(4);
-  const [dualWindowPriceMovePct, setDualWindowPriceMovePct] = useState(0);
   const [pledgeTermMode, setPledgeTermMode] = useState('flex');
   const [collateralBorrowInput, setCollateralBorrowInput] = useState(0);
   const [isSubscribeModalOpen, setIsSubscribeModalOpen] = useState(false);
@@ -3781,12 +3656,6 @@ function WealthInner() {
   const selectedNavDeltaPercent = getNavDeltaPercent(selectedNavPoints);
   const selectedTicketGain = getTicketGain(selectedNavPoints);
   const selectedWindowLabel = NAV_PERIOD_OPTIONS.find((period) => period.id === selectedProductNavPeriod)?.label || '30D';
-  useEffect(() => {
-    if (!isDualInvestmentProduct(selectedProduct)) return;
-    const moveLimit = getDualWindowMoveLimit(selectedProductNavPeriod);
-    const nextMove = clamp(Math.round(selectedNavDeltaPercent), -moveLimit, moveLimit);
-    setDualWindowPriceMovePct((current) => (Number(current) === nextMove ? current : nextMove));
-  }, [selectedNavDeltaPercent, selectedProduct.id, selectedProductNavPeriod]);
   const selectedPeriodComparisons = useMemo(
     () =>
       NAV_PERIOD_OPTIONS.map((period) => {
@@ -4020,33 +3889,6 @@ function WealthInner() {
   const dualCurrencyPair = DUAL_CURRENCY_PAIR_OPTIONS.find((pair) => pair.id === dualCurrencyPairId) || DUAL_CURRENCY_PAIR_OPTIONS[0];
   const dualCurrencyDirectionMeta =
     DUAL_CURRENCY_DIRECTION_OPTIONS.find((option) => option.id === dualCurrencyDirection) || DUAL_CURRENCY_DIRECTION_OPTIONS[0];
-  const selectedDualProductPair = getDualPairForProduct(selectedProduct, dualCurrencyPair);
-  const selectedDualTargetPct = getDirectionalDualTargetPct(dualCurrencyDirection, dualCurrencyTargetPct);
-  const selectedDualWindowMoveLimit = getDualWindowMoveLimit(selectedProductNavPeriod);
-  const selectedDualWindowPriceMovePct = clamp(
-    Number(dualWindowPriceMovePct || 0),
-    -selectedDualWindowMoveLimit,
-    selectedDualWindowMoveLimit
-  );
-  const selectedDualWindowNavMovePct = clamp(
-    selectedNavDeltaPercent,
-    -selectedDualWindowMoveLimit,
-    selectedDualWindowMoveLimit
-  );
-  const selectedDualWindowPreview = isDualInvestmentProduct(selectedProduct)
-    ? getDualWindowReturnPreview({
-        product: selectedProduct,
-        pair: selectedDualProductPair,
-        direction: dualCurrencyDirection,
-        targetPct: selectedDualTargetPct,
-        priceMovePct: selectedDualWindowPriceMovePct,
-        navPoints: selectedNavPoints,
-        periodId: selectedProductNavPeriod
-      })
-    : null;
-  const selectedDualWindowSuggestedMarkerPct = selectedDualWindowMoveLimit
-    ? ((selectedDualWindowNavMovePct + selectedDualWindowMoveLimit) / (selectedDualWindowMoveLimit * 2)) * 100
-    : 50;
   const dualCurrencyTargetPrice = roundNumber(
     dualCurrencyPair.referencePrice * (1 + Number(dualCurrencyTargetPct || 0) / 100),
     2
@@ -4176,11 +4018,11 @@ function WealthInner() {
   const aiRecommendationScript = [
     `I would push ${aiRecommendedProduct.name} to this ${walletProfileLabel.toLowerCase()} because ${aiRecommendationReason}.`,
     walletProfileLevel === 'advanced'
-      ? `This wallet has enough paper, pledge, or settlement history to inspect a ${aiRecommendedSurface} product, while the buy / settle / pledge row keeps the next action explicit.`
+      ? `This wallet has enough paper, pledge, or settlement history to inspect a ${aiRecommendedSurface} product, but the diligence and monitor pages should stay one click away.`
       : walletProfileLevel === 'intermediate'
         ? `Keep the recommendation as a guided next step: show ${aiRecommendedPolicy.label.toLowerCase()} terms, NAV movement, and the receipt lifecycle before subscribe.`
         : `Keep the first push simple: explain what the receipt owns, why it earns, and how the user can exit before asking for a subscription signature.`,
-    `Next click should open ${aiRecommendedProduct.shortName || aiRecommendedProduct.name} detail, then use the same row for buy, settlement, and pledge decisions.`
+    `Next click should open ${aiRecommendedProduct.shortName || aiRecommendedProduct.name} detail, then use the action buttons below for lifecycle, AI diligence, receipt, or monitoring.`
   ];
   const walletProfileButtonRows = [
     {
@@ -4244,61 +4086,12 @@ function WealthInner() {
   ];
   const activeWalletProfileDetail =
     walletProfileButtonRows.find((row) => row.id === activeWalletProfilePanel) || walletProfileButtonRows[0];
-  function renderWalletProfileRouter() {
-    return (
-      <div className="wealth-wallet-profile-router developer-wallet-profile-router">
-        <div className="wealth-wallet-profile-head">
-          <div>
-            <div className="eyebrow">Wallet profile</div>
-            <h3>{walletProfileLabel}</h3>
-          </div>
-          <span className={`pill ${walletProfileLevel === 'advanced' ? 'risk-low' : walletProfileLevel === 'intermediate' ? 'risk-medium' : 'risk-high'}`}>
-            {isConnected ? 'Wallet-linked' : 'Connect wallet'}
-          </span>
-        </div>
-        <div className="wealth-wallet-profile-button-row" aria-label="Wallet profile detail buttons">
-          {walletProfileButtonRows.map((row) => (
-            <button
-              key={row.id}
-              type="button"
-              className={`wealth-wallet-profile-button ${activeWalletProfilePanel === row.id ? 'active' : ''}`}
-              onClick={() => setActiveWalletProfilePanel(row.id)}
-            >
-              <span>{row.label}</span>
-              <strong>{row.value}</strong>
-            </button>
-          ))}
-        </div>
-        <div className="wealth-wallet-profile-detail">
-          <div className="wealth-wallet-profile-detail-head">
-            <div>
-              <div className="eyebrow">{activeWalletProfileDetail.label}</div>
-              <h3>{activeWalletProfileDetail.title}</h3>
-            </div>
-            {activeWalletProfileDetail.id === 'ai' ? <span className="pill risk-low">Profile-ranked</span> : null}
-          </div>
-          <p className="muted">{activeWalletProfileDetail.copy}</p>
-          <div className="wealth-wallet-profile-metric-grid">
-            {activeWalletProfileDetail.metrics.map((metric) => (
-              <div className="wealth-wallet-profile-metric" key={metric.label}>
-                <span>{metric.label}</span>
-                <strong>{metric.value}</strong>
-              </div>
-            ))}
-          </div>
-          {activeWalletProfileDetail.script?.length ? (
-            <div className="wealth-ai-script">
-              {activeWalletProfileDetail.script.map((line) => (
-                <div className="wealth-ai-script-line" key={line}>
-                  {line}
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </div>
-    );
-  }
+  const aiRecommendationActionButtons = [
+    { id: 'flow', label: 'Lifecycle desk', topic: 'flow' },
+    { id: 'diligence', label: 'AI diligence', topic: 'diligence' },
+    { id: 'receipt', label: 'Receipt detail', topic: 'receipt' },
+    { id: 'automation', label: 'Monitor rules', topic: 'automation' }
+  ];
   const collectibleHelperCopy =
     'Beginner note: when a homepage badge is minted, look for it in the connected wallet collectibles / NFT view. Wealth keeps reading the same wallet-linked progress.';
   const wealthTaskDetailMap = {
@@ -4829,11 +4622,10 @@ function WealthInner() {
   }
 
   function applyProductFocus(productId, topic = 'flow') {
-    const nextTopic = normalizeDetailTopicId(topic);
     startTransition(() => {
       setSelectedProductId(productId);
       setExpandedProductId(productId);
-      setSelectedDetailTopics(nextTopic ? [nextTopic] : []);
+      setSelectedDetailTopics([topic]);
       setPendingScrollProductId(productId);
     });
   }
@@ -4934,13 +4726,11 @@ function WealthInner() {
   }
 
   function toggleDetailTopic(topicId) {
-    const nextTopic = normalizeDetailTopicId(topicId, '');
-    setSelectedDetailTopics((current) => (nextTopic && current[0] === nextTopic ? [] : nextTopic ? [nextTopic] : []));
+    setSelectedDetailTopics((current) => (current[0] === topicId ? [] : [topicId]));
   }
 
   function handleDetailTopicChange(topicId) {
-    const nextTopic = normalizeDetailTopicId(topicId, '');
-    setSelectedDetailTopics(nextTopic ? [nextTopic] : []);
+    setSelectedDetailTopics(topicId ? [topicId] : []);
   }
 
   function handleProductNavPeriodChange(productId, periodId) {
@@ -5093,7 +4883,7 @@ function WealthInner() {
     });
 
     setFeedback(
-      `Signed subscription placed: ${requestedAmount.toLocaleString()} PT into ${selectedProduct.name}. Receipt badge minted: ${sharesMinted.toLocaleString()} ${selectedProduct.shareToken} shares are now live in the demo wallet.`
+      `Signed subscription placed: ${requestedAmount.toLocaleString()} PT into ${selectedProduct.name}. Demo wallet received ${sharesMinted.toLocaleString()} ${selectedProduct.shareToken} shares.`
     );
     setSettlementDays(0);
     setIsSubscribeModalOpen(false);
@@ -5473,20 +5263,11 @@ function WealthInner() {
       );
     });
 
-    const receiptLifecycleCopy =
-      settlementAction === 'preview'
-        ? 'Receipt badge was not changed.'
-        : settlementAction === 'roll'
-          ? 'The old receipt badge was burned and reminted into the next term.'
-          : settlementAction === 'transfer'
-            ? `The old receipt badge was burned and reminted as ${settlementTransferProduct?.shareToken || 'the transfer target'} receipt shares.`
-            : 'The receipt badge was burned and returned to PT cash.';
-
     setFeedback(
       `Signed ${actionLabel}: ${formatShareBalance(sharesToSettle, false)} ${selectedProduct.shareToken} marked to ${formatValue(
         valueToSettle,
         false
-      )} across the ${settlementWindowLabel}. ${receiptLifecycleCopy}`
+      )} across the ${settlementWindowLabel}.`
     );
     if (settlementAction !== 'preview') {
       setSettlementDays(0);
@@ -5778,41 +5559,6 @@ function WealthInner() {
                 <strong>{product.name}</strong>
                 <em>{returnDisplay.value}</em>
               </button>
-            );
-          })}
-        </div>
-
-        <div className="wealth-dual-action-list" aria-label="Dual Investment detail and lifecycle actions">
-          {dualProducts.map((product) => {
-            const productPosition = displayWealthState.positions?.[product.id] || { shares: 0, principal: 0 };
-            const productReceiptValue = roundNumber(Number(productPosition.shares || 0) * Number(product.nav || 0), 2);
-            const hasPosition = Number(productPosition.shares || 0) > 0;
-
-            return (
-              <div className="wealth-dual-action-row" key={`${product.id}-actions`}>
-                <div>
-                  <div className="product-title">{product.shortName || product.name}</div>
-                  <div className="muted">
-                    {hasPosition
-                      ? `${formatShareBalance(productPosition.shares, hideBalances)} ${product.shareToken} / ${formatValue(productReceiptValue, hideBalances)}`
-                      : `${product.shareToken} receipt not minted yet`}
-                  </div>
-                </div>
-                <div className="toolbar wealth-action-toolbar">
-                  <button className="ghost-btn compact" onClick={() => focusProduct(product.id, { topic: 'flow', categoryId: 'dual' })}>
-                    Detail
-                  </button>
-                  <button className="primary-btn compact" onClick={(event) => handleOpenSubscribeModal(product, event)}>
-                    Buy
-                  </button>
-                  <button className="secondary-btn compact" onClick={() => handlePositionQuickAction(product.id, 'settle')} disabled={!hasPosition}>
-                    Settle
-                  </button>
-                  <button className="ghost-btn compact" onClick={() => handlePositionQuickAction(product.id, 'pledge')} disabled={!hasPosition}>
-                    Pledge
-                  </button>
-                </div>
-              </div>
             );
           })}
         </div>
@@ -6881,95 +6627,6 @@ function WealthInner() {
                 ))}
               </div>
 
-              {selectedDualWindowPreview ? (
-                <div className="wealth-dual-window-panel">
-                  <div className="wealth-dual-simulator-head">
-                    <div>
-                      <div className="eyebrow">Dual return window</div>
-                      <div className="product-title">
-                        {selectedWindowLabel} NAV mark + {selectedDualProductPair.id} price path
-                      </div>
-                    </div>
-                    <span className={`pill ${selectedDualWindowPreview.tone}`}>
-                      {selectedDualWindowPreview.outcomeLabel}
-                    </span>
-                  </div>
-
-                  <label className="wealth-field compact wealth-dual-sim-slider">
-                    Product price move in {selectedWindowLabel}: {formatSignedPercent(selectedDualWindowPriceMovePct)}
-                    <input
-                      type="range"
-                      min={-selectedDualWindowMoveLimit}
-                      max={selectedDualWindowMoveLimit}
-                      step="1"
-                      value={selectedDualWindowPriceMovePct}
-                      onChange={(event) => setDualWindowPriceMovePct(Number(event.target.value))}
-                    />
-                    <div className="paper-range-suggestion-row">
-                      <span className="paper-range-suggestion-marker" style={{ left: `${selectedDualWindowSuggestedMarkerPct}%` }} />
-                      <span>Window NAV move {formatSignedPercent(selectedDualWindowNavMovePct, 1)}</span>
-                    </div>
-                  </label>
-
-                  <div className="wealth-amount-preset-row compact">
-                    <button type="button" className="ghost-btn compact" onClick={() => setDualWindowPriceMovePct(Math.round(selectedDualWindowNavMovePct))}>
-                      Use NAV move
-                    </button>
-                    <button type="button" className="ghost-btn compact" onClick={() => setDualWindowPriceMovePct(-Math.round(selectedDualWindowMoveLimit / 2))}>
-                      Down range
-                    </button>
-                    <button type="button" className="ghost-btn compact" onClick={() => setDualWindowPriceMovePct(0)}>
-                      Flat
-                    </button>
-                    <button type="button" className="ghost-btn compact" onClick={() => setDualWindowPriceMovePct(Math.round(selectedDualWindowMoveLimit / 2))}>
-                      Up range
-                    </button>
-                  </div>
-
-                  <div className="wealth-chart-summary compact wealth-dual-window-summary">
-                    <div>
-                      <div className="label">Receipt NAV leg</div>
-                      <div className={`value ${selectedDualWindowPreview.navGain >= 0 ? 'risk-low' : 'risk-high'}`}>
-                        {formatSignedValue(selectedDualWindowPreview.navGain, hideBalances)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="label">Term premium</div>
-                      <div className="value risk-medium">
-                        {formatValue(selectedDualWindowPreview.premiumValue, hideBalances)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="label">Final return</div>
-                      <div className={`value ${selectedDualWindowPreview.tone}`}>
-                        {formatSignedValue(selectedDualWindowPreview.pnl, hideBalances)}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="wealth-dual-flow-grid">
-                    <div className="reason-card">
-                      <div className="entry-title">NAV sets receipt value</div>
-                      <div className="entry-copy">
-                        Buy at NAV {selectedDualWindowPreview.startNav.toFixed(3)} and mark at {selectedDualWindowPreview.endNav.toFixed(3)} before the target-price rule resolves.
-                      </div>
-                    </div>
-                    <div className="reason-card">
-                      <div className="entry-title">Price decides payout asset</div>
-                      <div className="entry-copy">
-                        {selectedDualWindowPreview.directionLabel} target {selectedDualWindowPreview.targetPrice.toLocaleString()} / simulated price {selectedDualWindowPreview.settlementPrice.toLocaleString()}.
-                      </div>
-                    </div>
-                    <div className="reason-card">
-                      <div className="entry-title">Wallet result</div>
-                      <div className="entry-copy">
-                        Ends as {hideBalances ? '---' : selectedDualWindowPreview.settlementAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })} {selectedDualWindowPreview.settlementAsset}, worth {formatValue(selectedDualWindowPreview.quoteEquivalent, hideBalances)} or {formatSignedPercent(selectedDualWindowPreview.returnPct, 2)}.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
               <DetailNavChart series={selectedNavPoints} />
 
               {isCollateralPilotProduct(selectedProduct) ? (
@@ -7245,27 +6902,6 @@ function WealthInner() {
                   <div className="muted">{selectedSettlementPolicy.detail}</div>
                 </div>
                 <span className={`pill ${selectedSettlementPolicy.tone}`}>{selectedSettlementPolicy.label}</span>
-              </div>
-
-              <div className="wealth-receipt-badge-strip" aria-label="Receipt badge lifecycle">
-                <div className={`wealth-receipt-badge ${selectedPosition.shares ? 'active' : ''}`}>
-                  <span className="wealth-receipt-badge-icon">Mint</span>
-                  <div>
-                    <strong>{selectedPosition.shares ? `${selectedProduct.shareToken} badge active` : `Buy mints ${selectedProduct.shareToken}`}</strong>
-                    <small>
-                      {selectedPosition.shares
-                        ? `${formatShareBalance(selectedPosition.shares, hideBalances)} receipt shares live in this wallet.`
-                        : `${formatShareBalance(estimatedShares, hideBalances)} shares previewed from the subscribe amount.`}
-                    </small>
-                  </div>
-                </div>
-                <div className={`wealth-receipt-badge ${selectedPosition.shares ? 'ready' : ''}`}>
-                  <span className="wealth-receipt-badge-icon">Burn</span>
-                  <div>
-                    <strong>{selectedPosition.shares ? `${settlementActionMeta.label} can burn or roll` : 'Settle waits for a minted receipt'}</strong>
-                    <small>Settlement burns the current badge, then roll or transfer can mint the next receipt.</small>
-                  </div>
-                </div>
               </div>
 
               <div className="toolbar wealth-action-toolbar">
@@ -7618,6 +7254,19 @@ function WealthInner() {
             </div>
           ) : null}
 
+          {selectedDetailTopics.includes('automation') ? (
+            <div className="paper-mode-card wealth-detail-section">
+              <div className="product-title">Automation and strategy logic</div>
+              <div className="starter-reasons">
+                {selectedProduct.automation.map((line) => (
+                  <div className="reason-card" key={line}>
+                    <div className="entry-copy">{line}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           {selectedDetailTopics.length === 0 ? (
             <div className="wealth-inline-note">Pick one focus chip above when you want to reopen a guided section.</div>
           ) : null}
@@ -7965,13 +7614,65 @@ function WealthInner() {
             )}
           </div>
 
+          <div className="wealth-wallet-profile-router">
+            <div className="wealth-wallet-profile-head">
+              <div>
+                <div className="eyebrow">Wallet profile</div>
+                <h3>{walletProfileLabel}</h3>
+              </div>
+              <span className={`pill ${walletProfileLevel === 'advanced' ? 'risk-low' : walletProfileLevel === 'intermediate' ? 'risk-medium' : 'risk-high'}`}>
+                {isConnected ? 'Wallet-linked' : 'Connect wallet'}
+              </span>
+            </div>
+            <div className="wealth-wallet-profile-button-row" aria-label="Wallet profile detail buttons">
+              {walletProfileButtonRows.map((row) => (
+                <button
+                  key={row.id}
+                  type="button"
+                  className={`wealth-wallet-profile-button ${activeWalletProfilePanel === row.id ? 'active' : ''}`}
+                  onClick={() => setActiveWalletProfilePanel(row.id)}
+                >
+                  <span>{row.label}</span>
+                  <strong>{row.value}</strong>
+                </button>
+              ))}
+            </div>
+            <div className="wealth-wallet-profile-detail">
+              <div className="wealth-wallet-profile-detail-head">
+                <div>
+                  <div className="eyebrow">{activeWalletProfileDetail.label}</div>
+                  <h3>{activeWalletProfileDetail.title}</h3>
+                </div>
+                {activeWalletProfileDetail.id === 'ai' ? <span className="pill risk-low">Profile-ranked</span> : null}
+              </div>
+              <p className="muted">{activeWalletProfileDetail.copy}</p>
+              <div className="wealth-wallet-profile-metric-grid">
+                {activeWalletProfileDetail.metrics.map((metric) => (
+                  <div className="wealth-wallet-profile-metric" key={metric.label}>
+                    <span>{metric.label}</span>
+                    <strong>{metric.value}</strong>
+                  </div>
+                ))}
+              </div>
+              {activeWalletProfileDetail.script?.length ? (
+                <div className="wealth-ai-script">
+                  {activeWalletProfileDetail.script.map((line) => (
+                    <div className="wealth-ai-script-line" key={line}>
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
           <button
             type="button"
             className="wealth-ai-recommend-card wealth-ai-recommend-button"
             onClick={() => focusProduct(aiRecommendedProduct.id, { topic: 'flow', categoryId: getCategoryIdForProduct(aiRecommendedProduct) })}
           >
             <div>
-              <div className="eyebrow">AI recommended / Wallet fit</div>
+              <div className="eyebrow">AI recommended / {walletProfileLabel}</div>
               <div className="wealth-ai-recommend-title">
                 <span className="wealth-ai-recommend-product">{aiRecommendedProduct.name}</span>
                 <span className="wealth-ai-recommend-reason">Fits this wallet because {aiRecommendationReason}</span>
@@ -7979,6 +7680,19 @@ function WealthInner() {
             </div>
             <span className="pill risk-low">Open detail</span>
           </button>
+
+          <div className="wealth-ai-action-row" aria-label="AI recommendation detail actions">
+            {aiRecommendationActionButtons.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                className="ghost-btn compact"
+                onClick={() => focusProduct(aiRecommendedProduct.id, { topic: action.topic, categoryId: getCategoryIdForProduct(aiRecommendedProduct) })}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
 
           {selectedCategory === 'dual' ? renderDualCurrencyGuideSection() : null}
         </section>
@@ -8976,7 +8690,6 @@ function WealthInner() {
         isConnected={isConnected}
         walletDisplayName={walletDisplayName}
         remainingPt={remainingPaperTokens}
-        walletProfilePanel={renderWalletProfileRouter()}
       />
     </div>
   );

@@ -118,18 +118,11 @@ function scoreWealthState(value) {
 }
 
 function normalizeProgress(value = {}) {
-  const wealthTaskClaims =
-    value.wealthTaskClaims && typeof value.wealthTaskClaims === 'object' ? value.wealthTaskClaims : {};
-
   return {
     viewedRiskCards: Array.isArray(value.viewedRiskCards) ? value.viewedRiskCards : [],
     guideCompleted: Boolean(value.guideCompleted),
     quizCompleted: Boolean(value.quizCompleted),
     paperTradesCompleted: Number(value.paperTradesCompleted || 0),
-    wealthTaskClaims: {
-      subscribe: Boolean(wealthTaskClaims.subscribe || value.wealthReceiptClaimed),
-      settlement: Boolean(wealthTaskClaims.settlement || value.wealthSettlementClaimed)
-    },
     homeOnboardingCompleted: Boolean(value.homeOnboardingCompleted || value.paperUnlocked),
     paperUnlocked: Boolean(value.paperUnlocked),
     adminUnlocked: Boolean(value.adminUnlocked),
@@ -449,16 +442,12 @@ export function readRecoveredWealthState(address, fallback) {
 
 export function getCompletedMilestoneCount(progress = {}) {
   const normalized = normalizeProgress(progress);
-  const wealthTaskClaimCount = ['subscribe', 'settlement'].filter(
-    (taskId) => normalized.wealthTaskClaims?.[taskId]
-  ).length;
-
   return [
     true,
     normalized.guideCompleted || normalized.viewedRiskCards.length >= 3,
     normalized.quizCompleted,
     normalized.paperTradesCompleted > 0
-  ].filter(Boolean).length + wealthTaskClaimCount;
+  ].filter(Boolean).length;
 }
 
 export function getWalletProfileSummary(profile = {}) {
