@@ -126,7 +126,7 @@ const PAPER_VOL_FILTERS = [
 ];
 const HIDDEN_REPLAY_PRODUCT_LANES = new Set(['yield', 'strategy', 'ai']);
 const HIDDEN_REPLAY_LANE_TAB_IDS = new Set([]);
-const HIDDEN_LEARNING_ROUTE_IDS = new Set(['perp', 'routing', 'lending']);
+const HIDDEN_LEARNING_ROUTE_IDS = new Set(['routing', 'lending']);
 const HIDDEN_PERP_FOCUS_IDS = new Set(['combo']);
 const HEDGE_PROTECTION_EFFECTIVENESS = {
   direct: 1,
@@ -4513,8 +4513,8 @@ function formatHoldingPresetLabel(days) {
 const PRODUCT_ROUTE_PLAYBOOKS = {
   spot: {
     defaultRoute: 'spot',
-    routes: ['spot', 'borrow'],
-    summary: 'Spot products keep the first action simple: buy, sell, replay settlement, then add options-style payoff templates only when the user wants structure.'
+    routes: ['spot', 'perp', 'borrow'],
+    summary: 'Spot products keep the first action simple: buy, sell, replay settlement, then add leverage, hedge, or options-style payoff templates only when the user wants structure.'
   },
   funding: {
     defaultRoute: 'spot',
@@ -4523,9 +4523,9 @@ const PRODUCT_ROUTE_PLAYBOOKS = {
   },
   public: {
     defaultRoute: 'spot',
-    routes: ['spot', 'borrow'],
+    routes: ['spot', 'perp', 'borrow'],
     summary:
-      'xStock and listed wrappers should start with spot-style replay, then move into options templates such as collars and short puts when the user wants a payoff shape.'
+      'xStock and listed wrappers should start with spot-style replay, then move into leverage, hedge, or options templates when the user wants a payoff shape.'
   },
   private: {
     defaultRoute: 'spot',
@@ -5638,7 +5638,7 @@ function PaperTradingInner() {
     normalizeProductLeaderboardFloat(readStorageJson(PRODUCT_LEADERBOARD_FLOAT_STORAGE_KEY, null))
   );
   const [autoSellDockOpen, setAutoSellDockOpen] = useState(() =>
-    readStorageJson(AUTO_SELL_DOCK_STORAGE_KEY, true) !== false
+    readStorageJson(AUTO_SELL_DOCK_STORAGE_KEY, false) === true
   );
   const [productLeaderboardGesture, setProductLeaderboardGesture] = useState(null);
   const [developerOverride, setDeveloperOverride] = useState(() => Boolean(readStorageJson(DEV_AUTH_STORAGE_KEY, false)));
@@ -9326,6 +9326,37 @@ function PaperTradingInner() {
     }
 
     let sellOutcomeSummary = null;
+    if (side === 'sell') {
+      const unitsToSell = forceSellAll ? currentPosition.units : Math.min(currentPosition.units, filledUnits);
+      const principalReduction = roundNumber(unitsToSell * currentPosition.avgEntry, 2);
+      const holdingDays = getHoldingDays(currentPosition.entryTs, tradeBar.ts);
+      const annualCarryRate = getCostModel(selectedProduct).annualCarryBps / 10000;
+      const totalCarryAccrued = roundNumber(currentPosition.principal * annualCarryRate * (holdingDays / 365), 2);
+      const unpaidCarry = roundNumber(Math.max(0, totalCarryAccrued - Number(currentPosition.carryPaid || 0)), 2);
+      const ratio = currentPosition.units > 0 ? Math.min(1, unitsToSell / currentPosition.units) : 0;
+      const carryAllocated = roundNumber(unpaidCarry * ratio, 2);
+      const grossProceeds = roundNumber(unitsToSell * price, 2);
+      const preTaxGain = roundNumber(Math.max(0, grossProceeds - principalReduction - carryAllocated), 2);
+      const sellCosts = calculateTradeCosts({
+        product: selectedProduct,
+        side: 'sell',
+        notional: grossProceeds,
+        gain: preTaxGain,
+        holdingDays,
+        units: unitsToSell
+      });
+      const netProceeds = roundNumber(grossProceeds - carryAllocated - sellCosts.nonTaxCost - sellCosts.estimatedTax, 2);
+      const realizedPnl = roundNumber(netProceeds - principalReduction, 2);
+      const overridePnl = Number(outcomeOverride?.pnl);
+      const overrideExitValue = Number(outcomeOverride?.exitValue);
+
+      sellOutcomeSummary = {
+        pnl: Number.isFinite(overridePnl) ? roundNumber(overridePnl, 2) : realizedPnl,
+        exitValue: Number.isFinite(overrideExitValue) ? roundNumber(overrideExitValue, 2) : netProceeds,
+        actionLabel: outcomeOverride?.actionLabel || outcomeActionLabel || (forceSellAll ? 'Full exit' : 'Sell'),
+        ts: outcomeOverride?.ts || tradeBar.ts
+      };
+    }
 
     setPaperState((current) => {
       const livePosition = current.positions[selectedProductId] || {
@@ -9493,7 +9524,6 @@ function PaperTradingInner() {
           [selectedProductId]: true
         }));
       }
-      setAutoSellDockOpen(true);
     } else if (closesSelectedPosition) {
       setHedgeSleeveReadyByProduct((current) => {
         if (!current[selectedProductId]) return current;
@@ -9507,7 +9537,7 @@ function PaperTradingInner() {
         (side === 'buy'
           ? `Replay buy filled at ${formatPrice(price)} for ${filledUnits.toLocaleString()} units of ${selectedProduct.ticker}, with about ${formatNotional(calculateTradeCosts({ product: selectedProduct, side: 'buy', notional: fillNotional }).nonTaxCost)} PT in upfront drag.`
           : forceSellAll
-            ? `Timed exit sold ${filledUnits.toLocaleString()} units of ${selectedProduct.ticker} at ${formatPrice(price)} on ${formatReplayDate(tradeBar.ts, tradeInterval)}.`
+            ? `${outcomeActionLabel || 'Full exit'} sold ${filledUnits.toLocaleString()} units of ${selectedProduct.ticker} at ${formatPrice(price)} on ${formatReplayDate(tradeBar.ts, tradeInterval)}.`
             : `Replay sell filled at ${formatPrice(price)} for ${filledUnits.toLocaleString()} units of ${selectedProduct.ticker}, net of route costs and estimated tax.`) +
             (finalizedOutcome?.compensationGranted
               ? ` Daily recovery grant +${formatNotional(finalizedOutcome.compensationGranted)} PT was added after the close.`
@@ -11924,6 +11954,14 @@ function PaperTradingInner() {
         return;
       }
 
+      if (selectedAdvancedRoute === 'spot') {
+        handlePlaceTrade('sell', {
+          forceSellAll: true,
+          outcomeActionLabel: 'Sell high'
+        });
+        return;
+      }
+
       handlePlaceTrade('sell');
     };
     const showRouteStructureTools = selectedAdvancedRoute !== 'spot';
@@ -12148,12 +12186,27 @@ function PaperTradingInner() {
       const selectedAutoSellReady = leverageRouteActive ? timedExitReady : Boolean(selectedAutoSellRow?.ready);
       const topDelta = leverageRouteActive ? timedExitEstimatedPnl : timedExitPortfolioDelta;
       const topValue = leverageRouteActive ? timedExitEstimatedValue : timedExitPortfolioNetExitValue;
+      const autoSellDockAvailable = !hedgeFocusActive || Boolean(activePerpLeg);
+
+      if (!autoSellDockAvailable) return null;
 
       if (!autoSellDockOpen) {
         return (
-          <button type="button" className="wealth-floating-timeline-toggle paper-floating-auto-sell-toggle" onClick={() => setAutoSellDockOpen(true)}>
-            Auto-sell
-          </button>
+          <div
+            className="paper-floating-leaderboard-toggle right paper-floating-auto-sell-collapse-toggle"
+            role="button"
+            tabIndex={0}
+            aria-label="Open auto-sell timeline"
+            onClick={() => setAutoSellDockOpen(true)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              setAutoSellDockOpen(true);
+            }}
+          >
+            <span>{'<'}</span>
+            <small>{leverageRouteActive ? 'Close' : 'Exit'}</small>
+          </div>
         );
       }
 
@@ -12164,8 +12217,12 @@ function PaperTradingInner() {
               <div className="eyebrow">Auto-sell timeline</div>
               <h3>{leverageRouteActive ? 'Timed close' : 'Multi-position exit'}</h3>
             </div>
-            <button className="ghost-btn compact paper-floating-product-leaderboard-close" onClick={() => setAutoSellDockOpen(false)}>
-              Close
+            <button
+              className="ghost-btn compact paper-floating-product-leaderboard-close"
+              aria-label="Collapse auto-sell timeline"
+              onClick={() => setAutoSellDockOpen(false)}
+            >
+              X
             </button>
           </div>
 

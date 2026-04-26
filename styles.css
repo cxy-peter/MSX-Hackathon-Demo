@@ -4629,6 +4629,25 @@ label {
   z-index: 39;
 }
 
+.paper-floating-auto-sell-collapse-toggle {
+  right: 10px;
+  bottom: 118px;
+  top: auto;
+  z-index: 39;
+  flex-direction: column;
+  gap: 3px;
+  height: 86px;
+  cursor: pointer;
+}
+
+.paper-floating-auto-sell-collapse-toggle small {
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
 .paper-floating-auto-sell-body {
   gap: 12px;
 }
