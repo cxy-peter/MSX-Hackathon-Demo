@@ -4721,6 +4721,29 @@ function normalizePortfolioComboWeightMap(productIds = [], weightMap = {}) {
   );
 }
 
+function getPortfolioComboWeightPercentTotal(productIds = [], weightMap = {}) {
+  const safeProductIds = productIds.filter(Boolean);
+
+  return safeProductIds.reduce((sum, productId) => sum + Number(weightMap?.[productId] || 0), 0);
+}
+
+function getPortfolioComboWeightsValidation({
+  productIds = [],
+  weightMap = {},
+  allocation = null,
+  tolerance = 0.25
+} = {}) {
+  const totalPercent = Array.isArray(allocation) && allocation.length
+    ? allocation.reduce((sum, row) => sum + Number(row?.weightPct || 0), 0)
+    : getPortfolioComboWeightPercentTotal(productIds, weightMap);
+
+  const safeTotalPercent = roundNumber(totalPercent, 4);
+  return {
+    totalPercent: safeTotalPercent,
+    isValid: Number.isFinite(safeTotalPercent) && Math.abs(safeTotalPercent - 100) <= tolerance
+  };
+}
+
 function rememberLimitedCacheEntry(cache, key, value, limit) {
   cache.set(key, value);
 
@@ -5553,7 +5576,7 @@ function getReplayPracticePreviewOptions(options = {}) {
   return {
     ...options,
     previewMode: true,
-    notional: quantizeReplayPreviewSize(options?.notional),
+    notional: roundNumber(Math.max(MIN_PAPER_TRADE, Number(options?.notional || 0)), 2),
     marginCapital: quantizeReplayPreviewSize(options?.marginCapital, REPLAY_PRACTICE_PREVIEW_SIZE_QUANTUM, 0),
     flashLoanAmount: quantizeReplayPreviewSize(options?.flashLoanAmount, REPLAY_PRACTICE_PREVIEW_SIZE_QUANTUM, 0),
     flashLoanFee: quantizeReplayPreviewSize(options?.flashLoanFee, 100, 0),
@@ -5578,7 +5601,8 @@ function getReplayPracticePreviewOptions(options = {}) {
 }
 
 function getReplayPracticeScenarioCacheKey(bars = [], mode = 'spot', options = {}) {
-  const controls = options?.strategyControls || {};
+  const previewOptions = getReplayPracticePreviewOptions(options);
+  const controls = previewOptions?.strategyControls || {};
   const strategyControlKey = [
     controls.downsidePct,
     controls.profitHarvestPct,
@@ -5591,12 +5615,19 @@ function getReplayPracticeScenarioCacheKey(bars = [], mode = 'spot', options = {
 
   return [
     getReplayPracticeBarsCacheId(bars),
-    'scenario-v5',
+    'scenario-v6',
     mode,
-    options?.product?.id || '',
-    roundNumber(Number(options?.leverage || 1), 1),
-    roundNumber(Number(options?.hedgeLeverage || options?.leverage || 1), 1),
-    options?.strategyTemplateId || '',
+    previewOptions?.product?.id || '',
+    roundNumber(Number(previewOptions?.notional || 0), 2),
+    roundNumber(Number(previewOptions?.marginCapital || 0), 2),
+    roundNumber(Number(previewOptions?.flashLoanAmount || 0), 2),
+    roundNumber(Number(previewOptions?.flashLoanFee || 0), 2),
+    roundNumber(Number(previewOptions?.hedgeSleeveNotional || 0), 2),
+    roundNumber(Number(previewOptions?.hedgeTicketNotional || 0), 2),
+    roundNumber(Number(previewOptions?.hedgeMarginCapital || 0), 2),
+    roundNumber(Number(previewOptions?.hedgeLeverage || 1), 1),
+    roundNumber(Number(previewOptions?.leverage || 1), 1),
+    previewOptions?.strategyTemplateId || '',
     strategyControlKey
   ].join('|');
 }
@@ -5762,9 +5793,11 @@ function buildReplayPracticeCasesFast(bars = [], mode = 'spot', options = {}) {
     const ranked = [...(templateCandidates.length ? templateCandidates : candidates)].sort(
       (left, right) => scoreOf(right) - scoreOf(left) || Math.abs(right.returnRate) - Math.abs(left.returnRate)
     );
+    const positiveRanked = ranked.filter((candidate) => scoreOf(candidate) > 0);
+    const displayCandidates = positiveRanked.length ? positiveRanked : ranked;
     const templateLabel = OPTION_STRATEGY_LABELS[options?.strategyTemplateId] || 'Strategy';
-    addCandidate(ranked[0], 'best-payoff', `${templateLabel} preview #1`, 1, true);
-    ranked.slice(1).forEach((candidate) => {
+    addCandidate(displayCandidates[0], 'best-payoff', `${templateLabel} preview #1`, 1, true);
+    displayCandidates.slice(1).forEach((candidate) => {
       if (selected.length < 2) addCandidate(candidate, 'best-payoff', `Best preview #${selected.length + 1}`, selected.length + 1);
     });
     const downside = candidates.filter((candidate) => candidate.returnRate < 0).sort((left, right) => scoreOf(right) - scoreOf(left))[0];
@@ -6308,8 +6341,10 @@ function buildReplayPracticeCases(bars = [], mode = 'spot', options = {}) {
     const rankedStrategyCandidates = [...candidates].sort(
       (left, right) => getModeOutcomeScore(right) - getModeOutcomeScore(left) || Math.abs(right.returnRate) - Math.abs(left.returnRate)
     );
-    addCandidate(rankedStrategyCandidates[0], 'best-payoff', 'Best net/DD #1', 1, { allowNearbyStart: true });
-    rankedStrategyCandidates.slice(1).forEach((candidate) => {
+    const positiveRankedStrategyCandidates = rankedStrategyCandidates.filter((candidate) => getModeOutcomeScore(candidate) > 0);
+    const displayPriorityCandidates = positiveRankedStrategyCandidates.length ? positiveRankedStrategyCandidates : rankedStrategyCandidates;
+    addCandidate(displayPriorityCandidates[0], 'best-payoff', 'Best net/DD #1', 1, { allowNearbyStart: true });
+    displayPriorityCandidates.slice(1).forEach((candidate) => {
       if (selected.length >= 2) return;
       addCandidate(candidate, 'best-payoff', `Best net/DD #${selected.length + 1}`, selected.length + 1);
     });
@@ -14416,6 +14451,83 @@ function PaperTradingInner() {
       entry.variantId === strategyAiTemplate.variantId
   );
 
+  function getLeaderboardStrategyTemplateId(strategyLabel = '') {
+    const targetLabel = String(strategyLabel || '').trim().toLowerCase();
+    if (!targetLabel) return '';
+
+    const exactMatch = Object.entries(OPTION_STRATEGY_LABELS).find(([, label]) => String(label || '').trim().toLowerCase() === targetLabel);
+    if (exactMatch) return exactMatch[0];
+
+    const containsMatch = Object.entries(OPTION_STRATEGY_LABELS).find(([, label]) => targetLabel.includes(String(label || '').trim().toLowerCase()));
+    return containsMatch ? containsMatch[0] : '';
+  }
+
+  function handleApplyStrategyTemplateLeaderboardEntry(entry = {}) {
+    const safeType = String(entry?.entryType || 'ai-template');
+
+    if (safeType === 'portfolio-combo') {
+      const allocation = Array.isArray(entry.allocation) ? entry.allocation : [];
+      if (!allocation.length) {
+        setFeedback('This combo entry has no allocation to copy.');
+        return;
+      }
+
+      const uniqueAllocation = [];
+      const nextWeights = {};
+      const nextSelectedIds = [];
+      allocation.forEach((row) => {
+        const productId = String(row?.productId || '').trim();
+        if (!productId) return;
+
+        const weightPct = Number(row?.weightPct || 0);
+        const normalizedWeight = roundNumber(weightPct, 1);
+        nextWeights[productId] = normalizedWeight;
+        nextSelectedIds.push(productId);
+        uniqueAllocation.push({
+          ticker: row?.ticker || productId,
+          weightPct: normalizedWeight
+        });
+      });
+
+      const validation = getPortfolioComboWeightsValidation({ allocation: uniqueAllocation });
+      if (!validation.isValid) {
+        setFeedback(
+          `Please fix combo weights first. Current total is ${validation.totalPercent.toFixed(1)}%, and it should be 100%.`
+        );
+        return;
+      }
+
+      if (nextSelectedIds.length < 2) {
+        setFeedback('Select at least two products before applying this combo.');
+        return;
+      }
+
+      setPortfolioComboSelectedIds(Array.from(new Set(nextSelectedIds)));
+      setPortfolioComboWeights(nextWeights);
+      setFeedback(`Applied "${entry.title || 'portfolio combo'}" to combo manual weights.`);
+      return;
+    }
+
+    const safePrompt = String(entry.prompt || entry.title || strategyAiPrompt).trim();
+    if (!safePrompt) {
+      setFeedback('This template has no prompt to copy.');
+      return;
+    }
+
+    const templateIdFromLabel = getLeaderboardStrategyTemplateId(entry.strategyLabel);
+    const safeVariantId = STRATEGY_AI_TEMPLATE_VARIANTS.some((variant) => variant.id === entry.variantId)
+      ? entry.variantId
+      : STRATEGY_AI_TEMPLATE_VARIANTS[0]?.id || 'balanced-guardrail';
+
+    if (templateIdFromLabel) {
+      setSelectedOptionStrategyTemplateId(templateIdFromLabel);
+    }
+    setStrategyAiPrompt(safePrompt);
+    setSelectedStrategyAiVariantId(safeVariantId);
+    setStrategyAiTemplateGenerated(true);
+    setFeedback(`Copied "${entry.title || 'AI template'}" into the AI strategy template controls.`);
+  }
+
   function handleGenerateStrategyAiTemplate() {
     setStrategyAiTemplateGenerated(true);
     mergeProgressUpdate({ strategyAiTemplateCompleted: true });
@@ -14448,7 +14560,9 @@ function PaperTradingInner() {
     });
     mergeProgressUpdate({
       strategyLessonCompleted: true,
-      strategyExampleCompleted: Boolean(progressState.strategyExampleCompleted || optionStrategyPreview),
+      ...(strategyRouteActive && optionStrategyPreview
+        ? { strategyExampleCompleted: true }
+        : {}),
       strategyAiTemplateCompleted: true,
       strategyLeaderboardUploaded: true
     });
@@ -14505,6 +14619,18 @@ function PaperTradingInner() {
     const metrics = suggestion?.metrics || portfolioComboManualMetrics;
     if (!metrics?.allocation?.length) {
       setFeedback(portfolioComboAnalysis.message || 'Load at least two replay series before uploading a portfolio combo.');
+      return;
+    }
+
+    const uploadWeightValidation = getPortfolioComboWeightsValidation({
+      allocation: suggestion?.metrics?.allocation,
+      productIds: portfolioComboSelectedIds,
+      weightMap: portfolioComboWeights
+    });
+    if (!uploadWeightValidation.isValid) {
+      setFeedback(
+        `Please fix combo weights before upload. Current total is ${uploadWeightValidation.totalPercent.toFixed(1)}%, but 100% is required.`
+      );
       return;
     }
 
@@ -16459,8 +16585,21 @@ function PaperTradingInner() {
                   </div>
                   {strategyTemplateLeaderboardRows.length ? (
                     <div className="paper-strategy-board-list">
-                      {strategyTemplateLeaderboardRows.slice(0, 4).map((entry, index) => (
-                        <div key={entry.id} className="paper-strategy-board-row">
+                    {strategyTemplateLeaderboardRows.slice(0, 4).map((entry, index) => (
+                        <div
+                          key={entry.id}
+                          className="paper-strategy-board-row"
+                          role="button"
+                          tabIndex={0}
+                          title="Copy this leaderboard entry to the strategy template board"
+                          onClick={() => handleApplyStrategyTemplateLeaderboardEntry(entry)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              handleApplyStrategyTemplateLeaderboardEntry(entry);
+                            }
+                          }}
+                        >
                           <div className="paper-strategy-board-rank">#{index + 1}</div>
                           <div className="paper-strategy-board-main">
                             <strong>
@@ -17163,7 +17302,20 @@ function PaperTradingInner() {
           {strategyTemplateLeaderboardRows.length ? (
             <div className="paper-strategy-board-list">
               {strategyTemplateLeaderboardRows.slice(0, 3).map((entry, index) => (
-                <div key={`combo-board-${entry.id}`} className="paper-strategy-board-row">
+                <div
+                  key={`combo-board-${entry.id}`}
+                  className="paper-strategy-board-row"
+                  role="button"
+                  tabIndex={0}
+                  title="Copy this leaderboard entry to combo or AI template controls"
+                  onClick={() => handleApplyStrategyTemplateLeaderboardEntry(entry)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      handleApplyStrategyTemplateLeaderboardEntry(entry);
+                    }
+                  }}
+                >
                   <div className="paper-strategy-board-rank">#{index + 1}</div>
                   <div className="paper-strategy-board-main">
                     <strong>
