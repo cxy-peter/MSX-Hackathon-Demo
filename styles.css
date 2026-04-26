@@ -1022,8 +1022,10 @@ label {
 }
 
 .paper-reward-cover {
+  position: relative;
   min-height: 214px;
   border-radius: 20px;
+  overflow: hidden;
 }
 
 .paper-reward-cover .unlock-box-banner-content {
@@ -1086,9 +1088,31 @@ label {
   box-shadow: 0 8px 24px rgba(122, 33, 130, 0.34);
 }
 
+.demo-only-banner {
+  margin: 0 0 18px;
+  padding: 12px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(244, 207, 107, 0.2);
+  background: rgba(244, 207, 107, 0.08);
+  color: #f3e7bc;
+  line-height: 1.6;
+}
+
+.demo-only-banner strong {
+  color: #fff7da;
+}
+
+.home-quest-cover {
+  margin-top: 28px;
+}
+
+.home-quest-cover .unlock-box-banner-content {
+  min-height: 208px;
+}
+
 .tile-status-badge {
   position: absolute;
-  top: 16px;
+  top: 20px;
   right: 16px;
   display: inline-flex;
   align-items: center;
@@ -1602,6 +1626,110 @@ label {
   border-radius: 18px;
   border: 1px solid rgba(151, 169, 191, 0.14);
   background: rgba(255,255,255,0.025);
+}
+
+.home-briefing-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: flex-end;
+}
+
+.home-briefing-fact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.home-briefing-fact-card {
+  min-height: 128px;
+  align-content: start;
+  background: rgba(255,255,255,0.04);
+}
+
+.home-briefing-fact-card .k {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 800;
+}
+
+.home-briefing-fact-card .v {
+  font-size: 15px;
+}
+
+.quiz-briefing-card {
+  margin: 2px 0 4px;
+}
+
+.home-discover-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.home-discover-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.home-discover-use-case {
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(164,255,47,0.14);
+  background: rgba(164,255,47,0.06);
+  color: var(--text);
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.home-surface-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(122,166,255,0.18);
+  background: rgba(122,166,255,0.055);
+}
+
+.home-surface-hero h3 {
+  margin: 6px 0 8px;
+  color: var(--text);
+}
+
+.home-surface-card-grid {
+  display: grid;
+  grid-template-columns: 1.2fr repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.home-surface-card-grid-paper {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.home-surface-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.035);
+}
+
+.home-surface-card.featured {
+  border-color: rgba(164,255,47,0.24);
+  background:
+    linear-gradient(180deg, rgba(164,255,47,0.08), rgba(255,255,255,0.03)),
+    rgba(255,255,255,0.035);
+}
+
+.home-surface-foot {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
 }
 
 .risk-checkpoint-shell {
@@ -2724,9 +2852,9 @@ label {
 
 .wealth-profile-storage-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
   gap: 16px;
-  align-items: center;
+  align-items: start;
   margin-top: 16px;
   padding: 16px;
   border-radius: 18px;
@@ -2757,6 +2885,91 @@ label {
   background: rgba(0,0,0,0.14);
   font-size: 12px;
   font-weight: 800;
+}
+
+.wallet-modal-backup-card {
+  width: 100%;
+  max-width: none;
+}
+
+.profile-backup-card {
+  background:
+    radial-gradient(circle at top right, rgba(122,166,255,0.14), transparent 42%),
+    rgba(122,166,255,0.055);
+}
+
+.profile-backup-main,
+.profile-backup-side {
+  display: grid;
+  gap: 14px;
+}
+
+.profile-backup-stat-grid,
+.profile-backup-policy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.profile-backup-stat-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(7, 12, 20, 0.28);
+}
+
+.profile-backup-stat-card span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.profile-backup-stat-card strong {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.profile-backup-policy-card {
+  min-height: 108px;
+}
+
+.profile-backup-state {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+}
+
+.profile-backup-state.ready {
+  border-color: rgba(164,255,47,0.24);
+  background: rgba(164,255,47,0.08);
+}
+
+.profile-backup-state-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.profile-backup-state strong {
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.profile-backup-actions {
+  justify-content: stretch;
+}
+
+.profile-backup-actions .ghost-btn,
+.profile-backup-actions .secondary-btn {
+  flex: 1 1 100%;
 }
 
 .wealth-opportunity-section {
@@ -8202,7 +8415,7 @@ label {
   line-height: 1.55;
 }
 @media (max-width: 1180px) {
-  .hero, .grid-2, .paper-layout, .intake-layout, .product-grid, .insight-strip, .entry-grid, .assessment-grid, .routing-layout, .origin-toggle, .quest-detail-grid, .paper-balance-strip, .primary-quest-grid, .developer-admin-grid, .wealth-summary-grid, .goal-picker, .wealth-detail-grid, .wealth-term-sheet-grid, .wealth-automation-grid, .wealth-portfolio-grid, .wealth-chart-summary, .wealth-modal-grid, .wealth-modal-layout, .paper-lab-grid, .paper-chart-stat-grid, .paper-control-grid, .paper-desk-grid, .paper-module-columns, .wealth-shelf-shell, .wealth-product-row, .wealth-detail-hero-grid, .wealth-nav-period-strip, .paper-ticket-grid, .paper-contract-grid, .paper-insight-grid, .wealth-rights-grid, .wealth-judge-grid, .wealth-check-card-grid, .wealth-contract-grid, .wealth-flow-preview-grid, .wealth-call-preview-grid, .paper-reward-task-row, .paper-focused-support, .paper-replay-support-grid, .wealth-pilot-grid, .paper-route-learning-grid, .wealth-ai-recommend-card, .wealth-profile-storage-card, .wealth-dual-guide-grid, .wealth-dual-outcome-grid, .wealth-opportunity-grid, .diligence-score-grid, .diligence-section-grid, .diligence-matrix-row { grid-template-columns: 1fr; }
+  .hero, .grid-2, .paper-layout, .intake-layout, .product-grid, .insight-strip, .entry-grid, .assessment-grid, .routing-layout, .origin-toggle, .quest-detail-grid, .paper-balance-strip, .primary-quest-grid, .developer-admin-grid, .wealth-summary-grid, .goal-picker, .wealth-detail-grid, .wealth-term-sheet-grid, .wealth-automation-grid, .wealth-portfolio-grid, .wealth-chart-summary, .wealth-modal-grid, .wealth-modal-layout, .paper-lab-grid, .paper-chart-stat-grid, .paper-control-grid, .paper-desk-grid, .paper-module-columns, .wealth-shelf-shell, .wealth-product-row, .wealth-detail-hero-grid, .wealth-nav-period-strip, .paper-ticket-grid, .paper-contract-grid, .paper-insight-grid, .wealth-rights-grid, .wealth-judge-grid, .wealth-check-card-grid, .wealth-contract-grid, .wealth-flow-preview-grid, .wealth-call-preview-grid, .paper-reward-task-row, .paper-focused-support, .paper-replay-support-grid, .wealth-pilot-grid, .paper-route-learning-grid, .wealth-ai-recommend-card, .wealth-profile-storage-card, .wealth-dual-guide-grid, .wealth-dual-outcome-grid, .wealth-opportunity-grid, .diligence-score-grid, .diligence-section-grid, .diligence-matrix-row, .home-surface-card-grid, .wealth-task-detail-grid, .profile-backup-stat-grid, .profile-backup-policy-grid { grid-template-columns: 1fr; }
   .paper-lab-grid { min-height: 0; }
   .paper-shelf-column {
     height: auto;
@@ -8272,6 +8485,8 @@ label {
   .wealth-period-grid { grid-template-columns: 1fr; }
   .wealth-leader-summary-grid { grid-template-columns: 1fr; }
   .wealth-card-period-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .home-briefing-fact-grid { grid-template-columns: 1fr; }
+  .home-surface-hero { flex-direction: column; }
 }
 
 @media (max-width: 820px) {
@@ -8402,6 +8617,7 @@ label {
 }
 
 .wealth-task-card {
+  appearance: none;
   display: grid;
   gap: 9px;
   min-height: 182px;
@@ -8410,12 +8626,24 @@ label {
   border-radius: 18px;
   background: rgba(255,255,255,0.03);
   align-content: start;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
 }
 
 .wealth-task-card.done {
   border-color: rgba(164,255,47,0.28);
   background:
     linear-gradient(180deg, rgba(164,255,47,0.08), rgba(255,255,255,0.025));
+}
+
+.wealth-task-card.active {
+  border-color: rgba(122,166,255,0.3);
+  box-shadow: inset 0 0 0 1px rgba(122,166,255,0.16);
+  background:
+    radial-gradient(circle at top right, rgba(122,166,255,0.14), transparent 42%),
+    rgba(255,255,255,0.04);
 }
 
 .wealth-task-card-head {
@@ -8483,6 +8711,35 @@ label {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.45;
+}
+
+.wealth-task-detail-card {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(122,166,255,0.18);
+  background: rgba(122,166,255,0.05);
+}
+
+.wealth-task-detail-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.9fr;
+  gap: 14px;
+}
+
+.wealth-task-detail-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.035);
+}
+
+.wealth-task-badge-grid {
+  margin-top: 0;
 }
 
 .wealth-product-type-panel,
@@ -8700,6 +8957,7 @@ label {
 
 @media (max-width: 720px) {
   .wealth-task-guide-grid,
+  .wealth-task-detail-grid,
   .wealth-recommended-strip,
   .wealth-opportunity-grid.compact,
   .wealth-settlement-policy-card,
@@ -8711,5 +8969,9 @@ label {
 
   .wealth-lifecycle-link {
     justify-content: start;
+  }
+
+  .home-briefing-pill-row {
+    justify-content: flex-start;
   }
 }

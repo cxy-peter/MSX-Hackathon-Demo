@@ -2239,6 +2239,7 @@ function WealthInner() {
   const [compareProductIds, setCompareProductIds] = useState(WEALTH_PRODUCTS.slice(0, 3).map((product) => product.id));
   const [comparePickerValue, setComparePickerValue] = useState('');
   const [selectedDetailTopics, setSelectedDetailTopics] = useState(['flow']);
+  const [selectedWealthTaskId, setSelectedWealthTaskId] = useState('subscribe');
   const [wealthDiligencePageIndex, setWealthDiligencePageIndex] = useState(0);
   const [fastForwardTarget, setFastForwardTarget] = useState('90d');
   const [settlementDays, setSettlementDays] = useState(180);
@@ -2624,6 +2625,7 @@ function WealthInner() {
   ];
   const wealthTaskCompletedCount = wealthQuestRows.filter((quest) => quest.done).length;
   const nextWealthTask = wealthQuestRows.find((quest) => !quest.done) || wealthQuestRows[wealthQuestRows.length - 1];
+  const selectedWealthTask = wealthQuestRows.find((quest) => quest.id === selectedWealthTaskId) || nextWealthTask;
   const selectedCategoryMeta = wealthCategoryOptions.find((category) => category.id === selectedCategory) || wealthCategoryOptions[0];
   const selectedShelfTitle = selectedCategory === 'all' ? currentGoal.label : selectedCategoryMeta.label;
   const selectedShelfSubtitle = selectedCategory === 'all'
@@ -2667,6 +2669,12 @@ function WealthInner() {
       setExpandedProductId(null);
     }
   }, [expandedProductId, shelfProducts]);
+
+  useEffect(() => {
+    if (!wealthQuestRows.some((quest) => quest.id === selectedWealthTaskId)) {
+      setSelectedWealthTaskId(nextWealthTask.id);
+    }
+  }, [nextWealthTask.id, selectedWealthTaskId, wealthQuestRows]);
 
   useEffect(() => {
     setPendingScrollProductId(null);
@@ -2945,6 +2953,51 @@ function WealthInner() {
       : walletProfileLevel === 'intermediate'
         ? 'Your wallet has completed enough learning steps to move beyond simple cash parking, but still benefits from visible NAV and redemption controls.'
         : 'This is the cleanest first wealth action: easier receipt, easier exit framing, and lower chance that yield hides complexity.';
+  const collectibleHelperCopy =
+    'Beginner note: when a homepage badge is minted, look for it in the connected wallet collectibles / NFT view. Wealth keeps reading the same wallet-linked progress.';
+  const wealthTaskDetailMap = {
+    subscribe: {
+      eyebrow: 'Task detail',
+      title: 'Mint the first wealth receipt',
+      copy: 'This is the main wealth learning loop: pick a product for a goal, read the fit and diligence context, then sign a simulated subscription that mints a receipt in the local wallet ledger.',
+      checklist: [
+        `Start from a goal like ${currentGoal.label.toLowerCase()} so the shelf already narrows into a clearer lane.`,
+        `Open ${aiRecommendedProduct.name} or any product card and review the flow, rights, and diligence pages before subscribing.`,
+        'Use the lifecycle desk to sign the demo subscription so the wallet ends up with a visible receipt position.'
+      ],
+      ctaLabel: 'Review AI recommendation',
+      ctaProductId: aiRecommendedProduct.id,
+      ctaCategoryId: getCategoryIdForProduct(aiRecommendedProduct),
+      supportBadges: [
+        { label: 'Welcome badge', value: hasMintedBadgeOnchain ? 'Minted' : isConnected ? 'Connected only' : 'Not started' },
+        { label: 'Briefing badge', value: guideTaskDone ? 'Ready or minted' : 'Still open' },
+        { label: 'Quiz badge', value: quizTaskDone ? 'Ready or minted' : 'Still open' }
+      ]
+    },
+    settlement: {
+      eyebrow: 'Task detail',
+      title: 'Practice settle, roll, or pledge',
+      copy: 'After one receipt exists, the second wealth task is about lifecycle control: closing a sleeve, rolling into a new term, or pledging the receipt as route support without confusing that support with spendable cash.',
+      checklist: [
+        'Open any owned receipt from the shelf and go to the lifecycle desk.',
+        'Try settle, roll, or transfer first if you want to rehearse how value returns to the wallet.',
+        'Use pledge only as route support. It should not count as fresh PT profit or spendable wealth cash.'
+      ],
+      ctaLabel: Object.keys(wealthState.positions || {}).length > 0 ? 'Open owned receipt' : 'Open a starter receipt',
+      ctaProductId: Object.keys(wealthState.positions || {})[0] || aiRecommendedProduct.id,
+      ctaCategoryId: getCategoryIdForProduct(
+        Object.keys(wealthState.positions || {})[0]
+          ? getProductByIdFrom(liveProducts, Object.keys(wealthState.positions || {})[0]) || aiRecommendedProduct
+          : aiRecommendedProduct
+      ),
+      supportBadges: [
+        { label: 'Paper task', value: paperTaskDone ? 'Unlocked' : 'Still gated' },
+        { label: 'Collateral activity', value: Object.keys(wealthState.collateral || {}).length > 0 ? 'Seen in wallet' : 'Not used yet' },
+        { label: 'Settlement activity', value: wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') ? 'Already practiced' : 'Still open' }
+      ]
+    }
+  };
+  const selectedWealthTaskDetail = wealthTaskDetailMap[selectedWealthTask.id] || wealthTaskDetailMap.subscribe;
   const timelinePreviewRows = useMemo(() => {
     const rows = portfolioRows.length
       ? portfolioRows.map((row) => ({ ...row, previewOnly: false }))
@@ -5410,6 +5463,10 @@ function WealthInner() {
         </div>
       </header>
 
+      <div className="demo-only-banner">
+        <strong>Demo only.</strong> Receipt balances, PT cash, subscriptions, pledges, and settlement actions on this page stay in local demo or testnet-style state. No real stablecoin or live-fund transfer happens here.
+      </div>
+
       <main>
         <section className="card wealth-hero-card">
           <div className="section-head">
@@ -5507,7 +5564,12 @@ function WealthInner() {
 
           <div className="wealth-task-guide-grid">
             {wealthQuestRows.map((quest) => (
-              <div key={quest.id} className={`wealth-task-card ${quest.done ? 'done' : ''}`}>
+              <button
+                type="button"
+                key={quest.id}
+                className={`wealth-task-card ${quest.done ? 'done' : ''} ${selectedWealthTask.id === quest.id ? 'active' : ''}`}
+                onClick={() => setSelectedWealthTaskId(quest.id)}
+              >
                 <div className="wealth-task-card-head">
                   <span className="wealth-task-badge">{quest.badge}</span>
                   <span className={`wealth-task-status ${quest.statusTone === 'done' ? 'done' : 'todo'}`}>
@@ -5517,8 +5579,61 @@ function WealthInner() {
                 <div className="wealth-task-meta">Task {quest.taskNumber} · {quest.activityLabel}</div>
                 <strong>{quest.title}</strong>
                 <p>{quest.copy}</p>
-              </div>
+              </button>
             ))}
+          </div>
+
+          <div className="wealth-task-detail-card">
+            <div className="section-head compact">
+              <div>
+                <div className="eyebrow">{selectedWealthTaskDetail.eyebrow}</div>
+                <h3>{selectedWealthTask.badge} · {selectedWealthTaskDetail.title}</h3>
+              </div>
+              <span className={`pill ${selectedWealthTask.done ? 'risk-low' : 'risk-medium'}`}>
+                {selectedWealthTask.statusLabel}
+              </span>
+            </div>
+            <p className="muted">{selectedWealthTaskDetail.copy}</p>
+            <div className="wealth-task-detail-grid">
+              <div className="wealth-task-detail-panel">
+                <div className="quest-panel-title">How to clear it</div>
+                <div className="checklist-list">
+                  {selectedWealthTaskDetail.checklist.map((item) => (
+                    <div className="checklist-item done" key={item}>
+                      <div className="check-indicator">GO</div>
+                      <div className="checklist-copy">
+                        <div className="muted">{item}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="toolbar">
+                  <button
+                    type="button"
+                    className="secondary-btn compact"
+                    onClick={() =>
+                      focusProduct(selectedWealthTaskDetail.ctaProductId, {
+                        topic: 'flow',
+                        categoryId: selectedWealthTaskDetail.ctaCategoryId
+                      })
+                    }
+                  >
+                    {selectedWealthTaskDetail.ctaLabel}
+                  </button>
+                </div>
+              </div>
+              <div className="wealth-task-detail-panel">
+                <div className="quest-panel-title">Wallet-linked badge carry-over</div>
+                <div className="wealth-profile-storage-grid wealth-task-badge-grid">
+                  {selectedWealthTaskDetail.supportBadges.map((item) => (
+                    <span key={item.label}>
+                      {item.label}: {item.value}
+                    </span>
+                  ))}
+                </div>
+                <div className="wealth-inline-note">{collectibleHelperCopy}</div>
+              </div>
+            </div>
           </div>
 
           <div className="wealth-product-type-panel">

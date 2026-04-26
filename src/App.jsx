@@ -454,19 +454,29 @@ const products = [
   }
 ];
 
-const STARTER_DISCOVER_PRODUCT_IDS = [
+const HOME_BRIEFING_PRODUCT_IDS = [
   'superstate-ustb',
-  'ondo-ousg',
-  'hashnote-usyc',
-  'superstate-uscc',
+  'apollo-acred',
+  'private-watchlist',
   'xstocks-public-holdings'
 ];
-const STARTER_DISCOVER_PRODUCTS = STARTER_DISCOVER_PRODUCT_IDS
+const HOME_BRIEFING_PRODUCTS = HOME_BRIEFING_PRODUCT_IDS
   .map((productId) => products.find((product) => product.id === productId))
   .filter(Boolean);
-const QUIZ_PRODUCTS = products.filter((product) => product.quiz);
+const STARTER_DISCOVER_PRODUCTS = HOME_BRIEFING_PRODUCTS;
+const QUIZ_PRODUCTS = HOME_BRIEFING_PRODUCTS.filter((product) => product.quiz);
 const DEFAULT_QUIZ_PRODUCT_ID = QUIZ_PRODUCTS[0]?.id || products[0].id;
 const HOME_PRODUCT_ID_SET = new Set(products.map((product) => product.id));
+
+function getProductBriefingFacts(product) {
+  if (!product) return [];
+  return [
+    { label: 'Plain-language use', value: product.useCase },
+    { label: 'Source of return', value: product.sourceOfReturn },
+    { label: 'Worst case', value: product.worstCase },
+    { label: 'First disclosure', value: product.firstDisclosure }
+  ];
+}
 
 function createEmptyQuizAnswers() {
   return {
@@ -833,6 +843,107 @@ function OnboardingBadge({ kicker, title, subtitle, accent = 'default' }) {
   );
 }
 
+function HomeQuestCover({ kicker, title, subtitle, accent = 'green', footerLines = [] }) {
+  return (
+    <div className="paper-reward-cover home-quest-cover">
+      <OnboardingBadge kicker={kicker} title={title} subtitle={subtitle} accent={accent} />
+      {footerLines.length ? (
+        <div className="paper-reward-cover-footer">
+          {footerLines.map((line) => (
+            <div key={line} className="paper-reward-cover-meta">
+              {line}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function BriefingFactGrid({ product, className = '' }) {
+  const facts = getProductBriefingFacts(product);
+  return (
+    <div className={`home-briefing-fact-grid ${className}`.trim()}>
+      {facts.map((fact) => (
+        <div className="guide-chip home-briefing-fact-card" key={`${product.id}-${fact.label}`}>
+          <div className="k">{fact.label}</div>
+          <div className="v">{fact.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ProfileBackupCard({
+  className = '',
+  eyebrow = 'Wallet backup + recovery',
+  title,
+  description,
+  footnote,
+  accountLabel,
+  summaryText,
+  walletProfileSummary,
+  profileBackupConfigured,
+  profileBackupRecoverable,
+  onSign,
+  onRecover,
+  isSigning = false,
+  actionsDisabled = false,
+  signReadyLabel = 'Update signed backup',
+  signIdleLabel = 'Sign backup now'
+}) {
+  const statRows = [
+    { label: 'Account', value: accountLabel },
+    { label: 'Available PT', value: `${walletProfileSummary.availablePT.toLocaleString()} PT` },
+    { label: 'Paper cash', value: `${walletProfileSummary.paperCash.toLocaleString()} PT` },
+    { label: 'Wealth cash', value: `${walletProfileSummary.wealthCash.toLocaleString()} PT` }
+  ];
+
+  return (
+    <div className={`wealth-profile-storage-card profile-backup-card ${className}`.trim()}>
+      <div className="profile-backup-main">
+        <div className="eyebrow">{eyebrow}</div>
+        <div className="wealth-profile-storage-title">{title}</div>
+        <div className="muted">{description}</div>
+        <div className="profile-backup-stat-grid">
+          {statRows.map((row) => (
+            <div className="profile-backup-stat-card" key={row.label}>
+              <span>{row.label}</span>
+              <strong>{row.value}</strong>
+            </div>
+          ))}
+        </div>
+        <div className="profile-backup-policy-grid">
+          <div className="guide-chip profile-backup-policy-card">
+            <div className="k">What it saves</div>
+            <div className="v">PT balance, badge progress, replay context, and wealth state for this wallet on this device.</div>
+          </div>
+          <div className="guide-chip profile-backup-policy-card">
+            <div className="k">What it does not save</div>
+            <div className="v">MetaMask, private keys, seed phrases, or any real-money permission.</div>
+          </div>
+        </div>
+        <div className="muted">{footnote}</div>
+        {summaryText ? <div className="wealth-inline-note wallet-modal-backup-note">{summaryText}</div> : null}
+      </div>
+      <div className="profile-backup-side">
+        <div className={`profile-backup-state ${profileBackupConfigured ? 'ready' : 'idle'}`}>
+          <span className="profile-backup-state-label">{profileBackupConfigured ? 'Signed snapshot ready' : 'Snapshot not signed yet'}</span>
+          <strong>{profileBackupRecoverable ? 'Recovery available on this device' : 'Recovery opens after the first signature'}</strong>
+        </div>
+        <div className="wallet-modal-backup-actions profile-backup-actions">
+          <button type="button" className="ghost-btn compact" onClick={onSign} disabled={isSigning || actionsDisabled}>
+            {isSigning ? 'Await wallet' : profileBackupConfigured ? signReadyLabel : signIdleLabel}
+          </button>
+          <button type="button" className="secondary-btn compact" onClick={onRecover} disabled={!profileBackupRecoverable || actionsDisabled}>
+            Recover saved demo state
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function QuestStatusBadge({ text, tone = 'done' }) {
   return <div className={`quest-status-badge ${tone}`}>{text}</div>;
 }
@@ -964,34 +1075,21 @@ function WalletModal({
             </div>
           ) : null}
           {isConnected ? (
-            <div className="wealth-profile-storage-card wallet-modal-backup-card">
-              <div>
-                <div className="eyebrow">Wallet backup + recovery</div>
-                <div className="wealth-profile-storage-title">Keep this wallet&apos;s PT progress recoverable</div>
-                <div className="muted">
-                  Sign one snapshot for this account so the demo can recover PT balance, replay progress, and wealth context later. This does not recover MetaMask, private keys, or seed phrases.
-                </div>
-                <div className="wealth-profile-storage-grid">
-                  <span>Account {shortAddress(address)}</span>
-                  <span>Policy {walletProfileSummary.availablePT.toLocaleString()} PT</span>
-                  <span>Paper cash {walletProfileSummary.paperCash.toLocaleString()} PT</span>
-                  <span>Wealth cash {walletProfileSummary.wealthCash.toLocaleString()} PT</span>
-                  <span>{profileBackupConfigured ? 'Signed backup ready' : 'Backup not signed yet'}</span>
-                </div>
-                <div className="muted">
-                  The signed pointer can later be pinned to IPFS, Filecoin, Ceramic, or Arweave. Recovery here restores the saved demo state for this wallet address on this device.
-                </div>
-                {profileBackupSummaryText ? <div className="wealth-inline-note wallet-modal-backup-note">{profileBackupSummaryText}</div> : null}
-              </div>
-              <div className="wallet-modal-backup-actions">
-                <button type="button" className="ghost-btn compact" onClick={onSignProfileBackup} disabled={isProfileSigning || isPending}>
-                  {isProfileSigning ? 'Await wallet' : profileBackupConfigured ? 'Update signed backup' : 'Sign backup now'}
-                </button>
-                <button type="button" className="secondary-btn compact" onClick={onRecoverProfileBackup} disabled={!profileBackupRecoverable || isPending}>
-                  Recover saved demo state
-                </button>
-              </div>
-            </div>
+            <ProfileBackupCard
+              className="wallet-modal-backup-card"
+              title="Keep this wallet's PT progress recoverable"
+              description="Sign one snapshot for this account so the demo can recover PT balance, replay progress, and wealth context later."
+              footnote="The signed pointer can later be pinned to IPFS, Filecoin, Ceramic, or Arweave. Recovery here restores the saved demo state for this wallet address on this device."
+              accountLabel={shortAddress(address)}
+              summaryText={profileBackupSummaryText}
+              walletProfileSummary={walletProfileSummary}
+              profileBackupConfigured={profileBackupConfigured}
+              profileBackupRecoverable={profileBackupRecoverable}
+              onSign={onSignProfileBackup}
+              onRecover={onRecoverProfileBackup}
+              isSigning={isProfileSigning}
+              actionsDisabled={isPending}
+            />
           ) : null}
           {!hasMetaMaskInstalled ? (
             <div className="wallet-install-steps">
@@ -1039,7 +1137,7 @@ export default function App() {
   const [mintTaskKey, setMintTaskKey] = useState('welcome');
   const [viewedRiskCards, setViewedRiskCards] = useState([]);
   const [riskCheckpointAnswers, setRiskCheckpointAnswers] = useState({});
-  const [selectedRiskProduct, setSelectedRiskProduct] = useState(products[0].id);
+  const [selectedRiskProduct, setSelectedRiskProduct] = useState(HOME_BRIEFING_PRODUCTS[0]?.id || products[0].id);
   const [liveChainId, setLiveChainId] = useState(null);
   const [quizProductId, setQuizProductId] = useState(DEFAULT_QUIZ_PRODUCT_ID);
   const [quizAnswers, setQuizAnswers] = useState(createEmptyQuizAnswers);
@@ -1049,6 +1147,7 @@ export default function App() {
   const [activeOptionalQuest, setActiveOptionalQuest] = useState('risk');
   const [optionalQuestNotice, setOptionalQuestNotice] = useState('');
   const [taskCompletionNotice, setTaskCompletionNotice] = useState('');
+  const [taskCompletionNoticeTarget, setTaskCompletionNoticeTarget] = useState('core');
   const [visibleCoreQuest, setVisibleCoreQuest] = useState('wallet');
   const [visibleOptionalQuest, setVisibleOptionalQuest] = useState('risk');
   const [paperTradesCompleted, setPaperTradesCompleted] = useState(0);
@@ -1174,7 +1273,7 @@ export default function App() {
   );
 
   const selectedRiskCard = useMemo(
-    () => products.find((product) => product.id === selectedRiskProduct) || products[0],
+    () => HOME_BRIEFING_PRODUCTS.find((product) => product.id === selectedRiskProduct) || HOME_BRIEFING_PRODUCTS[0] || products[0],
     [selectedRiskProduct]
   );
 
@@ -1212,6 +1311,7 @@ export default function App() {
       setProgressAccountKey('');
       setMintTaskKey('welcome');
       setTaskCompletionNotice('');
+      setTaskCompletionNoticeTarget('core');
       setDeveloperExitPromptOpen(false);
       setDeveloperSessionDirty(false);
       developerSessionSnapshotRef.current = null;
@@ -1706,7 +1806,11 @@ export default function App() {
       status: walletTaskBadgeMinted ? 'Completed' : walletQuestDone ? 'Done' : walletBadgeChecking ? 'Checking' : 'To do',
       reward: '+1000 PT',
       label: quests[0].reward,
-      hint: 'Start here for the real MetaMask flow.'
+      hint: 'Start here for the real MetaMask flow.',
+      coverAccent: 'green',
+      coverKicker: 'MSX Starter Task',
+      coverTitle: walletTaskBadgeMinted ? 'Wallet task' : 'Connect wallet',
+      coverSubtitle: 'Open the guided wallet path first so every later badge and PT reward stays tied to one account.'
     },
     {
       id: 'mint',
@@ -1734,7 +1838,13 @@ export default function App() {
         ? walletQuestDone
           ? 'Submit one Sepolia action after connect.'
           : 'Unlocks after wallet connection.'
-        : 'Onchain badge minting is optional for this deployment; wallet connection carries the demo state.'
+        : 'Onchain badge minting is optional for this deployment; wallet connection carries the demo state.',
+      coverAccent: 'teal',
+      coverKicker: 'MSX Collectible Gate',
+      coverTitle: badgeContractConfigured ? 'Welcome badge' : 'Demo gate',
+      coverSubtitle: badgeContractConfigured
+        ? 'Mint one Sepolia welcome collectible so the first reward feels onchain instead of purely local.'
+        : 'This deployment keeps the welcome gate in demo mode, but the same wallet still carries the unlock state.'
     },
     {
       id: 'risk',
@@ -1742,7 +1852,11 @@ export default function App() {
       status: riskTaskBadgeMinted ? 'Completed' : riskTaskDone ? 'Done' : riskBadgeChecking ? 'Checking' : 'To do',
       reward: '+1000 PT',
       label: quests[2].reward,
-      hint: `Review any ${RISK_REVIEW_REQUIRED} live product briefings from the current Wealth and Paper lanes.`
+      hint: `Review any ${RISK_REVIEW_REQUIRED} live product briefings from the current Wealth and Paper lanes.`,
+      coverAccent: 'gold',
+      coverKicker: 'MSX Briefing Task',
+      coverTitle: 'Product briefings',
+      coverSubtitle: 'Use four product lanes to explain ownership, return source, and first disclosure before any trade-style action.'
     },
     {
       id: 'quiz',
@@ -1750,7 +1864,11 @@ export default function App() {
       status: quizTaskBadgeMinted ? 'Completed' : quizTaskDone ? 'Done' : quizBadgeChecking ? 'Checking' : 'To do',
       reward: '+1000 PT',
       label: quests[3].reward,
-      hint: 'Check ownership, return source, and first disclosure for one real product lane.'
+      hint: 'Check ownership, return source, and first disclosure for one real product lane.',
+      coverAccent: 'teal',
+      coverKicker: 'MSX Quiz Task',
+      coverTitle: 'Question quiz',
+      coverSubtitle: 'Turn one product briefing into a short ownership-and-risk check before the user opens any simulated route.'
     },
     {
       id: 'paper',
@@ -1758,7 +1876,11 @@ export default function App() {
       status: paperTaskDone ? 'Completed' : paperTradingUnlocked ? 'Done' : paperBadgeChecking ? 'Checking' : `${completedBoxes}/3 completed`,
       reward: '+1000 PT',
       label: quests[4].reward,
-      hint: 'Unlock depends on wallet, welcome mint, and product-briefing review.'
+      hint: 'Unlock depends on wallet, welcome mint, and product-briefing review.',
+      coverAccent: 'green',
+      coverKicker: 'MSX Replay Task',
+      coverTitle: 'Paper trading',
+      coverSubtitle: 'Practice with replay mode only after the wallet, welcome badge, and product briefing path are in place.'
     }
   ];
 
@@ -1810,6 +1932,8 @@ export default function App() {
 
   const firstPendingLearnQuest =
     learnQuestCards.find((item) => item.status === 'Done' || item.status === 'To do' || item.status === 'Requires wallet' || item.status === 'Checking' || item.status.includes('/3'))?.id || 'wallet';
+  const collectibleHelperCopy =
+    'Beginner note: after a badge is minted, look for it in the connected wallet collectibles / NFT view. The demo state and the collectible should use the same wallet account.';
 
   useEffect(() => {
     if (activeCoreQuest !== null && !['wallet', 'mint'].includes(activeCoreQuest)) {
@@ -1940,6 +2064,7 @@ export default function App() {
 
     if (!previousConnectionRef.current) {
       setTaskCompletionNotice('Congrats - wallet connected. We opened the wallet task so you can keep moving toward the claim step.');
+      setTaskCompletionNoticeTarget('core');
       focusLearnQuest('wallet');
     }
 
@@ -1970,6 +2095,7 @@ export default function App() {
     if (previousStates.addressKey === connectedAddressKey) {
       if (!previousStates.welcome && currentStates.welcome) {
         setTaskCompletionNotice('Congrats - welcome badge finished. The wallet task claim is open now.');
+        setTaskCompletionNoticeTarget('core');
         focusLearnQuest('wallet');
       } else if (!previousStates.risk && currentStates.risk) {
         setTaskCompletionNotice(
@@ -1977,12 +2103,15 @@ export default function App() {
             ? 'Congrats - risk review completed. The risk badge is ready to claim, and paper trading just unlocked below.'
             : 'Congrats - risk review completed. The risk badge claim is open now.'
         );
+        setTaskCompletionNoticeTarget('optional');
         focusLearnQuest('risk');
       } else if (!previousStates.quiz && currentStates.quiz) {
         setTaskCompletionNotice('Congrats - quiz completed. The quiz badge claim is open now.');
+        setTaskCompletionNoticeTarget('optional');
         focusLearnQuest('quiz');
       } else if (!previousStates.paper && currentStates.paper) {
         setTaskCompletionNotice('Congrats - paper trading is unlocked. We opened the task so you can claim it and jump into replay.');
+        setTaskCompletionNoticeTarget('optional');
         focusLearnQuest('paper');
       }
     }
@@ -2319,6 +2448,7 @@ export default function App() {
     applyLocalProgressFromProfile(snapshot.progress, snapshot.walletProfile || {});
     setRiskCheckpointAnswers({});
     setTaskCompletionNotice('Developer overrides were rolled back. This wallet is back on its previous local PT and onboarding state.');
+    setTaskCompletionNoticeTarget('optional');
     setDevModeNotice('Developer overrides were restored to the pre-session state.');
     setDeveloperSessionDirty(false);
     developerSessionSnapshotRef.current = null;
@@ -2575,6 +2705,10 @@ export default function App() {
           </div>
         </header>
 
+        <div className="demo-only-banner">
+          <strong>Demo only.</strong> Wallet connects, PT rewards, badge mints, and receipt flows here are simulated or testnet-style. No real stablecoin, bank, or live-fund transfer happens in this experience.
+        </div>
+
         <main>
           <section className="hero card" id="welcome">
             <div className="hero-copy">
@@ -2790,9 +2924,14 @@ export default function App() {
                     <div className={`tile-status-badge ${quest.status === 'Completed' ? 'done' : quest.status === 'Done' || quest.status === 'Unlocked' ? 'ready' : 'todo'}`}>
                       {getQuestStatusLabel(quest.status)}
                     </div>
-                    <div className="learn-quest-ribbon">Step {index + 1}</div>
+                    <HomeQuestCover
+                      kicker={quest.coverKicker}
+                      title={quest.coverTitle}
+                      subtitle={quest.coverSubtitle}
+                      accent={quest.coverAccent}
+                      footerLines={[`Step ${index + 1}`, quest.label]}
+                    />
                     <div className="learn-quest-pills">
-                      <span className="badge">{getQuestStatusLabel(quest.status)}</span>
                       <span className="badge">{quest.label}</span>
                       <span className="badge">{quest.reward}</span>
                     </div>
@@ -2803,7 +2942,9 @@ export default function App() {
               </div>
             </div>
 
-            {taskCompletionNotice ? <div className="wealth-inline-note learn-quest-completion-note">{taskCompletionNotice}</div> : null}
+            {taskCompletionNotice && taskCompletionNoticeTarget === 'core' ? (
+              <div className="wealth-inline-note learn-quest-completion-note">{taskCompletionNotice}</div>
+            ) : null}
 
             <div className={`learn-quest-detail-shell ${activeCoreQuest ? 'open' : 'closed'}`}>
               <div className="learn-quest-detail card" id="learnQuestDetail">
@@ -2821,6 +2962,7 @@ export default function App() {
                     <div className="muted">
                       Connect once with MetaMask to unlock this task. After the welcome badge is minted in step 2, this wallet task can claim its own badge and keep the reward state.
                     </div>
+                    <div className="wealth-inline-note paper-inline-note">{collectibleHelperCopy}</div>
                     <button className="secondary-btn" onClick={openWalletModal}>
                       {walletQuestDone ? 'Wallet connected' : 'Open MetaMask connect'}
                     </button>
@@ -2929,28 +3071,21 @@ export default function App() {
                       </button>
                     </div>
 
-                    <div className="wealth-profile-storage-card">
-                      <div>
-                        <div className="eyebrow">Optional profile backup</div>
-                        <div className="wealth-profile-storage-title">Save this account's PT demo state, not the wallet key</div>
-                        <div className="muted">
-                          This signature backs up paper cash, fills, hedge progress, and wealth context for the connected address. It cannot recover MetaMask, private keys, or seed phrases.
-                        </div>
-                        <div className="wealth-profile-storage-grid">
-                          <span>Account {isConnected ? shortAddress(address) : 'not connected'}</span>
-                          <span>Policy {walletProfileSummary.availablePT.toLocaleString()} PT</span>
-                          <span>Paper cash {walletProfileSummary.paperCash.toLocaleString()} PT</span>
-                          <span>Wealth cash {walletProfileSummary.wealthCash.toLocaleString()} PT</span>
-                        </div>
-                        <div className="muted">
-                          Decentralized storage here means a signed, content-hashed snapshot that can later be pinned to IPFS/Filecoin, Ceramic, or Arweave by the project owner.
-                        </div>
-                        <div className="wealth-inline-note paper-inline-note">{profileBackupSummaryText}</div>
-                      </div>
-                      <button type="button" className="ghost-btn compact" onClick={handleSignProfileBackup} disabled={isProfileSigning}>
-                        {isProfileSigning ? 'Await wallet' : profileBackupConfigured ? 'Update signed backup' : 'Sign optional backup'}
-                      </button>
-                    </div>
+                    <ProfileBackupCard
+                      eyebrow="Optional profile backup"
+                      title="Save demo state for this wallet, not the wallet key"
+                      description="This signature backs up paper cash, fills, hedge progress, and wealth context for the connected address."
+                      footnote="Decentralized storage here means a signed, content-hashed snapshot that can later be pinned to IPFS, Filecoin, Ceramic, or Arweave by the project owner."
+                      accountLabel={isConnected ? shortAddress(address) : 'not connected'}
+                      summaryText={profileBackupSummaryText}
+                      walletProfileSummary={walletProfileSummary}
+                      profileBackupConfigured={profileBackupConfigured}
+                      profileBackupRecoverable={profileBackupRecoverable}
+                      onSign={handleSignProfileBackup}
+                      onRecover={handleRecoverProfileBackup}
+                      isSigning={isProfileSigning}
+                      signIdleLabel="Sign optional backup"
+                    />
 
                     <div className="badge-mint-meta compact-meta">
                       <div className={`guide-chip ${badgeContractConfigured ? 'contract-live' : 'contract-demo'}`}>
@@ -3005,8 +3140,14 @@ export default function App() {
                   <div className={`tile-status-badge ${quest.status === 'Completed' ? 'done' : quest.status === 'Done' || quest.status === 'Unlocked' ? 'ready' : 'todo'}`}>
                     {getQuestStatusLabel(quest.status)}
                   </div>
+                  <HomeQuestCover
+                    kicker={quest.coverKicker}
+                    title={quest.coverTitle}
+                    subtitle={quest.coverSubtitle}
+                    accent={quest.coverAccent}
+                    footerLines={[quest.label, quest.reward]}
+                  />
                   <div className="learn-quest-pills">
-                    <span className="badge">{getQuestStatusLabel(quest.status)}</span>
                     <span className="badge">{quest.label}</span>
                     <span className="badge">{quest.reward}</span>
                   </div>
@@ -3017,6 +3158,9 @@ export default function App() {
             </div>
 
             {optionalQuestNotice ? <div className="env-hint" style={{ marginTop: 14 }}>{optionalQuestNotice}</div> : null}
+            {taskCompletionNotice && taskCompletionNoticeTarget === 'optional' ? (
+              <div className="wealth-inline-note learn-quest-completion-note">{taskCompletionNotice}</div>
+            ) : null}
 
             <div className={`learn-quest-detail-shell ${activeOptionalQuest ? 'open' : 'closed'}`}>
               <div className="learn-quest-detail card learn-quest-optional-detail" id="learnOptionalQuestDetail">
@@ -3032,7 +3176,7 @@ export default function App() {
                   <div className="quest-side-panel">
                     <div className="muted">{quests[2].copy}</div>
                     <div className="risk-card-picker">
-                      {products.map((product) => (
+                      {HOME_BRIEFING_PRODUCTS.map((product) => (
                         <button
                           key={product.id}
                           className={`risk-card-tab ${selectedRiskCard.id === product.id ? 'active' : ''}`}
@@ -3045,33 +3189,17 @@ export default function App() {
                     <div className="risk-card-detail">
                       <div className="risk-card-top">
                         <div>
+                          <div className="eyebrow">Briefing card</div>
                           <div className="product-title">{selectedRiskCard.ticker}</div>
                           <div className="muted">{selectedRiskCard.name}</div>
+                          <div className="muted">{selectedRiskCard.summary}</div>
                         </div>
-                        <span className={`pill ${riskClass(selectedRiskCard.risk)}`}>{selectedRiskCard.risk}</span>
-                      </div>
-                      <div className="risk-card-grid">
-                        <div className="guide-chip">
-                          <div className="k">Plain-language use</div>
-                          <div className="v">{selectedRiskCard.useCase}</div>
-                        </div>
-                        <div className="guide-chip">
-                          <div className="k">Source of return</div>
-                          <div className="v">{selectedRiskCard.sourceOfReturn}</div>
-                        </div>
-                        <div className="guide-chip">
-                          <div className="k">Worst case</div>
-                          <div className="v">{selectedRiskCard.worstCase}</div>
-                        </div>
-                        <div className="guide-chip">
-                          <div className="k">Beginner fit</div>
-                          <div className="v">{selectedRiskCard.beginnerFit}</div>
-                        </div>
-                        <div className="guide-chip">
-                          <div className="k">First disclosure</div>
-                          <div className="v">{selectedRiskCard.firstDisclosure}</div>
+                        <div className="home-briefing-pill-row">
+                          <span className={`pill ${riskClass(selectedRiskCard.risk)}`}>{selectedRiskCard.risk} risk</span>
+                          <span className="pill risk-medium">{selectedRiskCard.beginnerFit}</span>
                         </div>
                       </div>
+                      <BriefingFactGrid product={selectedRiskCard} />
                     </div>
                     <div className="risk-checkpoint-shell">
                       <div className="quest-panel-title">Explain-it-back checkpoint</div>
@@ -3132,6 +3260,7 @@ export default function App() {
                         </button>
                       </div>
                     </div>
+                    <div className="wealth-inline-note paper-inline-note">{collectibleHelperCopy}</div>
                   </div>
                 </div>
                 ) : null}
@@ -3151,6 +3280,20 @@ export default function App() {
                     </label>
                     <div className="env-hint">
                       <strong>{quizProduct.ticker}</strong> {quizProduct.quiz?.summary || quizProduct.summary}
+                    </div>
+                    <div className="risk-card-detail quiz-briefing-card">
+                      <div className="risk-card-top">
+                        <div>
+                          <div className="eyebrow">Question quiz</div>
+                          <div className="product-title">{quizProduct.name}</div>
+                          <div className="muted">{quizProduct.useCase}</div>
+                        </div>
+                        <div className="home-briefing-pill-row">
+                          <span className={`pill ${riskClass(quizProduct.risk)}`}>{quizProduct.risk} risk</span>
+                          <span className="pill risk-medium">{quizProduct.beginnerFit}</span>
+                        </div>
+                      </div>
+                      <BriefingFactGrid product={quizProduct} />
                     </div>
                     {quizQuestionRows.map((question) => (
                       <label key={question.id}>
@@ -3199,6 +3342,7 @@ export default function App() {
                         </button>
                       </div>
                     </div>
+                    <div className="wealth-inline-note paper-inline-note">{collectibleHelperCopy}</div>
                   </div>
                 </div>
                 ) : null}
@@ -3282,6 +3426,7 @@ export default function App() {
                       </button>
                     </div>
                   </div>
+                  <div className="wealth-inline-note paper-inline-note">{collectibleHelperCopy}</div>
 
                   {paperTradingUnlocked ? (
                     <div className="mint-action-box inline-mint-action task-badge-mint-box">
@@ -3308,45 +3453,28 @@ export default function App() {
             <div className="section-head">
               <div>
                 <div className="eyebrow">Discover</div>
-                <h2>Start with the product lanes that now drive Wealth and Paper</h2>
+                <h2>Start with the four product lanes that teach the widest difference in fit</h2>
               </div>
             </div>
             <div className="env-hint">
-              We trimmed the homepage shelf to the lanes that already have the clearest Wealth detail and Paper replay support. Reserve sleeves come first, then strategy yield, then public-market wrappers.
+              We trimmed the homepage shelf to four lanes that already map cleanly into Wealth and Paper. One reserve sleeve stays up front, then private credit, private-market context, and public-market wrappers.
             </div>
-            <div className="product-grid">
+            <div className="product-grid home-discover-grid">
               {STARTER_DISCOVER_PRODUCTS.map((product) => (
-                <div className="product-card" key={product.id}>
+                <div className="product-card home-discover-card" key={product.id}>
                   <div className="product-top">
                     <div>
                       <div className="product-title">{product.ticker}</div>
                       <div className="muted">{product.name}</div>
                     </div>
-                    <span className={`pill ${riskClass(product.risk)}`}>{product.risk}</span>
+                    <div className="home-briefing-pill-row">
+                      <span className={`pill ${riskClass(product.risk)}`}>{product.risk} risk</span>
+                      <span className="pill risk-medium">{product.beginnerFit}</span>
+                    </div>
                   </div>
                   <div className="muted">{product.summary}</div>
-                  <div className="kv">
-                    <div>
-                      <div className="k">Best for</div>
-                      <div className="v">{product.useCase}</div>
-                    </div>
-                    <div>
-                      <div className="k">Beginner fit</div>
-                      <div className="v">{product.beginnerFit}</div>
-                    </div>
-                    <div>
-                      <div className="k">Source of return</div>
-                      <div className="v">{product.sourceOfReturn}</div>
-                    </div>
-                    <div>
-                      <div className="k">Worst case</div>
-                      <div className="v">{product.worstCase}</div>
-                    </div>
-                    <div>
-                      <div className="k">First disclosure</div>
-                      <div className="v">{product.firstDisclosure}</div>
-                    </div>
-                  </div>
+                  <div className="home-discover-use-case">{product.useCase}</div>
+                  <BriefingFactGrid product={product} />
                 </div>
               ))}
             </div>
@@ -3359,18 +3487,35 @@ export default function App() {
                 <h2>Goal-based wealth hub for users who need explanation before yield</h2>
               </div>
             </div>
-            <div className="entry-grid">
-              <div className="entry-card active">
+            <div className="home-surface-hero">
+              <div>
+                <div className="eyebrow">Wealth path</div>
+                <h3>Fit first, receipt second, diligence always visible</h3>
+                <p className="muted">
+                  The wealth page now behaves like a guided product surface: it starts from a user goal, keeps ownership language visible, and only then opens the signed receipt flow.
+                </p>
+              </div>
+              <div className="home-briefing-pill-row">
+                <span className="pill risk-low">Wallet-linked demo receipts</span>
+                <span className="pill risk-medium">Demo only</span>
+              </div>
+            </div>
+            <div className="home-surface-card-grid">
+              <div className="home-surface-card featured">
+                <div className="eyebrow">Routing</div>
                 <div className="entry-title">Goal-first product routing</div>
                 <div className="entry-copy">Start from the user goal like stable yield, steadier principal, or buy-lower exposure, then reveal the product structure only after the fit is clear.</div>
+                <div className="home-surface-foot">Users see fit first, structure second.</div>
               </div>
-              <div className="entry-card active">
+              <div className="home-surface-card">
+                <div className="eyebrow">Ownership</div>
                 <div className="entry-title">Tokenized share receipts</div>
                 <div className="entry-copy">Subscriptions now map to wallet-linked share tokens, so the wealth page can show ownership, redemption rights, and future reward or gating logic.</div>
               </div>
-              <div className="entry-card active">
+              <div className="home-surface-card">
+                <div className="eyebrow">Research layer</div>
                 <div className="entry-title">AI diligence and compliance layer</div>
-                <div className="entry-copy">Each shelf can explain its underlying assets, source of return, eligibility, liquidity stress, and automation policy instead of hiding behind APY alone.</div>
+                <div className="entry-copy">Each shelf can explain underlying assets, source of return, eligibility, liquidity stress, and disclosure posture instead of hiding behind APY alone.</div>
               </div>
             </div>
             <div className="toolbar" style={{ marginTop: 14 }}>
@@ -3414,22 +3559,22 @@ export default function App() {
                     <div className="value">{MIN_PAPER_TRADE} PT</div>
                   </div>
                 </div>
-                <div className="entry-grid">
-                  <div className="entry-card active">
+                <div className="home-surface-card-grid home-surface-card-grid-paper">
+                  <div className="home-surface-card featured">
+                    <div className="eyebrow">Replay entry</div>
                     <div className="entry-title">Starter simulation</div>
                     <div className="entry-copy">Practice with treasury-style or managed products before using any live wallet flow. Badge rewards increase the available simulation budget.</div>
+                    <div className="home-surface-foot">Budget expands as homepage badges are completed.</div>
                   </div>
-                  {!riskTaskDone ? (
-                    <div className="entry-card active">
-                      <div className="entry-title">Product comparison mode</div>
-                      <div className="entry-copy">Compare downside, expected return source, and suitability before opening a real market venue.</div>
+                  <div className="home-surface-card">
+                    <div className="eyebrow">Education state</div>
+                    <div className="entry-title">{riskTaskDone ? 'Product briefings already reviewed' : 'Product briefings still open'}</div>
+                    <div className="entry-copy">
+                      {riskTaskDone
+                        ? 'This wallet already completed the product-briefing prerequisite, so paper trading can focus on actual simulation instead of first-pass education.'
+                        : `Finish ${RISK_REVIEW_REQUIRED} product briefings on the homepage first so paper mode opens with product context instead of raw route mechanics.`}
                     </div>
-                  ) : (
-                    <div className="entry-card active">
-                      <div className="entry-title">Product briefings already reviewed</div>
-                      <div className="entry-copy">This wallet already completed the product-briefing prerequisite, so paper trading can focus on actual simulation instead of first-pass education.</div>
-                    </div>
-                  )}
+                  </div>
                 </div>
                   <div className="toolbar" style={{ marginTop: 14 }}>
                     {paperTradingUnlocked ? (
