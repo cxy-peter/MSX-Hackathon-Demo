@@ -78,7 +78,7 @@ function collectCandidates(prefix, address) {
       address: candidateAddressFromKey(key, prefix),
       data: safeParseStorageKey(key)
     }))
-    .filter((candidate) => isObject(candidate.data))
+    .filter((candidate) => candidate.address === normalized && isObject(candidate.data))
     .sort((left, right) => {
       const leftDirect = left.address === normalized ? 1 : 0;
       const rightDirect = right.address === normalized ? 1 : 0;
@@ -123,10 +123,27 @@ function normalizeProgress(value = {}) {
     guideCompleted: Boolean(value.guideCompleted),
     quizCompleted: Boolean(value.quizCompleted),
     paperTradesCompleted: Number(value.paperTradesCompleted || 0),
+    homeOnboardingCompleted: Boolean(value.homeOnboardingCompleted || value.paperUnlocked),
+    paperUnlocked: Boolean(value.paperUnlocked),
+    adminUnlocked: Boolean(value.adminUnlocked),
+    spotLessonCompleted: Boolean(value.spotLessonCompleted),
+    leverageLessonCompleted: Boolean(value.leverageLessonCompleted),
+    hedgeLessonCompleted: Boolean(value.hedgeLessonCompleted),
+    hedgeSizingCompleted: Boolean(value.hedgeSizingCompleted),
+    hedgePositiveCloseCompleted: Boolean(value.hedgePositiveCloseCompleted),
     userOrigin: value.userOrigin || '',
     web3Intent: value.web3Intent || '',
     web2Intent: value.web2Intent || ''
   };
+}
+
+function hasCrossWalletHistory(value = {}, address = '') {
+  const normalized = normalizeAddress(address || value.address);
+  const sourceAddresses = Array.isArray(value.history?.sourceAddresses) ? value.history.sourceAddresses : [];
+  return (
+    Boolean(value.history?.recoveredFromOtherWallet) ||
+    sourceAddresses.some((sourceAddress) => sourceAddress && normalizeAddress(sourceAddress) !== normalized)
+  );
 }
 
 function normalizeHomePaper(value = {}) {
@@ -225,6 +242,15 @@ export function collectLegacyWalletHistory(address) {
 
 export function normalizeWalletProfile(value = {}, address = '') {
   const normalizedAddress = normalizeAddress(address || value.address);
+  const sourceAddresses = Array.isArray(value.history?.sourceAddresses)
+    ? value.history.sourceAddresses
+        .map((sourceAddress) => normalizeAddress(sourceAddress))
+        .filter((sourceAddress) => sourceAddress === normalizedAddress)
+    : [];
+  const sourceKeys = Array.isArray(value.history?.sourceKeys)
+    ? value.history.sourceKeys.filter((sourceKey) => String(sourceKey || '').toLowerCase().includes(normalizedAddress))
+    : [];
+
   return {
     version: WALLET_PROFILE_VERSION,
     address: normalizedAddress,
@@ -250,15 +276,19 @@ export function normalizeWalletProfile(value = {}, address = '') {
     },
     storage: isObject(value.storage) ? value.storage : {},
     history: {
-      sourceAddresses: Array.isArray(value.history?.sourceAddresses) ? value.history.sourceAddresses : [],
-      sourceKeys: Array.isArray(value.history?.sourceKeys) ? value.history.sourceKeys : [],
-      recoveredFromOtherWallet: Boolean(value.history?.recoveredFromOtherWallet)
+      sourceAddresses,
+      sourceKeys,
+      recoveredFromOtherWallet: false
     }
   };
 }
 
 export function readWalletProfile(address) {
-  const existing = normalizeWalletProfile(readStorageJson(getWalletProfileKey(address), {}), address);
+  const rawExisting = readStorageJson(getWalletProfileKey(address), {});
+  const existing = normalizeWalletProfile(
+    hasCrossWalletHistory(rawExisting, address) ? { storage: rawExisting.storage || {} } : rawExisting,
+    address
+  );
   const legacy = collectLegacyWalletHistory(address);
   const merged = normalizeWalletProfile(
     {
@@ -442,7 +472,7 @@ export async function signAndStoreProfilePointer(address, profilePayload = {}, s
     `Wallet: ${normalizeAddress(address)}`,
     `Content hash: ${draft.contentHash}`,
     `PT policy: ${UNIFIED_PT_STARTING_BALANCE} ${UNIFIED_PT_SYMBOL} base / ${UNIFIED_PT_MILESTONE_REWARD} ${UNIFIED_PT_SYMBOL} milestones`,
-    'Purpose: authorize this wallet history snapshot for decentralized storage or later recovery.'
+    'Purpose: authorize this app-state snapshot for decentralized storage. It does not recover private keys or seed phrases.'
   ].join('\n');
   const signature = signMessageAsync ? await signMessageAsync({ message }) : '';
   const record = { ...draft, signature };

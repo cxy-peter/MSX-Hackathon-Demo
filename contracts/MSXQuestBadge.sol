@@ -9,11 +9,11 @@ import "@openzeppelin/contracts/utils/Strings.sol";
 contract MSXQuestBadge is ERC721, Ownable {
     using Strings for uint256;
 
-    uint8 public constant BADGE_WELCOME = 0;
-    uint8 public constant BADGE_WALLET = 1;
-    uint8 public constant BADGE_RISK = 2;
-    uint8 public constant BADGE_QUIZ = 3;
-    uint8 public constant BADGE_PAPER = 4;
+    uint8 public constant BADGE_WELCOME = 1;
+    uint8 public constant BADGE_WALLET = 2;
+    uint8 public constant BADGE_RISK = 3;
+    uint8 public constant BADGE_QUIZ = 4;
+    uint8 public constant BADGE_PAPER = 5;
     uint8 public constant BADGE_COUNT = 5;
 
     uint256 public nextTokenId = 1;
@@ -29,7 +29,7 @@ contract MSXQuestBadge is ERC721, Ownable {
     }
 
     function hasMintedTask(address holder, uint8 badgeType) external view returns (bool) {
-        require(badgeType < BADGE_COUNT, "Invalid badge type");
+        require(_isSupportedBadgeType(badgeType), "Invalid badge type");
         return hasMintedBadge[holder][badgeType];
     }
 
@@ -38,7 +38,7 @@ contract MSXQuestBadge is ERC721, Ownable {
     }
 
     function mintBadge(uint8 badgeType, address to) public returns (uint256 tokenId) {
-        require(badgeType < BADGE_COUNT, "Invalid badge type");
+        require(_isSupportedBadgeType(badgeType), "Invalid badge type");
         require(to != address(0), "Invalid recipient");
         require(msg.sender == to, "Only self mint");
         require(!hasMintedBadge[to][badgeType], "Badge already minted");
@@ -51,6 +51,10 @@ contract MSXQuestBadge is ERC721, Ownable {
         _safeMint(to, tokenId);
 
         emit TaskBadgeMinted(to, badgeType, tokenId);
+    }
+
+    function _isSupportedBadgeType(uint8 badgeType) internal pure returns (bool) {
+        return badgeType >= BADGE_WELCOME && badgeType <= BADGE_PAPER;
     }
 
     function tokenURI(uint256 tokenId) public view override returns (string memory) {

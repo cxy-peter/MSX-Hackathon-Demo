@@ -22,7 +22,6 @@ import {
   getWalletProfileSummary,
   readRecoveredWealthState,
   readWalletProfile,
-  signAndStoreProfilePointer,
   writeWalletProfilePatch
 } from './walletProfileStore';
 
@@ -33,11 +32,11 @@ const badgeContractConfigured = isAddress(BADGE_CONTRACT_ADDRESS);
 const wealthVaultConfigured = isAddress(WEALTH_VAULT_ADDRESS);
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BADGE_TYPES = {
-  welcome: 0,
-  wallet: 1,
-  risk: 2,
-  quiz: 3,
-  paper: 4
+  welcome: 1,
+  wallet: 2,
+  risk: 3,
+  quiz: 4,
+  paper: 5
 };
 const NAV_PERIOD_OPTIONS = [
   { id: '7d', label: '7D' },
@@ -2237,7 +2236,6 @@ function WealthInner() {
   });
   const [wealthState, setWealthState] = useState(defaultWealthState());
   const [paperProfileState, setPaperProfileState] = useState({});
-  const [profileBackupStatus, setProfileBackupStatus] = useState('');
   const [pendingScrollProductId, setPendingScrollProductId] = useState(null);
   const productCardRefs = useRef(new Map());
   const productDetailRefs = useRef(new Map());
@@ -3732,29 +3730,6 @@ function WealthInner() {
     setFeedback('Wealth demo portfolio reset for this wallet. Starter cash and empty share balances were restored.');
   }
 
-  async function handleSignProfileBackup() {
-    if (!address) {
-      setProfileBackupStatus('Connect a wallet first so the profile backup can be tied to an address.');
-      return;
-    }
-
-    setProfileBackupStatus('Opening wallet signature for the profile snapshot...');
-    try {
-      const record = await signAndStoreProfilePointer(
-        address,
-        {
-          ...readWalletProfile(address),
-          wealth: { state: wealthState },
-          paper: { state: paperProfileState }
-        },
-        signMessageAsync
-      );
-      setProfileBackupStatus(`Signed profile snapshot stored locally with content hash ${record.contentHash.slice(0, 12)}...`);
-    } catch (error) {
-      setProfileBackupStatus(String(error?.message || 'Profile backup signature was cancelled.'));
-    }
-  }
-
   function renderDualCurrencyGuideSection() {
     if (selectedCategory !== 'dual') return null;
 
@@ -5072,7 +5047,6 @@ function WealthInner() {
                 Unified wallet memory: paper cash {walletProfileSummary.paperCash.toLocaleString()} PT,
                 wealth cash {walletProfileSummary.wealthCash.toLocaleString()} PT,
                 policy balance {walletProfileSummary.availablePT.toLocaleString()} PT.
-                {walletProfileSummary.recoveredFromOtherWallet ? ' Older browser wallet history was recovered into this wallet profile.' : ''}
               </div>
             </div>
           </div>
@@ -5265,27 +5239,6 @@ function WealthInner() {
             </div>
             <button className="primary-btn compact" onClick={() => focusProduct(aiRecommendedProduct.id, { topic: 'flow', categoryId: getCategoryIdForProduct(aiRecommendedProduct) })}>
               Review recommendation
-            </button>
-          </div>
-
-          <div className="wealth-profile-storage-card">
-            <div>
-              <div className="eyebrow">Wallet profile storage</div>
-              <div className="wealth-profile-storage-title">Unified PT history follows the wallet across Home, Wealth, and Paper Trading</div>
-              <div className="muted">
-                Local-first profile, signed content hash, and a CID-ready pointer for IPFS/Filecoin, Ceramic DID, or Arweave export.
-              </div>
-              <div className="wealth-profile-storage-grid">
-                <span>Policy {walletProfileSummary.availablePT.toLocaleString()} PT</span>
-                <span>Reserve {walletProfileSummary.reservePT.toLocaleString()} PT</span>
-                <span>Paper cash {walletProfileSummary.paperCash.toLocaleString()} PT</span>
-                <span>Wealth cash {walletProfileSummary.wealthCash.toLocaleString()} PT</span>
-                <span>{walletProfileSummary.sourceWalletCount} local source wallet{walletProfileSummary.sourceWalletCount === 1 ? '' : 's'}</span>
-              </div>
-              {profileBackupStatus ? <div className="wealth-inline-note paper-inline-note">{profileBackupStatus}</div> : null}
-            </div>
-            <button className="ghost-btn compact" onClick={handleSignProfileBackup} disabled={isWealthSigning}>
-              {isWealthSigning ? 'Await wallet' : 'Sign profile backup'}
             </button>
           </div>
 

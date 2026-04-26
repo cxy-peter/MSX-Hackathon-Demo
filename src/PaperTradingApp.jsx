@@ -45,28 +45,36 @@ import {
   getWalletProfileSummary,
   readRecoveredPaperState,
   readWalletProfile,
-  signAndStoreProfilePointer,
   writeWalletProfilePatch
 } from './walletProfileStore';
 
 const SEPOLIA_CHAIN_ID = 11155111;
 const BADGE_TYPES = {
-  welcome: 0,
-  wallet: 1,
-  risk: 2,
-  quiz: 3,
-  paper: 4
+  welcome: 1,
+  wallet: 2,
+  risk: 3,
+  quiz: 4,
+  paper: 5
 };
 const BADGE_CONTRACT_ADDRESS = import.meta.env.VITE_BADGE_CONTRACT_ADDRESS || '';
 const REPLAY_BADGE_CONTRACT_ADDRESS = import.meta.env.VITE_REPLAY_BADGE_CONTRACT_ADDRESS || '';
 const badgeContractConfigured = isAddress(BADGE_CONTRACT_ADDRESS);
 const replayBadgeContractConfigured = isAddress(REPLAY_BADGE_CONTRACT_ADDRESS);
-const REPLAY_ACHIEVEMENT_IDS = [6, 7, 8, 9, 10];
+const REPLAY_BADGE_TYPES = {
+  baseCheck: 1,
+  leaderboard: 2,
+  spotLoop: 3,
+  perpLeverage: 4,
+  protectiveHedge: 5
+};
+const REPLAY_ACHIEVEMENT_IDS = Object.values(REPLAY_BADGE_TYPES);
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_REPLAY_PLAYBACK_MS = 700;
 const REPLAY_SCORE_DAILY_LIMIT = 3;
 const REPLAY_DEVELOPER_MODE =
   import.meta.env.DEV || String(import.meta.env.VITE_REPLAY_DEVELOPER_MODE || '').toLowerCase() === 'true';
+const DEV_AUTH_STORAGE_KEY = 'msx-dev-auth';
+const ADMIN_UNLOCK_STORAGE_PREFIX = 'msx-admin-unlock';
 const PAPER_SHELF_PAGE_SIZE = 4;
 const PAPER_REPLAY_FILLS_PAGE_SIZE = 5;
 const DEFAULT_PAPER_WORKSPACE_HEIGHT = 920;
@@ -1533,6 +1541,10 @@ function getProgressStorageKey(address) {
   return address ? `msx-progress-${address.toLowerCase()}` : 'msx-progress-guest';
 }
 
+function getAdminUnlockStorageKey(address) {
+  return address ? `${ADMIN_UNLOCK_STORAGE_PREFIX}-${address.toLowerCase()}` : '';
+}
+
 function getPaperStateKey(address) {
   return address ? `msx-paper-replay-state-${address.toLowerCase()}` : 'msx-paper-replay-state-guest';
 }
@@ -1766,8 +1778,13 @@ function defaultReplayScoreLog() {
   };
 }
 
-function defaultReplayClaimCache() {
+function getWalletCacheAddress(address) {
+  return address ? String(address).toLowerCase() : 'guest';
+}
+
+function defaultReplayClaimCache(address = '') {
   return {
+    walletAddress: getWalletCacheAddress(address),
     claimedIds: []
   };
 }
@@ -1992,7 +2009,7 @@ function normalizeReplayLeaderboardArchive(payload) {
   };
 }
 
-function normalizeReplayClaimCache(payload) {
+function normalizeReplayClaimCache(payload, address = '') {
   const claimedIds = Array.isArray(payload?.claimedIds)
     ? Array.from(
         new Set(
@@ -2004,6 +2021,7 @@ function normalizeReplayClaimCache(payload) {
     : [];
 
   return {
+    walletAddress: getWalletCacheAddress(address || payload?.walletAddress),
     claimedIds
   };
 }
@@ -4751,10 +4769,10 @@ function buildReplayAchievements({
 }) {
   return [
     {
-      id: 6,
+      id: REPLAY_BADGE_TYPES.baseCheck,
       taskNumber: 1,
       title: 'Base Check',
-      contractId: 'Replay badge #6',
+      contractId: 'Replay badge #1',
       activityLabel: 'Buy / sell usage',
       coverCopy: 'Paper usage verified',
       requirement: 'Carry over the same wallet that already finished the onboarding route.',
@@ -4768,10 +4786,10 @@ function buildReplayAchievements({
           : 'Base Check should only unlock after the same wallet carries the home-page wallet and risk-review gate into replay mode, then records its first replay trade.'
     },
     {
-      id: 7,
+      id: REPLAY_BADGE_TYPES.leaderboard,
       taskNumber: 2,
       title: 'Leaderboard',
-      contractId: 'Replay badge #7',
+      contractId: 'Replay badge #2',
       activityLabel: 'Leaderboard usage',
       coverCopy: 'Leaderboard route verified',
       requirement: 'Finish a positive closed loop and use the leaderboard submit action once.',
@@ -4784,10 +4802,10 @@ function buildReplayAchievements({
           : 'Close at least one replay loop, stay net positive, then use the leaderboard submit action before claiming this badge.'
     },
     {
-      id: 8,
+      id: REPLAY_BADGE_TYPES.spotLoop,
       taskNumber: 3,
       title: 'Spot Loop',
-      contractId: 'Replay badge #8',
+      contractId: 'Replay badge #3',
       activityLabel: 'Low-buy / high-sell',
       coverCopy: 'Spot path learned',
       requirement: 'Complete one spot buy and one spot sell so the user sees entry, exit, spread, and net take-home.',
@@ -4798,10 +4816,10 @@ function buildReplayAchievements({
         : 'Buy a listed, private, or cash wrapper in replay, then sell it after moving the cursor to another bar.'
     },
     {
-      id: 9,
+      id: REPLAY_BADGE_TYPES.perpLeverage,
       taskNumber: 4,
       title: 'Perp Leverage',
-      contractId: 'Replay badge #9',
+      contractId: 'Replay badge #4',
       activityLabel: 'Long / short margin path',
       coverCopy: 'Perp leverage learned',
       requirement: 'Open a directional perp tutorial leg and review notional, margin, funding, and liquidation marker.',
@@ -4812,10 +4830,10 @@ function buildReplayAchievements({
         : 'Unlock advanced replay, choose Perp -> Leverage, then open a long or short leg after reading the confirm cards.'
     },
     {
-      id: 10,
+      id: REPLAY_BADGE_TYPES.protectiveHedge,
       taskNumber: 5,
       title: 'Protective Hedge',
-      contractId: 'Replay badge #10',
+      contractId: 'Replay badge #5',
       activityLabel: 'Positive closed hedge',
       coverCopy: 'Hedge path learned',
       requirement: 'Open a sleeve, add a hedge during the risk window, then close the hedge with positive take-home PnL.',
@@ -5093,6 +5111,7 @@ function PaperTradingInner() {
     readStorageJson(AUTO_SELL_DOCK_STORAGE_KEY, true) !== false
   );
   const [productLeaderboardGesture, setProductLeaderboardGesture] = useState(null);
+  const [developerOverride, setDeveloperOverride] = useState(() => Boolean(readStorageJson(DEV_AUTH_STORAGE_KEY, false)));
   const hoverDebugEnabled = useMemo(() => {
     if (typeof window === 'undefined') return false;
     return new URLSearchParams(window.location.search).get('hoverDebug') === '1';
@@ -5100,11 +5119,10 @@ function PaperTradingInner() {
   const [paperState, setPaperState] = useState(() => readStoredPaperState(address));
   const [tradeOutcomeHistory, setTradeOutcomeHistory] = useState(() => readStoredTradeOutcomeHistory(address));
   const [productViews, setProductViews] = useState(() => readStoredReplaySession(address));
-  const [replayClaimCache, setReplayClaimCache] = useState(defaultReplayClaimCache());
+  const [replayClaimCache, setReplayClaimCache] = useState(() => defaultReplayClaimCache(address));
   const [scoreSubmissionLog, setScoreSubmissionLog] = useState(defaultReplayScoreLog());
   const [replayLeaderboardArchive, setReplayLeaderboardArchive] = useState(defaultReplayLeaderboardArchive());
   const [wealthDeskState, setWealthDeskState] = useState(() => readStoredWealthDeskState(address));
-  const [profileBackupStatus, setProfileBackupStatus] = useState('');
   const walletAnchorRef = useRef(null);
   const productLanesRef = useRef(null);
   const tradeDeskRef = useRef(null);
@@ -5119,6 +5137,9 @@ function PaperTradingInner() {
     guideCompleted: false,
     quizCompleted: false,
     paperTradesCompleted: 0,
+    homeOnboardingCompleted: false,
+    paperUnlocked: false,
+    adminUnlocked: false,
     spotLessonCompleted: false,
     leverageLessonCompleted: false,
     hedgeLessonCompleted: false,
@@ -5352,13 +5373,14 @@ function PaperTradingInner() {
       args: [address, achievementId],
       chainId: SEPOLIA_CHAIN_ID
     }));
-  }, [address]);
+  }, [address, replayBadgeContractConfigured]);
 
   const { data: replayClaimReadData, refetch: refetchReplayClaimReadData } = useReadContracts({
     contracts: replayClaimContracts,
     allowFailure: true,
     query: {
-      enabled: replayClaimContracts.length > 0
+      enabled: replayClaimContracts.length > 0,
+      placeholderData: []
     }
   });
 
@@ -5433,6 +5455,9 @@ function PaperTradingInner() {
       guideCompleted: false,
       quizCompleted: false,
       paperTradesCompleted: 0,
+      homeOnboardingCompleted: false,
+      paperUnlocked: false,
+      adminUnlocked: false,
       spotLessonCompleted: false,
       leverageLessonCompleted: false,
       hedgeLessonCompleted: false,
@@ -5446,17 +5471,41 @@ function PaperTradingInner() {
       guideCompleted: Boolean(storedProgress.guideCompleted || profileProgress.guideCompleted),
       quizCompleted: Boolean(storedProgress.quizCompleted || profileProgress.quizCompleted),
       paperTradesCompleted: Math.max(Number(storedProgress.paperTradesCompleted || 0), Number(profileProgress.paperTradesCompleted || 0)),
+      homeOnboardingCompleted: Boolean(storedProgress.homeOnboardingCompleted || profileProgress.homeOnboardingCompleted),
+      paperUnlocked: Boolean(storedProgress.paperUnlocked || profileProgress.paperUnlocked),
+      adminUnlocked: Boolean(storedProgress.adminUnlocked || profileProgress.adminUnlocked || readStorageJson(getAdminUnlockStorageKey(address), false)),
+      spotLessonCompleted: Boolean(storedProgress.spotLessonCompleted || profileProgress.spotLessonCompleted),
+      leverageLessonCompleted: Boolean(storedProgress.leverageLessonCompleted || profileProgress.leverageLessonCompleted),
+      hedgeLessonCompleted: Boolean(storedProgress.hedgeLessonCompleted || profileProgress.hedgeLessonCompleted),
+      hedgeSizingCompleted: Boolean(storedProgress.hedgeSizingCompleted || profileProgress.hedgeSizingCompleted),
       hedgePositiveCloseCompleted: Boolean(storedProgress.hedgePositiveCloseCompleted || profileProgress.hedgePositiveCloseCompleted)
     });
   }, [address, progressStorageKey]);
 
   useEffect(() => {
+    function refreshDeveloperOverride() {
+      setDeveloperOverride(
+        Boolean(
+          readStorageJson(DEV_AUTH_STORAGE_KEY, false) ||
+            readStorageJson(getAdminUnlockStorageKey(address), false)
+        )
+      );
+    }
+
+    refreshDeveloperOverride();
+    if (typeof window === 'undefined') return undefined;
+    window.addEventListener('storage', refreshDeveloperOverride);
+    return () => window.removeEventListener('storage', refreshDeveloperOverride);
+  }, [address]);
+
+  useEffect(() => {
     const normalizedClaimCache = normalizeReplayClaimCache(
-      readStorageJson(replayClaimCacheKey, defaultReplayClaimCache())
+      readStorageJson(replayClaimCacheKey, defaultReplayClaimCache(address)),
+      address
     );
     setReplayClaimCache(normalizedClaimCache);
     writeStorageJson(replayClaimCacheKey, normalizedClaimCache);
-  }, [replayClaimCacheKey]);
+  }, [address, replayClaimCacheKey]);
 
   useEffect(() => {
     if (!address) {
@@ -5539,8 +5588,8 @@ function PaperTradingInner() {
   }, []);
 
   useEffect(() => {
-    writeStorageJson(replayClaimCacheKey, replayClaimCache);
-  }, [replayClaimCache, replayClaimCacheKey]);
+    writeStorageJson(replayClaimCacheKey, normalizeReplayClaimCache(replayClaimCache, address));
+  }, [address, replayClaimCache, replayClaimCacheKey]);
 
   useEffect(() => {
     writeStorageJson(replayScoreLogKey, scoreSubmissionLog);
@@ -5694,7 +5743,8 @@ function PaperTradingInner() {
     return () => window.clearTimeout(timer);
   }, [isPlaying, selectedProductId, selectedView]);
 
-  const welcomeGateCompleted = badgeContractConfigured ? Boolean(hasMintedBadgeOnchain) : Boolean(isConnected);
+  const localDeveloperOverride = Boolean(developerOverride || progressState.adminUnlocked);
+  const welcomeGateCompleted = localDeveloperOverride || (badgeContractConfigured ? Boolean(hasMintedBadgeOnchain) : Boolean(isConnected));
   const completedRewards = [
     isConnected,
     welcomeGateCompleted,
@@ -5899,10 +5949,14 @@ function PaperTradingInner() {
     Boolean(progressState.guideCompleted) ||
     (progressState.viewedRiskCards?.length || 0) >= 3 ||
     Boolean(riskBadgeOnchain);
+  const homeOnboardingInherited = Boolean(
+    progressState.homeOnboardingCompleted ||
+      progressState.paperUnlocked ||
+      localDeveloperOverride
+  );
   const onboardingReady =
     isConnected &&
-    welcomeGateCompleted &&
-    guideReady;
+    (homeOnboardingInherited || (welcomeGateCompleted && guideReady));
   const closedTradeCount = paperState.trades.filter((trade) => trade.side === 'sell').length;
   const replayScoreValue = roundNumber(totalRealizedPnl + totalNetPnl, 2);
   const replayScorePercent = STARTING_PAPER_TOKENS > 0 ? roundNumber((replayScoreValue / STARTING_PAPER_TOKENS) * 100, 2) : 0;
@@ -5923,7 +5977,9 @@ function PaperTradingInner() {
   const onSepolia = chainId === SEPOLIA_CHAIN_ID;
   const hasSepoliaGas = Boolean(sepoliaBalance?.value && sepoliaBalance.value > 0n);
   const replayOnchainStateById = useMemo(() => {
-    const cachedClaimedIds = new Set(replayClaimCache.claimedIds || []);
+    const currentWalletCacheAddress = getWalletCacheAddress(address);
+    const cacheMatchesWallet = replayClaimCache.walletAddress === currentWalletCacheAddress;
+    const cachedClaimedIds = new Set(cacheMatchesWallet ? replayClaimCache.claimedIds || [] : []);
     const defaultState = Object.fromEntries(
       REPLAY_ACHIEVEMENT_IDS.map((achievementId) => [
         achievementId,
@@ -5944,20 +6000,22 @@ function PaperTradingInner() {
     });
 
     return defaultState;
-  }, [replayClaimCache, replayClaimReadData]);
-  const baseReplayClaimed = Boolean(replayOnchainStateById[6]?.onchainClaimed);
-  const leaderboardReplayClaimed = Boolean(replayOnchainStateById[7]?.onchainClaimed);
+  }, [address, replayClaimCache, replayClaimReadData]);
+  const baseReplayClaimed = Boolean(replayOnchainStateById[REPLAY_BADGE_TYPES.baseCheck]?.onchainClaimed);
+  const leaderboardReplayClaimed = Boolean(replayOnchainStateById[REPLAY_BADGE_TYPES.leaderboard]?.onchainClaimed);
   const replayTradeUsed = replayTradeUsedLocally || baseReplayClaimed || leaderboardReplayClaimed;
   const scoreReady = scoreReadyLocally || leaderboardReplayClaimed;
   const leaderboardUsed = leaderboardUsedLocally || leaderboardReplayClaimed;
   const spotBuySeen = paperState.trades.some((trade) => trade.side === 'buy');
   const spotSellSeen = paperState.trades.some((trade) => trade.side === 'sell');
   const spotLoopUsed = Boolean(progressState.spotLessonCompleted) || (spotBuySeen && spotSellSeen);
-  const leverageRouteUsed = Boolean(progressState.leverageLessonCompleted) || Boolean(replayOnchainStateById[9]?.onchainClaimed);
+  const leverageRouteUsed =
+    Boolean(progressState.leverageLessonCompleted) ||
+    Boolean(replayOnchainStateById[REPLAY_BADGE_TYPES.perpLeverage]?.onchainClaimed);
   const hedgeRouteUsed =
     Boolean(progressState.hedgePositiveCloseCompleted) ||
     positiveHedgeCloseSeen ||
-    Boolean(replayOnchainStateById[10]?.onchainClaimed);
+    Boolean(replayOnchainStateById[REPLAY_BADGE_TYPES.protectiveHedge]?.onchainClaimed);
   const replayAccountLeaderboardRows = useMemo(() => {
     return mergeReplayLeaderboardSubmissions(
       readAllReplayScoreLogs(),
@@ -6019,8 +6077,9 @@ function PaperTradingInner() {
     ? activeRouteFocusConfig.lessons
     : selectedAdvancedRouteConfig.lessons;
   const replayTaskGateOpen = baseReplayClaimed && leaderboardReplayClaimed;
-  const advancedRoutesUnlocked = REPLAY_DEVELOPER_MODE || replayTaskGateOpen;
-  const advancedActivityEnabled = REPLAY_DEVELOPER_MODE || replayTaskGateOpen;
+  const replayDeveloperModeActive = REPLAY_DEVELOPER_MODE || localDeveloperOverride;
+  const advancedRoutesUnlocked = replayDeveloperModeActive || replayTaskGateOpen;
+  const advancedActivityEnabled = replayDeveloperModeActive || replayTaskGateOpen;
   const isReplayRouteLocked = (routeId) => routeId !== 'spot' && !advancedRoutesUnlocked;
   const learningRouteOptions = availableReplayRoutes.flatMap((route) => {
     const locked = isReplayRouteLocked(route.id);
@@ -6061,12 +6120,12 @@ function PaperTradingInner() {
     selectedAdvancedRoute === 'perp'
       ? selectedRouteFocusConfig?.label || selectedRouteUi.helperLabel
       : selectedLearningRouteOption?.helperLabel || selectedRouteUi.helperLabel;
-  const advancedRouteUnlockCopy = REPLAY_DEVELOPER_MODE
+  const advancedRouteUnlockCopy = replayDeveloperModeActive
     ? 'Developer mode is on, so advanced replay tutorials stay open without replay task gating.'
     : advancedRoutesUnlocked
       ? 'Task 1 and Task 2 are both completed, so leverage, hedge, and options / strategy tutorials are now open.'
       : 'Complete and mint Task 1 plus Task 2 first. Until then the replay desk keeps only the simple spot low-buy / high-sell route open.';
-  const advancedActivityUnlockCopy = REPLAY_DEVELOPER_MODE
+  const advancedActivityUnlockCopy = replayDeveloperModeActive
     ? 'Developer mode is on, so timed exits, route templates, and advanced route actions stay available.'
     : advancedActivityEnabled
       ? 'Task 1 and Task 2 are both completed, so timed exits, hedge tickets, option templates, and guided short setup are available.'
@@ -6095,7 +6154,7 @@ function PaperTradingInner() {
         {
           id: 'unlock',
           title: 'Unlock advanced tutorials',
-          copy: REPLAY_DEVELOPER_MODE
+          copy: replayDeveloperModeActive
             ? 'Developer mode keeps advanced routes open while the replay lab is still being built.'
             : 'Mint Task 1 and Task 2 first so the advanced product routes below stay tied to replay task completion.',
           done: advancedRoutesUnlocked
@@ -6111,7 +6170,7 @@ function PaperTradingInner() {
         {
           id: 'route-unlock',
           title: 'Route availability',
-          copy: REPLAY_DEVELOPER_MODE
+          copy: replayDeveloperModeActive
             ? 'Developer mode is open, so this route is available without replay task gating.'
             : isReplayRouteLocked(selectedAdvancedRoute)
               ? 'This route still needs Task 1 plus Task 2 to be completed and minted for this wallet.'
@@ -6132,8 +6191,8 @@ function PaperTradingInner() {
         },
         {
           id: 'tasks',
-          title: REPLAY_DEVELOPER_MODE ? 'Developer override is active' : 'Task gate is active',
-          copy: REPLAY_DEVELOPER_MODE
+          title: replayDeveloperModeActive ? 'Developer override is active' : 'Task gate is active',
+          copy: replayDeveloperModeActive
             ? 'This lab instance is in developer mode, so route gating is bypassed while the teaching flow is being built.'
             : 'Higher-risk replay routes now stay locked until this wallet has minted both replay collectibles for Task 1 and Task 2.',
           done: advancedActivityEnabled
@@ -6159,7 +6218,7 @@ function PaperTradingInner() {
         const effectiveUnlocked =
           achievement.unlocked ||
           onchainState.onchainClaimed ||
-          (achievement.id === 6 && leaderboardReplayClaimed);
+          (achievement.id === REPLAY_BADGE_TYPES.baseCheck && leaderboardReplayClaimed);
         const effectiveInherited =
           Boolean(achievement.inherited) ||
           effectiveUnlocked ||
@@ -6176,7 +6235,7 @@ function PaperTradingInner() {
           ...onchainState
         });
         const coverMeta =
-          achievement.id === 6
+          achievement.id === REPLAY_BADGE_TYPES.baseCheck
             ? {
                 coverAccent: 'green',
                 coverKicker: 'MSX Replay Usage',
@@ -6195,7 +6254,7 @@ function PaperTradingInner() {
                 ],
                 coverStamp: 'R6'
               }
-            : achievement.id === 7
+            : achievement.id === REPLAY_BADGE_TYPES.leaderboard
               ? {
                   coverAccent: 'teal',
                   coverKicker: 'MSX Leaderboard Score',
@@ -6215,7 +6274,12 @@ function PaperTradingInner() {
                   coverStamp: 'R7'
                 }
               : {
-                  coverAccent: achievement.id === 8 ? 'green' : achievement.id === 9 ? 'teal' : 'gold',
+                  coverAccent:
+                    achievement.id === REPLAY_BADGE_TYPES.spotLoop
+                      ? 'green'
+                      : achievement.id === REPLAY_BADGE_TYPES.perpLeverage
+                        ? 'teal'
+                        : 'gold',
                   coverKicker: `MSX Tutorial Task ${achievement.taskNumber}`,
                   coverTitle: achievement.coverCopy.toUpperCase(),
                   coverSubtitle: achievement.requirement,
@@ -6261,7 +6325,7 @@ function PaperTradingInner() {
   );
   const selectedRewardTask = replayAchievements.find((achievement) => achievement.id === selectedRewardTaskId) || null;
   const selectedRewardTaskChecklistItems = selectedRewardTask
-    ? selectedRewardTask.id === 6
+    ? selectedRewardTask.id === REPLAY_BADGE_TYPES.baseCheck
       ? [
           {
             id: 'onboarding',
@@ -6273,8 +6337,8 @@ function PaperTradingInner() {
             onClick: openWalletModal,
             copy:
               onboardingReady || selectedRewardTask.onchainClaimed
-                ? 'This wallet already carries the home-page wallet gate plus risk-card review into Paper Trading.'
-                : 'Use the same wallet as the home page. Replay checks the welcome badge when the contract is configured; otherwise it accepts the local demo wallet gate, then inherits reviewed risk cards or the risk badge.'
+                ? 'This wallet already carries the completed home-page onboarding task into Paper Trading.'
+                : 'Use the same wallet as the home page. Once the home paper-trading task is complete, this row is inherited as completed here.'
           },
           {
             id: 'usage',
@@ -6290,7 +6354,7 @@ function PaperTradingInner() {
                 : 'Place at least one replay buy or sell so the wallet proves it used the replay trading surface.'
           }
         ]
-      : selectedRewardTask.id === 7
+      : selectedRewardTask.id === REPLAY_BADGE_TYPES.leaderboard
         ? [
             {
               id: 'positive-loop',
@@ -6319,7 +6383,7 @@ function PaperTradingInner() {
                   : 'Submit the current replay score once on Sepolia so this badge represents a real leaderboard action.'
             }
           ]
-        : selectedRewardTask.id === 8
+        : selectedRewardTask.id === REPLAY_BADGE_TYPES.spotLoop
           ? [
               {
                 id: 'spot-buy',
@@ -6342,7 +6406,7 @@ function PaperTradingInner() {
                 copy: 'Move the replay cursor to a later bar and sell so the net PnL and take-home math appear.'
               }
             ]
-          : selectedRewardTask.id === 9
+          : selectedRewardTask.id === REPLAY_BADGE_TYPES.perpLeverage
             ? [
                 {
                   id: 'perp-route',
@@ -6410,7 +6474,7 @@ function PaperTradingInner() {
               tone: 'ready',
               copy: 'The wallet already satisfied the task, but the replay reward route is not configured yet.'
             }
-          : selectedRewardTask.id === 6 && selectedRewardTask.inherited
+          : selectedRewardTask.id === REPLAY_BADGE_TYPES.baseCheck && selectedRewardTask.inherited
             ? {
                 text: 'Inherited',
                 tone: 'ready',
@@ -8272,8 +8336,9 @@ function PaperTradingInner() {
     const claimedAchievement = replayAchievements.find((achievement) => achievement.id === claimingAchievementId);
     setReplayClaimCache((current) =>
       normalizeReplayClaimCache({
+        walletAddress: getWalletCacheAddress(address),
         claimedIds: [...(current.claimedIds || []), claimingAchievementId]
-      })
+      }, address)
     );
     setClaimFeedback(`${claimedAchievement?.title || 'Replay achievement'} claimed on Sepolia for ${shortAddress(address)}.`);
     setClaimingAchievementId(null);
@@ -8403,32 +8468,6 @@ function PaperTradingInner() {
       writeStorageJson(progressStorageKey, next);
       return next;
     });
-  }
-
-  async function handleSignProfileBackup() {
-    if (!address) {
-      setProfileBackupStatus('Connect a wallet first so the profile backup can be tied to an address.');
-      return;
-    }
-
-    setProfileBackupStatus('Opening wallet signature for the replay profile snapshot...');
-    try {
-      const record = await signAndStoreProfilePointer(
-        address,
-        {
-          ...readWalletProfile(address),
-          progress: progressState,
-          paper: {
-            state: paperState,
-            tradeOutcomeHistory
-          }
-        },
-        signMessageAsync
-      );
-      setProfileBackupStatus(`Signed replay profile snapshot stored locally with content hash ${record.contentHash.slice(0, 12)}...`);
-    } catch (error) {
-      setProfileBackupStatus(String(error?.message || 'Profile backup signature was cancelled.'));
-    }
   }
 
   function updateProgressAfterTrade() {
@@ -9347,11 +9386,11 @@ function PaperTradingInner() {
 
     if (isReplayRouteLocked(nextRoute.id)) {
       setFeedback(
-        REPLAY_DEVELOPER_MODE
+        replayDeveloperModeActive
           ? 'Developer mode is active, so this route should already be open.'
           : 'This route still needs Task 1 plus Task 2 to be completed and minted. Until then the replay desk stays on the simple spot low-buy / high-sell path.'
       );
-      setSelectedRewardTaskId(baseReplayClaimed ? 7 : 6);
+      setSelectedRewardTaskId(baseReplayClaimed ? REPLAY_BADGE_TYPES.leaderboard : REPLAY_BADGE_TYPES.baseCheck);
       return;
     }
 
@@ -9980,7 +10019,7 @@ function PaperTradingInner() {
           <>
             <div className="paper-panel-pill-row">
               <span className={`pill ${advancedRoutesUnlocked ? 'risk-low' : 'risk-medium'}`}>
-                {REPLAY_DEVELOPER_MODE
+                {replayDeveloperModeActive
                   ? 'Developer mode override'
                   : advancedRoutesUnlocked
                     ? 'Task routes unlocked'
@@ -12810,7 +12849,6 @@ function PaperTradingInner() {
                 Unified wallet memory: policy {walletProfileSummary.availablePT.toLocaleString()} PT,
                 paper cash {walletProfileSummary.paperCash.toLocaleString()} PT,
                 wealth cash {walletProfileSummary.wealthCash.toLocaleString()} PT.
-                {walletProfileSummary.recoveredFromOtherWallet ? ' Older browser wallet history was recovered into this wallet profile.' : ''}
               </div>
             </div>
           </div>
@@ -12852,27 +12890,6 @@ function PaperTradingInner() {
             <span className="pill risk-low">{t('Wallet-linked ledger', '钱包绑定账本')}</span>
             <span className="pill risk-medium">{t('MSX vs CEX comparison', 'MSX 与 CEX 对比')}</span>
             <span className="pill risk-medium">{t('Human / protocol explainers', '人话 / 协议解释')}</span>
-          </div>
-
-          <div className="wealth-profile-storage-card">
-            <div>
-              <div className="eyebrow">Wallet profile storage</div>
-              <div className="wealth-profile-storage-title">Replay cash, fills, hedge progress, and wealth context now write into one PT profile</div>
-              <div className="muted">
-                Local-first recovery scans older wallet keys, then stores a signed content-addressed snapshot for decentralized backup.
-              </div>
-              <div className="wealth-profile-storage-grid">
-                <span>Policy {walletProfileSummary.availablePT.toLocaleString()} PT</span>
-                <span>Reserve {walletProfileSummary.reservePT.toLocaleString()} PT</span>
-                <span>Paper cash {walletProfileSummary.paperCash.toLocaleString()} PT</span>
-                <span>Wealth cash {walletProfileSummary.wealthCash.toLocaleString()} PT</span>
-                <span>{walletProfileSummary.sourceWalletCount} local source wallet{walletProfileSummary.sourceWalletCount === 1 ? '' : 's'}</span>
-              </div>
-              {profileBackupStatus ? <div className="wealth-inline-note paper-inline-note">{profileBackupStatus}</div> : null}
-            </div>
-            <button type="button" className="ghost-btn compact" onClick={handleSignProfileBackup} disabled={isRiskSigning}>
-              {isRiskSigning ? 'Await wallet' : 'Sign profile backup'}
-            </button>
           </div>
 
             <div className="wealth-summary-grid">
@@ -13046,7 +13063,7 @@ function PaperTradingInner() {
                           </div>
                         </div>
                       ))}
-                      {selectedRewardTask.id === 6 ? (
+                      {selectedRewardTask.id === REPLAY_BADGE_TYPES.baseCheck ? (
                         <div className="mint-action-box inline-mint-action task-badge-mint-box">
                           <div>
                             <div className="product-title">Replay badge</div>

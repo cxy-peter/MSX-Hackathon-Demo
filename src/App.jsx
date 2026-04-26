@@ -7,6 +7,7 @@ import {
   useDisconnect,
   useReadContract,
   useSwitchChain,
+  useSignMessage,
   useWaitForTransactionReceipt,
   useWriteContract
 } from 'wagmi';
@@ -26,6 +27,7 @@ import {
   getWalletProfileSummary,
   readRecoveredHomePaperBalance,
   readWalletProfile,
+  signAndStoreProfilePointer,
   writeWalletProfilePatch
 } from './walletProfileStore';
 
@@ -86,11 +88,11 @@ const quests = [
 
 const SEPOLIA_CHAIN_ID = 11155111;
 const BADGE_TYPES = {
-  welcome: 0,
-  wallet: 1,
-  risk: 2,
-  quiz: 3,
-  paper: 4
+  welcome: 1,
+  wallet: 2,
+  risk: 3,
+  quiz: 4,
+  paper: 5
 };
 const BADGE_CONTRACT_ADDRESS = import.meta.env.VITE_BADGE_CONTRACT_ADDRESS || '';
 const badgeContractConfigured = isAddress(BADGE_CONTRACT_ADDRESS);
@@ -216,6 +218,8 @@ const DEV_MODE_USERNAME = 'msxadmin';
 const DEV_MODE_PASSWORD = 'msx2026';
 const ANALYTICS_STORAGE_KEY = 'msx-click-analytics';
 const DEV_AUTH_STORAGE_KEY = 'msx-dev-auth';
+const ADMIN_UNLOCK_STORAGE_PREFIX = 'msx-admin-unlock';
+const DEFAULT_ADMIN_PT_AMOUNT = 100000;
 
 function shortAddress(address) {
   if (!address) return 'Not connected';
@@ -233,12 +237,26 @@ function formatTokenAmount(value, decimals = 18, maxDecimals = 8) {
   }
 }
 
+function roundNumber(value, digits = 2) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return 0;
+  return Number(numeric.toFixed(digits));
+}
+
 function getProgressStorageKey(address) {
   return address ? `msx-progress-${address.toLowerCase()}` : '';
 }
 
 function getPaperStateKey(address) {
   return address ? `msx-paper-state-${address.toLowerCase()}` : '';
+}
+
+function getPaperReplayStateKey(address) {
+  return address ? `msx-paper-replay-state-${address.toLowerCase()}` : '';
+}
+
+function getAdminUnlockStorageKey(address) {
+  return address ? `${ADMIN_UNLOCK_STORAGE_PREFIX}-${address.toLowerCase()}` : '';
 }
 
 function readStorageJson(key, fallback) {
@@ -499,10 +517,13 @@ export default function App() {
   const [progressAccountKey, setProgressAccountKey] = useState('');
   const [devModeOpen, setDevModeOpen] = useState(false);
   const [devModeAuthed, setDevModeAuthed] = useState(false);
-  const [devModeUsername, setDevModeUsername] = useState('');
-  const [devModePassword, setDevModePassword] = useState('');
+  const [devModeUsername, setDevModeUsername] = useState(DEV_MODE_USERNAME);
+  const [devModePassword, setDevModePassword] = useState(DEV_MODE_PASSWORD);
   const [devModeError, setDevModeError] = useState('');
+  const [devModeNotice, setDevModeNotice] = useState('');
+  const [devModePtAmount, setDevModePtAmount] = useState(String(DEFAULT_ADMIN_PT_AMOUNT));
   const [analyticsSnapshot, setAnalyticsSnapshot] = useState({ total: 0, events: {} });
+  const [profileBackupStatus, setProfileBackupStatus] = useState('');
 
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -592,6 +613,7 @@ export default function App() {
   const { disconnect } = useDisconnect();
   const { switchChainAsync, isPending: isSwitchingChain } = useSwitchChain();
   const { data: mintHash, error: mintError, isPending: isMinting, writeContractAsync } = useWriteContract();
+  const { signMessageAsync, isPending: isProfileSigning } = useSignMessage();
   const { isLoading: isConfirmingMint, isSuccess: mintConfirmed } = useWaitForTransactionReceipt({
     hash: mintHash
   });
@@ -695,7 +717,10 @@ export default function App() {
       viewedRiskCards: [],
       guideCompleted: false,
       quizCompleted: false,
-      paperTradesCompleted: 0
+      paperTradesCompleted: 0,
+      homeOnboardingCompleted: false,
+      paperUnlocked: false,
+      adminUnlocked: false
     });
     const profileProgress = readWalletProfile(address).progress;
 
@@ -708,11 +733,16 @@ export default function App() {
 
   useEffect(() => {
     if (!address || progressAccountKey !== connectedAddressKey) return;
+    const existingProgress = readStorageJson(progressStorageKey, {});
+    const profileProgress = readWalletProfile(address).progress;
     const nextProgress = {
       viewedRiskCards,
       guideCompleted,
       quizCompleted,
       paperTradesCompleted,
+      homeOnboardingCompleted: Boolean(existingProgress.homeOnboardingCompleted || profileProgress.homeOnboardingCompleted),
+      paperUnlocked: Boolean(existingProgress.paperUnlocked || profileProgress.paperUnlocked),
+      adminUnlocked: Boolean(existingProgress.adminUnlocked || profileProgress.adminUnlocked),
       userOrigin,
       web2Intent,
       web3Intent
@@ -1078,6 +1108,52 @@ export default function App() {
     }
   ];
 
+  useEffect(() => {
+    if (!address || progressAccountKey !== connectedAddressKey || !localProgressReady) return;
+    if (!paperTradingUnlocked && !paperTaskDone) return;
+
+    const existingProgress = readStorageJson(progressStorageKey, {});
+    const nextProgress = {
+      ...existingProgress,
+      viewedRiskCards: viewedRiskCards.length ? viewedRiskCards : existingProgress.viewedRiskCards || [],
+      guideCompleted: Boolean(guideCompleted || existingProgress.guideCompleted),
+      quizCompleted: Boolean(quizCompleted || existingProgress.quizCompleted),
+      paperTradesCompleted: Math.max(Number(paperTradesCompleted || 0), Number(existingProgress.paperTradesCompleted || 0)),
+      homeOnboardingCompleted: true,
+      paperUnlocked: true,
+      userOrigin,
+      web2Intent,
+      web3Intent
+    };
+
+    writeStorageJson(progressStorageKey, nextProgress);
+    writeWalletProfilePatch(address, {
+      progress: nextProgress,
+      home: {
+        paperBalanceSnapshot,
+        userOrigin,
+        web2Intent,
+        web3Intent
+      }
+    });
+  }, [
+    address,
+    connectedAddressKey,
+    progressAccountKey,
+    localProgressReady,
+    paperTradingUnlocked,
+    paperTaskDone,
+    progressStorageKey,
+    viewedRiskCards,
+    guideCompleted,
+    quizCompleted,
+    paperTradesCompleted,
+    paperBalanceSnapshot,
+    userOrigin,
+    web2Intent,
+    web3Intent
+  ]);
+
   const firstPendingLearnQuest =
     learnQuestCards.find((item) => item.status === 'Done' || item.status === 'To do' || item.status === 'Requires wallet' || item.status === 'Checking' || item.status.includes('/3'))?.id || 'wallet';
 
@@ -1259,10 +1335,150 @@ export default function App() {
       writeStorageJson(DEV_AUTH_STORAGE_KEY, true);
       setDevModeAuthed(true);
       setDevModeError('');
+      setDevModeNotice('Developer controls are open for this browser.');
       setAnalyticsSnapshot(readStorageJson(ANALYTICS_STORAGE_KEY, { total: 0, events: {} }));
       return;
     }
     setDevModeError('Incorrect developer credentials.');
+  }
+
+  function buildDeveloperUnlockedProgress(existingProgress = {}) {
+    const starterRiskCards = products.slice(0, 3).map((product) => product.id);
+    const viewedCards = Array.from(new Set([...(existingProgress.viewedRiskCards || []), ...starterRiskCards]));
+
+    return {
+      ...existingProgress,
+      viewedRiskCards: viewedCards,
+      guideCompleted: true,
+      quizCompleted: true,
+      paperTradesCompleted: Math.max(1, Number(existingProgress.paperTradesCompleted || 0), Number(paperTradesCompleted || 0)),
+      homeOnboardingCompleted: true,
+      paperUnlocked: true,
+      adminUnlocked: true,
+      userOrigin: 'web3',
+      web2Intent,
+      web3Intent: 'skip'
+    };
+  }
+
+  function writeDeveloperUnlockedProgress(nextProgress, nextPaperBalance = paperBalanceSnapshot) {
+    writeStorageJson(progressStorageKey, nextProgress);
+    writeStorageJson(getAdminUnlockStorageKey(address), true);
+    writeWalletProfilePatch(address, {
+      progress: nextProgress,
+      home: {
+        paperBalanceSnapshot: nextPaperBalance,
+        userOrigin: nextProgress.userOrigin,
+        web2Intent: nextProgress.web2Intent,
+        web3Intent: nextProgress.web3Intent
+      }
+    });
+  }
+
+  function handleDeveloperUnlockAll() {
+    if (!address) {
+      setDevModeError('Connect a wallet first, then the admin unlock can be written to that account.');
+      return;
+    }
+
+    const nextProgress = buildDeveloperUnlockedProgress(readStorageJson(progressStorageKey, {}));
+    setViewedRiskCards(nextProgress.viewedRiskCards);
+    setGuideCompleted(true);
+    setQuizCompleted(true);
+    setQuizSubmitted(true);
+    setQuizAnswers({ owns: 'wrapper-rights', downside: 'single-name-downside' });
+    setPaperTradesCompleted(nextProgress.paperTradesCompleted);
+    setUserOrigin('web3');
+    setWeb3Intent('skip');
+    writeDeveloperUnlockedProgress(nextProgress);
+    setDevModeError('');
+    setDevModeNotice(`All local onboarding and replay gates are enabled for ${shortAddress(address)}.`);
+  }
+
+  function readDeveloperPtAmount() {
+    const amount = Number(devModePtAmount);
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new Error('Enter a valid PT amount of 0 or higher.');
+    }
+    return roundNumber(amount, 2);
+  }
+
+  function applyDeveloperPtBalance(nextBalance, actionLabel) {
+    if (!address) {
+      setDevModeError('Connect a wallet first, then PT can be added to that account.');
+      return;
+    }
+
+    const normalizedBalance = roundNumber(Math.max(0, Number(nextBalance || 0)), 2);
+    const homePaperState = readStorageJson(paperStorageKey, {
+      balance: STARTING_PAPER_TOKENS,
+      positions: {}
+    });
+    const replayStateKey = getPaperReplayStateKey(address);
+    const replayPaperState = readStorageJson(replayStateKey, {
+      cash: STARTING_PAPER_TOKENS,
+      positions: {},
+      trades: [],
+      realizedPnl: 0
+    });
+    const existingProfile = readWalletProfile(address);
+    const existingProgress = readStorageJson(progressStorageKey, existingProfile.progress || {});
+    const nextProgress = buildDeveloperUnlockedProgress(existingProgress);
+
+    writeStorageJson(paperStorageKey, {
+      ...homePaperState,
+      balance: normalizedBalance
+    });
+    writeStorageJson(replayStateKey, {
+      ...replayPaperState,
+      cash: normalizedBalance
+    });
+    writeDeveloperUnlockedProgress(nextProgress, normalizedBalance);
+    writeWalletProfilePatch(address, {
+      progress: nextProgress,
+      home: {
+        ...(existingProfile.home || {}),
+        paperBalanceSnapshot: normalizedBalance,
+        userOrigin: nextProgress.userOrigin,
+        web2Intent: nextProgress.web2Intent,
+        web3Intent: nextProgress.web3Intent
+      },
+      paper: {
+        ...(existingProfile.paper || {}),
+        state: {
+          ...(existingProfile.paper?.state || {}),
+          cash: normalizedBalance
+        }
+      }
+    });
+
+    setPaperBalanceSnapshot(normalizedBalance);
+    setViewedRiskCards(nextProgress.viewedRiskCards);
+    setGuideCompleted(true);
+    setQuizCompleted(true);
+    setPaperTradesCompleted(nextProgress.paperTradesCompleted);
+    setUserOrigin('web3');
+    setWeb3Intent('skip');
+    setDevModeError('');
+    setDevModeNotice(`${actionLabel}: ${normalizedBalance.toLocaleString()} PT is now available for ${shortAddress(address)}.`);
+  }
+
+  function handleDeveloperAddPt() {
+    try {
+      const amount = readDeveloperPtAmount();
+      const currentBalance = Math.max(Number(paperBalanceSnapshot || 0), Number(walletProfileSummary.availablePT || 0));
+      applyDeveloperPtBalance(currentBalance + amount, 'Admin PT added');
+    } catch (error) {
+      setDevModeError(error.message);
+    }
+  }
+
+  function handleDeveloperSetPtBalance() {
+    try {
+      applyDeveloperPtBalance(readDeveloperPtAmount(), 'Admin PT set');
+    } catch (error) {
+      setDevModeError(error.message);
+    }
   }
 
   async function handleMintTaskBadge(taskKey) {
@@ -1303,6 +1519,42 @@ export default function App() {
         return;
       }
       setWalletError(message);
+    }
+  }
+
+  async function handleSignProfileBackup() {
+    if (!isConnected || !address) {
+      setProfileBackupStatus('Connect a wallet first so the optional profile backup can be tied to the current account.');
+      return;
+    }
+
+    setProfileBackupStatus('Opening MetaMask signature for this account profile...');
+    try {
+      const record = await signAndStoreProfilePointer(
+        address,
+        {
+          ...readWalletProfile(address),
+          progress: {
+            viewedRiskCards: localProgressReady ? viewedRiskCards : [],
+            guideCompleted: localProgressReady && guideCompleted,
+            quizCompleted: localProgressReady && quizCompleted,
+            paperTradesCompleted: localProgressReady ? paperTradesCompleted : 0,
+            userOrigin,
+            web2Intent,
+            web3Intent
+          },
+          home: {
+            paperBalanceSnapshot,
+            userOrigin,
+            web2Intent,
+            web3Intent
+          }
+        },
+        signMessageAsync
+      );
+      setProfileBackupStatus(`Optional profile backup signed for ${shortAddress(address)}. Content hash ${record.contentHash.slice(0, 12)}...`);
+    } catch (error) {
+      setProfileBackupStatus(String(error?.message || 'Profile backup signature was cancelled.'));
     }
   }
 
@@ -1350,7 +1602,6 @@ export default function App() {
                     reserve {walletProfileSummary.reservePT.toLocaleString()} PT,
                     paper cash {walletProfileSummary.paperCash.toLocaleString()} PT,
                     wealth cash {walletProfileSummary.wealthCash.toLocaleString()} PT.
-                    {walletProfileSummary.recoveredFromOtherWallet ? ' Local history was recovered from an older wallet key.' : ''}
                   </div>
                 </div>
               </div>
@@ -1722,6 +1973,29 @@ export default function App() {
                       </button>
                     </div>
 
+                    <div className="wealth-profile-storage-card">
+                      <div>
+                        <div className="eyebrow">Optional profile backup</div>
+                        <div className="wealth-profile-storage-title">Save this account's PT demo state, not the wallet key</div>
+                        <div className="muted">
+                          This signature backs up paper cash, fills, hedge progress, and wealth context for the connected address. It cannot recover MetaMask, private keys, or seed phrases.
+                        </div>
+                        <div className="wealth-profile-storage-grid">
+                          <span>Account {isConnected ? shortAddress(address) : 'not connected'}</span>
+                          <span>Policy {walletProfileSummary.availablePT.toLocaleString()} PT</span>
+                          <span>Paper cash {walletProfileSummary.paperCash.toLocaleString()} PT</span>
+                          <span>Wealth cash {walletProfileSummary.wealthCash.toLocaleString()} PT</span>
+                        </div>
+                        <div className="muted">
+                          Decentralized storage here means a signed, content-hashed snapshot that can later be pinned to IPFS/Filecoin, Ceramic, or Arweave by the project owner.
+                        </div>
+                        {profileBackupStatus ? <div className="wealth-inline-note paper-inline-note">{profileBackupStatus}</div> : null}
+                      </div>
+                      <button type="button" className="ghost-btn compact" onClick={handleSignProfileBackup} disabled={isProfileSigning}>
+                        {isProfileSigning ? 'Await wallet' : 'Sign optional backup'}
+                      </button>
+                    </div>
+
                     <div className="badge-mint-meta compact-meta">
                       <div className={`guide-chip ${badgeContractConfigured ? 'contract-live' : 'contract-demo'}`}>
                         <div className="k">Deployment</div>
@@ -1977,8 +2251,12 @@ export default function App() {
                       {
                         id: 'mint',
                         label: 'Step 2: Mint welcome badge',
-                        done: badgeMintCompleted,
-                        helper: badgeMintCompleted ? 'The welcome badge has already been minted on Sepolia.' : 'Submit the welcome badge mint before paper trading unlocks.'
+                        done: welcomeGateCompleted,
+                        helper: welcomeGateCompleted
+                          ? badgeContractConfigured
+                            ? 'The welcome badge has already been minted on Sepolia.'
+                            : 'This deployment uses the connected wallet as the demo welcome gate.'
+                          : 'Submit the welcome badge mint before paper trading unlocks.'
                       },
                       {
                         id: 'risk',
@@ -2293,7 +2571,7 @@ export default function App() {
                 <div className="developer-auth-form">
                   <div className="wallet-modal-status">Developer sign in</div>
                   <div className="env-hint">
-                    Demo-only analytics access. Keep credentials local and avoid exposing this panel in a public deployment.
+                    Demo-only admin access. Credentials are shown here on purpose for local review: username <strong>{DEV_MODE_USERNAME}</strong>, password <strong>{DEV_MODE_PASSWORD}</strong>.
                   </div>
                   <label>
                     Username
@@ -2301,16 +2579,16 @@ export default function App() {
                   </label>
                   <label>
                     Password
-                    <input type="password" value={devModePassword} onChange={(event) => setDevModePassword(event.target.value)} />
+                    <input type="text" value={devModePassword} onChange={(event) => setDevModePassword(event.target.value)} />
                   </label>
                   <button className="primary-btn" onClick={handleDeveloperLogin}>
-                    Open analytics
+                    Open admin controls
                   </button>
                   {devModeError ? <div className="env-hint">{devModeError}</div> : null}
                 </div>
               ) : (
                 <div className="developer-analytics">
-                  <div className="wallet-modal-status">Module click-through</div>
+                  <div className="wallet-modal-status">Admin controls</div>
                   <div className="paper-balance-strip">
                     <div className="paper-balance-box">
                       <div className="label">Tracked clicks</div>
@@ -2325,6 +2603,40 @@ export default function App() {
                       <div className="value">{isConnected ? walletDisplayName : 'Not connected'}</div>
                     </div>
                   </div>
+                  <div className="developer-admin-grid">
+                    <div className="developer-admin-card">
+                      <div>
+                        <div className="eyebrow">Feature override</div>
+                        <div className="wealth-profile-storage-title">Enable all local onboarding and replay gates</div>
+                        <div className="muted">
+                          Writes completed guide, quiz, paper unlock, and admin override progress for the connected wallet. Onchain badge minting still remains a real Sepolia action.
+                        </div>
+                      </div>
+                      <button className="primary-btn" onClick={handleDeveloperUnlockAll}>
+                        Enable all features
+                      </button>
+                    </div>
+                    <div className="developer-admin-card">
+                      <div>
+                        <div className="eyebrow">PT controls</div>
+                        <div className="wealth-profile-storage-title">Add or set paper PT for this wallet</div>
+                        <div className="muted">
+                          Updates the shared local profile plus Home and Paper cash stores, so the same wallet sees the balance across pages.
+                        </div>
+                      </div>
+                      <label className="developer-pt-control">
+                        PT amount
+                        <input type="number" min="0" step="1000" value={devModePtAmount} onChange={(event) => setDevModePtAmount(event.target.value)} />
+                      </label>
+                      <div className="toolbar">
+                        <button className="secondary-btn" onClick={handleDeveloperAddPt}>Add PT</button>
+                        <button className="ghost-btn compact" onClick={handleDeveloperSetPtBalance}>Set balance</button>
+                      </div>
+                    </div>
+                  </div>
+                  {devModeNotice ? <div className="env-hint">{devModeNotice}</div> : null}
+                  {devModeError ? <div className="env-hint quiz-error">{devModeError}</div> : null}
+                  <div className="wallet-modal-status">Module click-through</div>
                   <div className="developer-table-wrap">
                     <table className="developer-table">
                       <thead>
