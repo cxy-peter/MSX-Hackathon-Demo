@@ -1345,6 +1345,12 @@ function getWealthProductSurface(product = {}) {
   return 'earn';
 }
 
+function getDisplayProductTypeLabel(product = {}) {
+  const surface = getWealthProductSurface(product);
+
+  return surface === 'cash' ? 'Cash & Treasury' : product.productType || getTermTypeLabel(product);
+}
+
 function productMatchesWealthGoal(product, goalId) {
   if (!goalId) return true;
   if (product.goals?.includes(goalId)) return true;
@@ -2926,31 +2932,107 @@ function DetailNavChart({ series = [] }) {
 }
 
 function CompareNavChart({ seriesList = [], periodLabel = '30D' }) {
+  const [hoverIndex, setHoverIndex] = useState(null);
+  const activeSeries = seriesList.filter((series) => series.points.length > 0);
+
+  if (!activeSeries.length) {
+    return (
+      <div className="wealth-compare-chart-shell">
+        <div className="detail-nav-hover-panel static">
+          <span>Compare NAV path</span>
+          <strong>No comparable products</strong>
+          <em>Select one or more products to build the compare chart.</em>
+        </div>
+      </div>
+    );
+  }
+
   const width = 680;
   const height = 340;
   const padding = { top: 24, right: 20, bottom: 32, left: 16 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
-  const allValues = seriesList.flatMap((series) => series.points.map((point) => point.value));
+  const allValues = activeSeries.flatMap((series) => series.points.map((point) => point.value));
   const low = allValues.length ? Math.min(...allValues) : 95;
   const high = allValues.length ? Math.max(...allValues) : 105;
   const range = high - low || 1;
+  const maxLength = Math.max(...activeSeries.map((series) => series.points.length));
+  const referenceLength = Math.max(1, maxLength);
   const yTicks = Array.from({ length: 4 }, (_, index) => low + (range * index) / 3);
+  const referenceSeries = activeSeries[0];
+  const referenceLengthDenominator = Math.max(1, referenceLength - 1);
+  const activeIndex = hoverIndex == null ? referenceLength - 1 : clamp(hoverIndex, 0, referenceLength - 1);
+  const formatDatePoint = (ts) => formatWealthDate(ts, referenceLength);
+
+  function valueToY(value) {
+    return padding.top + ((high - value) / range) * plotHeight;
+  }
+
+  function xForPoint(index, pointCount = referenceLength) {
+    const safePointCount = Math.max(1, pointCount - 1);
+    return padding.left + (pointCount === 1 ? 0 : (index / safePointCount) * plotWidth);
+  }
+
+  function getPointForSeriesAtIndex(series, indexInReference) {
+    if (!series.points.length) return null;
+    const index = series.points.length === 1 ? 0 : Math.round((indexInReference / referenceLengthDenominator) * (series.points.length - 1));
+    const point = series.points[index];
+    if (!point) return null;
+    return {
+      ...point,
+      x: xForPoint(index, series.points.length),
+      y: valueToY(point.value),
+      valueIndex: index
+    };
+  }
+
+  const hoverXAxisX = xForPoint(activeIndex, referenceLength);
+  const hoveredSeriesPoints = activeSeries
+    .map((series) => {
+      const match = getPointForSeriesAtIndex(series, activeIndex);
+      if (!match) return null;
+      const baseValue = series.points[0]?.value || 1;
+      const deltaValue = match.value - baseValue;
+      return {
+        ...series,
+        ...match,
+        deltaValue,
+        deltaPercent: (deltaValue / baseValue) * 100
+      };
+    })
+    .filter(Boolean);
+  const hoverTs = hoveredSeriesPoints[0]?.ts || referenceSeries.points[0]?.ts;
+  const axisLineY = hoveredSeriesPoints[0]?.y || padding.top + plotHeight / 2;
 
   function buildPath(points) {
     if (!points.length) return '';
     return points
       .map((point, index) => {
-        const x = padding.left + (points.length === 1 ? 0 : (index / (points.length - 1)) * plotWidth);
-        const y = padding.top + ((high - point.value) / range) * plotHeight;
+        const x = xForPoint(index, points.length);
+        const y = valueToY(point.value);
         return `${x},${y}`;
       })
       .join(' ');
   }
 
+  function handlePointerMove(event) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect.width) return;
+    const svgX = ((event.clientX - rect.left) / rect.width) * width;
+    const clamped = clamp(svgX, padding.left, padding.left + plotWidth);
+    const ratio = plotWidth === 0 ? 0 : (clamped - padding.left) / plotWidth;
+    setHoverIndex(Math.round(ratio * referenceLengthDenominator));
+  }
+
   return (
     <div className="wealth-compare-chart-shell">
-      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="xMidYMid meet"
+        aria-hidden="true"
+        onPointerMove={handlePointerMove}
+        onPointerLeave={() => setHoverIndex(null)}
+      >
         {yTicks.map((tick) => {
           const y = padding.top + ((high - tick) / range) * plotHeight;
           return (
@@ -2963,7 +3045,14 @@ function CompareNavChart({ seriesList = [], periodLabel = '30D' }) {
           );
         })}
 
-        {seriesList.map((series) => (
+        {hoveredSeriesPoints.length ? (
+          <>
+            <line x1={hoverXAxisX} x2={hoverXAxisX} y1={padding.top} y2={padding.top + plotHeight} stroke="rgba(243,246,253,0.42)" strokeDasharray="6 6" />
+            <line x1={padding.left} x2={padding.left + plotWidth} y1={axisLineY} y2={axisLineY} stroke="rgba(243,246,253,0.34)" strokeDasharray="6 6" />
+          </>
+        ) : null}
+
+        {activeSeries.map((series) => (
           <polyline
             key={series.id}
             points={buildPath(series.points)}
@@ -2975,6 +3064,31 @@ function CompareNavChart({ seriesList = [], periodLabel = '30D' }) {
           />
         ))}
 
+        {hoveredSeriesPoints.map((seriesPoint) => (
+          <circle key={`${seriesPoint.id}-${seriesPoint.valueIndex}-hover`} cx={seriesPoint.x} cy={seriesPoint.y} r="4" fill="#f3f6fd" />
+        ))}
+
+        {(
+          referenceLength > 1
+            ? [0, Math.floor((referenceLength - 1) / 2), referenceLength - 1]
+            : [0]
+        ).map((index) => {
+          const referenceIndex = referenceSeries.points.length === 1 ? 0 : Math.round((index / referenceLengthDenominator) * (referenceSeries.points.length - 1));
+          const point = referenceSeries.points[referenceIndex];
+          return (
+            <text
+              key={`${point?.ts || index}-label`}
+              x={xForPoint(index, referenceLength)}
+              y={height - 10}
+              fill="rgba(156,171,190,0.92)"
+              fontSize="11"
+              textAnchor={index === 0 ? 'start' : index === referenceLength - 1 ? 'end' : 'middle'}
+            >
+              {point ? formatDatePoint(point.ts) : ''}
+            </text>
+          );
+        })}
+
         <text x={padding.left} y={height - 10} fill="rgba(156,171,190,0.92)" fontSize="11">
           Start
         </text>
@@ -2985,6 +3099,28 @@ function CompareNavChart({ seriesList = [], periodLabel = '30D' }) {
           Latest
         </text>
       </svg>
+
+      <div className="detail-nav-hover-panel">
+        <span>{hoverTs ? 'Compare point' : 'Latest compare view'}</span>
+        <strong>{hoverTs ? formatDatePoint(hoverTs) : 'Latest point'}</strong>
+        <em>{periodLabel}</em>
+        {hoveredSeriesPoints.map((seriesPoint) => {
+          const tone = seriesPoint.deltaValue >= 0 ? 'risk-low' : 'risk-high';
+          return (
+            <div className="wealth-compare-hover-row" key={seriesPoint.id}>
+              <span style={{ color: seriesPoint.color, fontWeight: 800 }}>{seriesPoint.name}</span>
+              <div>
+                <strong>{seriesPoint.value.toFixed(1)}</strong>
+                <em className={tone}>
+                  {seriesPoint.deltaValue >= 0 ? '+' : ''}
+                  {seriesPoint.deltaValue.toFixed(1)} ({seriesPoint.deltaPercent >= 0 ? '+' : ''}
+                  {seriesPoint.deltaPercent.toFixed(2)}%)
+                </em>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -4219,23 +4355,24 @@ function WealthInner() {
         const isCurrentGoalPick = currentGoalRecommendedIds.has(product.id);
         const isDual = isDualInvestmentProduct(product);
         const isStructured = surface === 'structured' || isDual;
+        const dualPenalty =
+          isDual || isStructured
+            ? walletProfileLevel === 'advanced'
+              ? -4
+              : walletProfileLevel === 'intermediate'
+                ? -16
+                : -22
+            : 0;
         const beginnerFit =
           walletProfileLevel === 'starter'
             ? (surface === 'cash' ? 22 : 0) +
               (difficulty.id === 'easy' ? 12 : difficulty.id === 'medium' ? 4 : -12) +
-              (isDual || isStructured ? -18 : 0)
+              (isDual || isStructured ? dualPenalty : 0)
             : 0;
-        const starterDefaultFit =
-          firstRunStarter
-            ? product.id === DEFAULT_WEALTH_PRODUCT_ID
-              ? 36
-              : isDual || isStructured
-                ? -28
-                : 0
-            : 0;
+        const starterDefaultFit = firstRunStarter && product.id === DEFAULT_WEALTH_PRODUCT_ID ? 36 : 0;
         const builderFit =
           walletProfileLevel === 'intermediate'
-            ? (surface === 'cash' || surface === 'earn' ? 10 : 0) + (isStructured ? 5 : 0) + (settlementPolicy.redeemable ? 4 : 0)
+            ? (surface === 'cash' || surface === 'earn' ? 10 : 0) + (settlementPolicy.redeemable ? 4 : 0) + dualPenalty
             : 0;
         const advancedFit =
           walletProfileLevel === 'advanced'
@@ -4587,25 +4724,7 @@ function WealthInner() {
           actionLabel: 'Complete task first',
           actionDisabled: true
         };
-  const selectedWealthTaskClaimSteps = [
-    {
-      label: 'Detect 3 product actions',
-      done: selectedWealthTaskReadyToClaim || selectedWealthTaskClaimed,
-      copy: `${selectedWealthTaskCompletedChecklistCount}/${selectedWealthTaskChecklistTotal} completed`
-    },
-    {
-      label: wealthVaultConfigured ? 'Submit Sepolia task mark' : 'Vault address not configured',
-      done: selectedWealthTaskClaimedOnchain,
-      copy: wealthVaultConfigured
-        ? 'Uses RiskLensWealthReceiptVault.markWealthTask.'
-        : 'Local demo reward is available without a live vault.'
-    },
-    {
-      label: 'Record wallet reward',
-      done: selectedWealthTaskClaimed,
-      copy: `Adds +${WEALTH_MILESTONE_BONUS.toLocaleString()} PT to the shared profile.`
-    }
-  ];
+  const selectedWealthTaskClaimSteps = [];
   const timelinePreviewRows = useMemo(() => {
     const rows = portfolioRows.length
       ? portfolioRows.map((row) => ({ ...row, previewOnly: false }))
@@ -6845,7 +6964,7 @@ function WealthInner() {
             <div>
               <div className="eyebrow">Selected product</div>
               <div className="product-title">{selectedProduct.shortName || selectedProduct.name}</div>
-              <div className="muted">{selectedProduct.productType || getTermTypeLabel(selectedProduct)}</div>
+              <div className="muted">{getDisplayProductTypeLabel(selectedProduct)}</div>
             </div>
 
             <div className="wealth-detail-side-metrics">
@@ -7970,7 +8089,6 @@ function WealthInner() {
             <p className="muted">{selectedWealthTaskDetail.copy}</p>
             <div className="wealth-task-detail-grid">
               <div className="wealth-task-detail-panel">
-                <div className="quest-panel-title">How to clear it</div>
                 <div className="checklist-list">
                   {selectedWealthTaskChecklistItems.map((item) => (
                     <div
@@ -7988,20 +8106,6 @@ function WealthInner() {
                       </div>
                     </div>
                   ))}
-                </div>
-                <div className="toolbar">
-                  <button
-                    type="button"
-                    className="secondary-btn compact"
-                    onClick={() =>
-                      focusProduct(selectedWealthTaskDetail.ctaProductId, {
-                        topic: 'flow',
-                        categoryId: selectedWealthTaskDetail.ctaCategoryId
-                      })
-                    }
-                  >
-                    {selectedWealthTaskDetail.ctaLabel}
-                  </button>
                 </div>
               </div>
               <div className="wealth-task-detail-panel">
@@ -8027,17 +8131,19 @@ function WealthInner() {
                     {wealthTaskClaimHash ? (
                       <div className="muted">Latest claim tx: {wealthTaskClaimHash}</div>
                     ) : null}
-                    <div className="wealth-task-claim-steps">
-                      {selectedWealthTaskClaimSteps.map((step) => (
-                        <div className={`wealth-task-claim-step ${step.done ? 'done' : ''}`} key={step.label}>
-                          <span>{step.done ? 'OK' : 'TODO'}</span>
-                          <div>
-                            <strong>{step.label}</strong>
-                            <small>{step.copy}</small>
+                    {selectedWealthTaskClaimSteps.length ? (
+                      <div className="wealth-task-claim-steps">
+                        {selectedWealthTaskClaimSteps.map((step) => (
+                          <div className={`wealth-task-claim-step ${step.done ? 'done' : ''}`} key={step.label}>
+                            <span>{step.done ? 'OK' : 'TODO'}</span>
+                            <div>
+                              <strong>{step.label}</strong>
+                              <small>{step.copy}</small>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="mint-status-stack">
                     {!selectedWealthTaskClaimed ? (
@@ -8124,7 +8230,7 @@ function WealthInner() {
                       className="wealth-recommended-chip"
                       onClick={() => focusProduct(product.id, { topic: 'flow', categoryId: destinationCategory })}
                     >
-                      <span>{product.productType || getTermTypeLabel(product)}</span>
+                      <span>{getDisplayProductTypeLabel(product)}</span>
                       <strong>{product.name}</strong>
                       <em>{policy.label}</em>
                     </button>
@@ -8229,7 +8335,7 @@ function WealthInner() {
                           <div>
                             <div className="product-title">{product.name}</div>
                             <div className="muted">
-                              {product.productType} / {getTermTypeLabel(product)} / {product.status}
+                              {getDisplayProductTypeLabel(product)} / {getTermTypeLabel(product)} / {product.status}
                             </div>
                             <div className="wealth-market-caption">
                               {product.asOfLabel || 'Static demo snapshot'} / {product.marketSource || 'RiskLens demo snapshot'}
