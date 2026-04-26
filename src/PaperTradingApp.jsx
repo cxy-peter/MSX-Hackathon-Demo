@@ -41,9 +41,11 @@ import {
 import { queryClient, wagmiConfig } from './wagmiSetup';
 import {
   getWealthSpendableCash,
+  getWalletProfilePointerKey,
   getWalletProfileSummary,
   readRecoveredPaperState,
   readWalletProfile,
+  signAndStoreProfilePointer,
   writeWalletProfilePatch
 } from './walletProfileStore';
 import ReplayChartPanel from './ReplayChartPanel';
@@ -60,6 +62,7 @@ const BADGE_CONTRACT_ADDRESS = import.meta.env.VITE_BADGE_CONTRACT_ADDRESS || ''
 const REPLAY_BADGE_CONTRACT_ADDRESS = import.meta.env.VITE_REPLAY_BADGE_CONTRACT_ADDRESS || '';
 const badgeContractConfigured = isAddress(BADGE_CONTRACT_ADDRESS);
 const replayBadgeContractConfigured = isAddress(REPLAY_BADGE_CONTRACT_ADDRESS);
+const PROFILE_BACKUP_POINTER_STORAGE_PREFIX = 'msx-wallet-profile-pointer-';
 const REPLAY_BADGE_TYPES = {
   baseCheck: 6,
   leaderboard: 7,
@@ -473,6 +476,45 @@ function shortAddressWithNickname(address) {
   return getWalletDisplayName(address, readWalletNickname(address), shortAddress);
 }
 
+function profileBackupTimeValue(value) {
+  const time = new Date(value || '').getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function formatProfileBackupSignedAt(value) {
+  const time = profileBackupTimeValue(value);
+  return time ? new Date(time).toLocaleString() : 'unsaved time';
+}
+
+function listProfileBackupAccounts() {
+  if (typeof window === 'undefined' || !window.localStorage) return [];
+
+  const accounts = [];
+  const seen = new Set();
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (!key || !key.startsWith(PROFILE_BACKUP_POINTER_STORAGE_PREFIX)) continue;
+
+    const record = readStorageJson(key, null);
+    const recordAddress = String(record?.address || record?.profile?.address || key.slice(PROFILE_BACKUP_POINTER_STORAGE_PREFIX.length) || '').toLowerCase();
+    if (!recordAddress || recordAddress === 'guest' || seen.has(recordAddress) || !record?.profile) continue;
+
+    const summary = getWalletProfileSummary(record.profile);
+    const nickname = readWalletNickname(recordAddress);
+    const signedAt = record.createdAt || record.profile?.storage?.signedAt || '';
+    seen.add(recordAddress);
+    accounts.push({
+      address: recordAddress,
+      label: getWalletDisplayName(recordAddress, nickname, shortAddress),
+      signedAt,
+      signedLabel: formatProfileBackupSignedAt(signedAt),
+      availablePT: summary.availablePT
+    });
+  }
+
+  return accounts.sort((left, right) => profileBackupTimeValue(right.signedAt) - profileBackupTimeValue(left.signedAt));
+}
+
 function clampNumber(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -879,7 +921,14 @@ function WalletModal({
   onNicknameDraftChange,
   nicknameFeedback,
   errorText,
-  hasMetaMaskInstalled
+  hasMetaMaskInstalled,
+  isProfileSigning = false,
+  profileBackupAccounts = [],
+  selectedProfileBackupAddress = '',
+  onSelectedProfileBackupAddressChange,
+  onSignProfileBackup,
+  onRecoverSelectedProfileBackup,
+  profileBackupSummaryText
 }) {
   if (!open) return null;
 
@@ -892,13 +941,17 @@ function WalletModal({
         <div className="wallet-modal-pane wallet-modal-sidebar">
           <div className="wallet-modal-title">RiskLens Wallet Access</div>
           <div className="wallet-modal-subtitle">Replay Layer</div>
-          <button className={`wallet-option ${isPending || !hasMetaMaskInstalled ? 'disabled' : ''}`} onClick={onConnect} disabled={isPending || !hasMetaMaskInstalled}>
+          <button
+            className={`wallet-option ${isConnected ? 'connected' : ''} ${isPending || (!isConnected && !hasMetaMaskInstalled) ? 'disabled' : ''}`}
+            onClick={isConnected ? onDisconnect : onConnect}
+            disabled={isPending || (!isConnected && !hasMetaMaskInstalled)}
+          >
             <MetaMaskIcon className="wallet-option-icon" />
             <div>
-              <div className="wallet-option-title">MetaMask</div>
+              <div className="wallet-option-title">{isConnected ? 'MetaMask connected' : 'MetaMask'}</div>
               <div className="wallet-option-copy">
                 {isConnected
-                  ? `Wallet connected ${walletDisplayName}`
+                  ? `Wallet connected ${walletDisplayName}. Click again to disconnect.`
                   : !hasMetaMaskInstalled
                     ? 'Install browser extension first'
                     : isPending
@@ -924,7 +977,7 @@ function WalletModal({
             </div>
           ) : null}
         </div>
-        <div className="wallet-modal-pane wallet-modal-main">
+        <div className={`wallet-modal-pane wallet-modal-main ${isConnected ? 'wallet-modal-main-connected' : ''}`}>
           <MetaMaskIcon className="wallet-modal-hero wallet-modal-hero-metamask" />
           <div className="wallet-modal-status">
             {isConnected
@@ -965,6 +1018,56 @@ function WalletModal({
                   Save nickname
                 </button>
               ) : null}
+            </div>
+          ) : null}
+          {isConnected || profileBackupAccounts.length ? (
+            <div className="wallet-modal-backup-card wealth-profile-storage-card profile-backup-card">
+              <div className="profile-backup-main">
+                <div className="eyebrow">Wallet backup + recovery</div>
+                <div className="wealth-profile-storage-title">Keep replay progress recoverable</div>
+                <div className="muted">
+                  Sign a local snapshot for this wallet, or pick a historical backup and connect the matching MetaMask account before recovery.
+                </div>
+                {profileBackupSummaryText ? <div className="wealth-inline-note wallet-modal-backup-note">{profileBackupSummaryText}</div> : null}
+              </div>
+              <div className="profile-backup-side">
+                <div className="wallet-modal-backup-actions profile-backup-actions">
+                  <button type="button" className="ghost-btn compact" onClick={() => onSignProfileBackup?.()} disabled={!isConnected || isPending || isProfileSigning}>
+                    {isProfileSigning ? 'Await wallet' : 'Sign optional backup'}
+                  </button>
+                </div>
+                <div className="profile-backup-history">
+                  <label>
+                    Historical account login
+                    <select
+                      value={selectedProfileBackupAddress}
+                      onChange={(event) => onSelectedProfileBackupAddressChange?.(event.target.value)}
+                      disabled={!profileBackupAccounts.length}
+                    >
+                      {profileBackupAccounts.length ? (
+                        profileBackupAccounts.map((account) => (
+                          <option key={account.address} value={account.address}>
+                            {account.label} - {account.signedLabel}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No saved backup on this device yet</option>
+                      )}
+                    </select>
+                  </label>
+                  <div className="profile-backup-history-copy">
+                    Backup stores demo state only. It does not recover keys, so MetaMask still needs to connect this session.
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary-btn compact"
+                    onClick={() => onRecoverSelectedProfileBackup?.()}
+                    disabled={!selectedProfileBackupAddress || !isConnected || isPending}
+                  >
+                    Use selected backup
+                  </button>
+                </div>
+              </div>
             </div>
           ) : null}
           {!hasMetaMaskInstalled ? (
@@ -7618,6 +7721,8 @@ function PaperTradingInner() {
   const [walletNicknameDraft, setWalletNicknameDraft] = useState('');
   const [pendingWalletNickname, setPendingWalletNickname] = useState(null);
   const [walletNicknameFeedback, setWalletNicknameFeedback] = useState('');
+  const [profileBackupStatus, setProfileBackupStatus] = useState('');
+  const [selectedProfileBackupAddress, setSelectedProfileBackupAddress] = useState('');
   const [devModeOpen, setDevModeOpen] = useState(false);
   const [devModeAuthed, setDevModeAuthed] = useState(false);
   const [devModeUsername, setDevModeUsername] = useState('');
@@ -7772,6 +7877,11 @@ function PaperTradingInner() {
   const walletDisplayName = useMemo(
     () => getWalletDisplayName(address, walletNickname, shortAddress),
     [address, walletNickname]
+  );
+  const connectedAddressKey = useMemo(() => (address ? address.toLowerCase() : ''), [address]);
+  const profileBackupAccounts = useMemo(
+    () => listProfileBackupAccounts(),
+    [connectedAddressKey, profileBackupStatus, walletNickname]
   );
   const { data: sepoliaBalance } = useBalance({
     address,
@@ -8181,6 +8291,27 @@ function PaperTradingInner() {
     setWalletNickname(storedNickname);
     setWalletNicknameDraft(storedNickname);
   }, [address]);
+
+  useEffect(() => {
+    setProfileBackupStatus('');
+  }, [connectedAddressKey]);
+
+  useEffect(() => {
+    if (!profileBackupAccounts.length) {
+      setSelectedProfileBackupAddress('');
+      return;
+    }
+
+    setSelectedProfileBackupAddress((current) => {
+      const currentStillExists = current && profileBackupAccounts.some((account) => account.address === current);
+      if (currentStillExists) return current;
+
+      const currentWalletBackup = connectedAddressKey
+        ? profileBackupAccounts.find((account) => account.address === connectedAddressKey)
+        : null;
+      return currentWalletBackup?.address || profileBackupAccounts[0].address;
+    });
+  }, [connectedAddressKey, profileBackupAccounts]);
 
   useEffect(() => {
     if (!address || pendingWalletNickname === null) return;
@@ -11590,6 +11721,78 @@ function PaperTradingInner() {
     setWalletNicknameFeedback('');
     setPendingWalletNickname(normalizeWalletNickname(walletNicknameDraft) || null);
     connect({ connector: metaMaskConnector });
+  }
+
+  function handleWalletDisconnect() {
+    setWalletError('');
+    setWalletNicknameFeedback('');
+    setProfileBackupStatus('Wallet disconnected. Replay backups stay on this device; reconnect the same MetaMask account to recover them.');
+    disconnect();
+  }
+
+  async function handleSignProfileBackup() {
+    if (!isConnected || !address) {
+      setProfileBackupStatus('Connect MetaMask first so the replay backup can be tied to the current account.');
+      return;
+    }
+
+    setProfileBackupStatus('Opening MetaMask signature for this replay profile...');
+    try {
+      const record = await signAndStoreProfilePointer(
+        address,
+        {
+          ...readWalletProfile(address),
+          progress: progressState,
+          paper: paperState
+        },
+        signMessageAsync
+      );
+      setProfileBackupStatus(`Replay profile backup signed for ${shortAddress(address)}. Content hash ${record.contentHash.slice(0, 12)}...`);
+    } catch (error) {
+      setProfileBackupStatus(String(error?.message || 'Replay profile backup signature was cancelled.'));
+    }
+  }
+
+  function handleRecoverSelectedProfileBackup() {
+    if (!selectedProfileBackupAddress) {
+      setProfileBackupStatus('No historical replay backup is selected on this device yet.');
+      return;
+    }
+
+    if (!isConnected || !address) {
+      setProfileBackupStatus('Connect MetaMask first. A backup can identify a historical account, but the wallet still has to approve this session.');
+      return;
+    }
+
+    if (selectedProfileBackupAddress !== connectedAddressKey) {
+      setProfileBackupStatus(`Selected backup belongs to ${shortAddress(selectedProfileBackupAddress)}. Switch MetaMask to that account, reconnect, then recover it here.`);
+      return;
+    }
+
+    const pointerRecord = readStorageJson(getWalletProfilePointerKey(selectedProfileBackupAddress), null);
+    if (!pointerRecord?.profile) {
+      setProfileBackupStatus(`No signed backup was found for ${shortAddress(selectedProfileBackupAddress)} on this device yet.`);
+      return;
+    }
+
+    const recoveredProfile = pointerRecord.profile;
+    writeWalletProfilePatch(selectedProfileBackupAddress, {
+      ...recoveredProfile,
+      storage: {
+        ...(recoveredProfile.storage || {}),
+        contentHash: pointerRecord.contentHash || recoveredProfile.storage?.contentHash || '',
+        cidReadyPointer: pointerRecord.cidReadyPointer || recoveredProfile.storage?.cidReadyPointer || '',
+        signedAt: pointerRecord.createdAt || recoveredProfile.storage?.signedAt || '',
+        hasSignature: Boolean(pointerRecord.signature || recoveredProfile.storage?.hasSignature),
+        lastRecoveredAt: new Date().toISOString()
+      }
+    });
+    setProgressState((current) => ({
+      ...current,
+      ...(recoveredProfile.progress || {})
+    }));
+    setPaperState(readRecoveredPaperState(selectedProfileBackupAddress));
+    setProfileBackupStatus(`Saved replay state restored for ${shortAddress(selectedProfileBackupAddress)}. Paper cash, progress, and wallet-linked history are back on this device.`);
   }
 
   function openDeveloperMode() {
@@ -18248,7 +18451,7 @@ function PaperTradingInner() {
         open={walletModalOpen}
         onClose={() => setWalletModalOpen(false)}
         onConnect={handleConnect}
-        onDisconnect={() => disconnect()}
+        onDisconnect={handleWalletDisconnect}
         onSaveNickname={handleSaveWalletNickname}
         isPending={isPending && pendingConnector?.name?.toLowerCase().includes('metamask')}
         isConnected={isConnected}
@@ -18262,6 +18465,19 @@ function PaperTradingInner() {
         nicknameFeedback={walletNicknameFeedback}
         errorText={walletError}
         hasMetaMaskInstalled={hasMetaMaskInstalled}
+        isProfileSigning={isRiskSigning}
+        profileBackupAccounts={profileBackupAccounts}
+        selectedProfileBackupAddress={selectedProfileBackupAddress}
+        onSelectedProfileBackupAddressChange={setSelectedProfileBackupAddress}
+        onSignProfileBackup={handleSignProfileBackup}
+        onRecoverSelectedProfileBackup={handleRecoverSelectedProfileBackup}
+        profileBackupSummaryText={profileBackupStatus || (
+          isConnected
+            ? `Connected as ${walletDisplayName}. Sign a replay backup, or recover a saved snapshot for this same wallet.`
+            : profileBackupAccounts.length
+              ? `${profileBackupAccounts.length} historical backup${profileBackupAccounts.length === 1 ? '' : 's'} found on this device. Connect the matching MetaMask account before recovery.`
+              : 'Connect MetaMask to create or recover a signed replay profile backup.'
+        )}
       />
       <DeveloperModeModal
         open={devModeOpen}

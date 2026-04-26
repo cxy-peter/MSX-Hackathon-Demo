@@ -5,6 +5,7 @@ import {
   useAccount,
   useChainId,
   useConnect,
+  useDisconnect,
   useReadContract,
   useSignMessage,
   useSwitchChain,
@@ -36,10 +37,12 @@ import {
 } from './walletNickname';
 import {
   getWealthSpendableCash,
+  getWalletProfilePointerKey,
   getWalletProfileSummary,
   readRecoveredPaperState,
   readRecoveredWealthState,
   readWalletProfile,
+  signAndStoreProfilePointer,
   writeWalletProfilePatch
 } from './walletProfileStore';
 
@@ -48,6 +51,7 @@ const BADGE_CONTRACT_ADDRESS = import.meta.env.VITE_BADGE_CONTRACT_ADDRESS || ''
 const WEALTH_VAULT_ADDRESS = import.meta.env.VITE_WEALTH_VAULT_ADDRESS || '';
 const badgeContractConfigured = isAddress(BADGE_CONTRACT_ADDRESS);
 const wealthVaultConfigured = isAddress(WEALTH_VAULT_ADDRESS);
+const PROFILE_BACKUP_POINTER_STORAGE_PREFIX = 'msx-wallet-profile-pointer-';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BADGE_TYPES = {
   welcome: 1,
@@ -97,6 +101,7 @@ const WEALTH_ACTIVITY_LIMIT = 12;
 const DEV_MODE_USERNAME = 'msxadmin';
 const DEV_MODE_PASSWORD = 'msx2026';
 const DEV_AUTH_STORAGE_KEY = 'msx-dev-auth';
+const WEALTH_TASK_TOKEN_OFFSET = 200;
 const SETTLEMENT_ACTION_OPTIONS = [
   { id: 'roll', label: 'Roll into next term', helper: 'Settle the current receipt at the projected NAV, then reopen the same product with a new basis. This is the demo rollover path.' },
   { id: 'transfer', label: 'Transfer into another product', helper: 'Settle this receipt first, then remint the released value into the transfer target you pick below.' },
@@ -460,6 +465,10 @@ function normalizeWealthTimelineFloat(payload, viewport = getFloatingTimelineVie
 
 const WEALTH_TASK_BADGES = { subscribe: 'W1', settlement: 'W2' };
 const WEALTH_TASK_TYPES = { subscribe: 1, settlement: 2 };
+const WEALTH_TASK_TOKEN_IDS = {
+  subscribe: WEALTH_TASK_TOKEN_OFFSET + WEALTH_TASK_TYPES.subscribe,
+  settlement: WEALTH_TASK_TOKEN_OFFSET + WEALTH_TASK_TYPES.settlement
+};
 const WEALTH_AMOUNT_PRESET_VALUES = [1000, 5000, 10000, 25000, 50000, 100000];
 const WEALTH_SETTLEMENT_POLICIES = {
   'superstate-ustb': {
@@ -686,6 +695,16 @@ const wealthVaultAbi = [
   },
   {
     type: 'function',
+    name: 'balanceOf',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'account', type: 'address' },
+      { name: 'id', type: 'uint256' }
+    ],
+    outputs: [{ name: '', type: 'uint256' }]
+  },
+  {
+    type: 'function',
     name: 'markWealthTask',
     stateMutability: 'nonpayable',
     inputs: [{ name: 'taskId', type: 'uint8' }],
@@ -701,6 +720,16 @@ function shortAddress(address) {
 function shortHash(value) {
   if (!value || /^0x0+$/.test(value)) return 'No attestation root yet';
   return `${value.slice(0, 10)}...${value.slice(-8)}`;
+}
+
+function hasPositiveOnchainBalance(value) {
+  if (value === null || value === undefined) return false;
+
+  try {
+    return BigInt(value) > 0n;
+  } catch {
+    return false;
+  }
 }
 
 function formatOnchainTimestamp(value) {
@@ -903,6 +932,45 @@ function formatSignedValue(value, hidden, digits = 0, suffix = ' PT') {
   })}${suffix}`;
 }
 
+function profileBackupTimeValue(value) {
+  const time = new Date(value || '').getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function formatProfileBackupSignedAt(value) {
+  const time = profileBackupTimeValue(value);
+  return time ? new Date(time).toLocaleString() : 'unsaved time';
+}
+
+function listProfileBackupAccounts() {
+  if (typeof window === 'undefined' || !window.localStorage) return [];
+
+  const accounts = [];
+  const seen = new Set();
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (!key || !key.startsWith(PROFILE_BACKUP_POINTER_STORAGE_PREFIX)) continue;
+
+    const record = readStorageJson(key, null);
+    const recordAddress = String(record?.address || record?.profile?.address || key.slice(PROFILE_BACKUP_POINTER_STORAGE_PREFIX.length) || '').toLowerCase();
+    if (!recordAddress || recordAddress === 'guest' || seen.has(recordAddress) || !record?.profile) continue;
+
+    const summary = getWalletProfileSummary(record.profile);
+    const nickname = readWalletNickname(recordAddress);
+    const signedAt = record.createdAt || record.profile?.storage?.signedAt || '';
+    seen.add(recordAddress);
+    accounts.push({
+      address: recordAddress,
+      label: getWalletDisplayName(recordAddress, nickname, shortAddress),
+      signedAt,
+      signedLabel: formatProfileBackupSignedAt(signedAt),
+      availablePT: summary.availablePT
+    });
+  }
+
+  return accounts.sort((left, right) => profileBackupTimeValue(right.signedAt) - profileBackupTimeValue(left.signedAt));
+}
+
 function MetaMaskIcon({ className = '' }) {
   return (
     <div className={`metamask-icon ${className}`.trim()} aria-hidden="true">
@@ -924,6 +992,7 @@ function WealthWalletModal({
   open,
   onClose,
   onConnect,
+  onDisconnect,
   onSaveNickname,
   isPending,
   isConnected,
@@ -932,7 +1001,14 @@ function WealthWalletModal({
   onNicknameDraftChange,
   nicknameFeedback,
   errorText,
-  hasMetaMaskInstalled
+  hasMetaMaskInstalled,
+  isProfileSigning = false,
+  profileBackupAccounts = [],
+  selectedProfileBackupAddress = '',
+  onSelectedProfileBackupAddressChange,
+  onSignProfileBackup,
+  onRecoverSelectedProfileBackup,
+  profileBackupSummaryText
 }) {
   if (!open) return null;
 
@@ -945,13 +1021,17 @@ function WealthWalletModal({
         <div className="wallet-modal-pane wallet-modal-sidebar">
           <div className="wallet-modal-title">RiskLens Wallet</div>
           <div className="wallet-modal-subtitle">Wealth wallet access</div>
-          <button className={`wallet-option ${isPending || !hasMetaMaskInstalled ? 'disabled' : ''}`} onClick={onConnect} disabled={isPending || !hasMetaMaskInstalled}>
+          <button
+            className={`wallet-option ${isConnected ? 'connected' : ''} ${isPending || (!isConnected && !hasMetaMaskInstalled) ? 'disabled' : ''}`}
+            onClick={isConnected ? onDisconnect : onConnect}
+            disabled={isPending || (!isConnected && !hasMetaMaskInstalled)}
+          >
             <MetaMaskIcon className="wallet-option-icon" />
             <div>
-              <div className="wallet-option-title">MetaMask</div>
+              <div className="wallet-option-title">{isConnected ? 'MetaMask connected' : 'MetaMask'}</div>
               <div className="wallet-option-copy">
                 {isConnected
-                  ? `Wallet connected ${walletDisplayName}`
+                  ? `Wallet connected ${walletDisplayName}. Click again to disconnect.`
                   : !hasMetaMaskInstalled
                     ? 'Install browser extension first'
                     : isPending
@@ -977,7 +1057,7 @@ function WealthWalletModal({
             </div>
           ) : null}
         </div>
-        <div className="wallet-modal-pane wallet-modal-main">
+        <div className={`wallet-modal-pane wallet-modal-main ${isConnected ? 'wallet-modal-main-connected' : ''}`}>
           <MetaMaskIcon className="wallet-modal-hero wallet-modal-hero-metamask" />
           <div className="wallet-modal-status">
             {isConnected
@@ -993,12 +1073,91 @@ function WealthWalletModal({
               ? `This Wealth page is using wallet ${walletDisplayName}. The wallet-linked positions, receipt balances, and remaining PT all follow this connected address.`
               : 'Connect MetaMask to keep the Wealth ledger, receipt balances, and Paper carry-over tied to the same wallet on this device.'}
           </div>
+          {hasMetaMaskInstalled ? (
+            <div className="wallet-nickname-panel">
+              <label className="wallet-nickname-label">
+                Wallet nickname
+                <input
+                  value={nicknameDraft}
+                  onChange={(event) => onNicknameDraftChange(event.target.value)}
+                  placeholder={isConnected ? 'Rename this wallet' : 'Set a nickname before connect'}
+                  maxLength={WALLET_NICKNAME_MAX_LENGTH}
+                />
+              </label>
+              <div className="wallet-nickname-help">
+                {isConnected
+                  ? 'Saved locally on this device and reused anywhere this wallet is recognized.'
+                  : 'Optional. If you connect now, this nickname will replace the short wallet address.'}
+              </div>
+              {isConnected ? (
+                <button className="ghost-btn compact" onClick={onSaveNickname} disabled={isPending}>
+                  Save nickname
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {isConnected || profileBackupAccounts.length ? (
+            <div className="wallet-modal-backup-card wealth-profile-storage-card profile-backup-card">
+              <div className="profile-backup-main">
+                <div className="eyebrow">Wallet backup + recovery</div>
+                <div className="wealth-profile-storage-title">Keep Wealth state recoverable</div>
+                <div className="muted">
+                  Sign a local snapshot for this wallet, or pick a historical backup and connect the matching MetaMask account before recovery.
+                </div>
+                {profileBackupSummaryText ? <div className="wealth-inline-note wallet-modal-backup-note">{profileBackupSummaryText}</div> : null}
+              </div>
+              <div className="profile-backup-side">
+                <div className="wallet-modal-backup-actions profile-backup-actions">
+                  <button type="button" className="ghost-btn compact" onClick={() => onSignProfileBackup?.()} disabled={!isConnected || isPending || isProfileSigning}>
+                    {isProfileSigning ? 'Await wallet' : 'Sign optional backup'}
+                  </button>
+                </div>
+                <div className="profile-backup-history">
+                  <label>
+                    Historical account login
+                    <select
+                      value={selectedProfileBackupAddress}
+                      onChange={(event) => onSelectedProfileBackupAddressChange?.(event.target.value)}
+                      disabled={!profileBackupAccounts.length}
+                    >
+                      {profileBackupAccounts.length ? (
+                        profileBackupAccounts.map((account) => (
+                          <option key={account.address} value={account.address}>
+                            {account.label} - {account.signedLabel}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No saved backup on this device yet</option>
+                      )}
+                    </select>
+                  </label>
+                  <div className="profile-backup-history-copy">
+                    Backup stores demo state only. It does not recover keys, so MetaMask still needs to connect this session.
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary-btn compact"
+                    onClick={() => onRecoverSelectedProfileBackup?.()}
+                    disabled={!selectedProfileBackupAddress || !isConnected || isPending}
+                  >
+                    Use selected backup
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
           {!isConnected && hasMetaMaskInstalled ? (
             <button className="primary-btn" onClick={onConnect} disabled={isPending}>
               {isPending ? 'Connecting...' : 'Connect MetaMask'}
             </button>
           ) : null}
+          {isConnected ? (
+            <button className="secondary-btn" onClick={onDisconnect}>
+              Disconnect wallet
+            </button>
+          ) : null}
           {errorText ? <div className="env-hint" style={{ maxWidth: 360 }}>{errorText}</div> : null}
+          {nicknameFeedback ? <div className="env-hint" style={{ maxWidth: 360 }}>{nicknameFeedback}</div> : null}
         </div>
       </div>
     </div>
@@ -3249,13 +3408,15 @@ function WealthInner() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const { connect, connectors, isPending } = useConnect();
+  const { disconnect } = useDisconnect();
   const { switchChainAsync, isPending: isSwitchingChain } = useSwitchChain();
   const {
-    data: wealthTaskClaimHash,
     error: wealthTaskClaimError,
     isPending: isWealthTaskClaimSubmitting,
     writeContractAsync: writeWealthTaskContractAsync
   } = useWriteContract();
+  const [wealthTaskClaimHash, setWealthTaskClaimHash] = useState(undefined);
+  const [wealthClaimRecipientKey, setWealthClaimRecipientKey] = useState('');
   const { isLoading: isWealthTaskClaimConfirming, isSuccess: wealthTaskClaimConfirmed } =
     useWaitForTransactionReceipt({
       hash: wealthTaskClaimHash
@@ -3267,6 +3428,8 @@ function WealthInner() {
   const [walletNicknameDraft, setWalletNicknameDraft] = useState('');
   const [pendingWalletNickname, setPendingWalletNickname] = useState(null);
   const [walletNicknameFeedback, setWalletNicknameFeedback] = useState('');
+  const [profileBackupStatus, setProfileBackupStatus] = useState('');
+  const [selectedProfileBackupAddress, setSelectedProfileBackupAddress] = useState('');
   const [devModeOpen, setDevModeOpen] = useState(false);
   const [devModeAuthed, setDevModeAuthed] = useState(false);
   const [devModeUsername, setDevModeUsername] = useState('');
@@ -3340,6 +3503,11 @@ function WealthInner() {
     () => getWalletDisplayName(address, walletNickname, shortAddress),
     [address, walletNickname]
   );
+  const connectedAddressKey = useMemo(() => (address ? address.toLowerCase() : ''), [address]);
+  const profileBackupAccounts = useMemo(
+    () => listProfileBackupAccounts(),
+    [connectedAddressKey, profileBackupStatus, walletNickname]
+  );
 
   const progressStorageKey = useMemo(() => getProgressStorageKey(address), [address]);
   const paperReplayStateKey = useMemo(() => getPaperReplayStateKey(address), [address]);
@@ -3352,6 +3520,27 @@ function WealthInner() {
     setWalletNicknameDraft(savedNickname);
     setWalletNicknameFeedback('');
   }, [address]);
+
+  useEffect(() => {
+    setProfileBackupStatus('');
+  }, [connectedAddressKey]);
+
+  useEffect(() => {
+    if (!profileBackupAccounts.length) {
+      setSelectedProfileBackupAddress('');
+      return;
+    }
+
+    setSelectedProfileBackupAddress((current) => {
+      const currentStillExists = current && profileBackupAccounts.some((account) => account.address === current);
+      if (currentStillExists) return current;
+
+      const currentWalletBackup = connectedAddressKey
+        ? profileBackupAccounts.find((account) => account.address === connectedAddressKey)
+        : null;
+      return currentWalletBackup?.address || profileBackupAccounts[0].address;
+    });
+  }, [connectedAddressKey, profileBackupAccounts]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -3532,11 +3721,37 @@ function WealthInner() {
       enabled: wealthVaultConfigured && Boolean(address)
     }
   });
+  const {
+    data: wealthSubscribeTaskCollectibleBalance,
+    refetch: refetchWealthSubscribeTaskCollectible
+  } = useReadContract({
+    address: wealthVaultConfigured ? WEALTH_VAULT_ADDRESS : undefined,
+    abi: wealthVaultAbi,
+    functionName: 'balanceOf',
+    args: address ? [address, WEALTH_TASK_TOKEN_IDS.subscribe] : undefined,
+    chainId: SEPOLIA_CHAIN_ID,
+    query: {
+      enabled: wealthVaultConfigured && Boolean(address)
+    }
+  });
   const { data: wealthSettlementTaskOnchain, refetch: refetchWealthSettlementTask } = useReadContract({
     address: wealthVaultConfigured ? WEALTH_VAULT_ADDRESS : undefined,
     abi: wealthVaultAbi,
     functionName: 'hasWealthTask',
     args: address ? [address, WEALTH_TASK_TYPES.settlement] : undefined,
+    chainId: SEPOLIA_CHAIN_ID,
+    query: {
+      enabled: wealthVaultConfigured && Boolean(address)
+    }
+  });
+  const {
+    data: wealthSettlementTaskCollectibleBalance,
+    refetch: refetchWealthSettlementTaskCollectible
+  } = useReadContract({
+    address: wealthVaultConfigured ? WEALTH_VAULT_ADDRESS : undefined,
+    abi: wealthVaultAbi,
+    functionName: 'balanceOf',
+    args: address ? [address, WEALTH_TASK_TOKEN_IDS.settlement] : undefined,
     chainId: SEPOLIA_CHAIN_ID,
     query: {
       enabled: wealthVaultConfigured && Boolean(address)
@@ -3884,8 +4099,20 @@ function WealthInner() {
   const wealthSettlementTaskDone =
     wealthSettlementDetailActionDone ||
     Object.keys(displayWealthState.collateral || {}).length > 0;
-  const wealthSubscribeTaskClaimed = Boolean(localWealthTaskClaims.subscribe || wealthSubscribeTaskOnchain);
-  const wealthSettlementTaskClaimed = Boolean(localWealthTaskClaims.settlement || wealthSettlementTaskOnchain);
+  const wealthSubscribeTaskCollectibleOwned = hasPositiveOnchainBalance(wealthSubscribeTaskCollectibleBalance);
+  const wealthSettlementTaskCollectibleOwned = hasPositiveOnchainBalance(wealthSettlementTaskCollectibleBalance);
+  const wealthSubscribeTaskClaimedOnchain = Boolean(
+    wealthSubscribeTaskOnchain && wealthSubscribeTaskCollectibleOwned
+  );
+  const wealthSettlementTaskClaimedOnchain = Boolean(
+    wealthSettlementTaskOnchain && wealthSettlementTaskCollectibleOwned
+  );
+  const wealthSubscribeTaskClaimed = wealthVaultConfigured
+    ? wealthSubscribeTaskClaimedOnchain
+    : Boolean(localWealthTaskClaims.subscribe);
+  const wealthSettlementTaskClaimed = wealthVaultConfigured
+    ? wealthSettlementTaskClaimedOnchain
+    : Boolean(localWealthTaskClaims.settlement);
   const wealthSubscribeQuestDone = Boolean(
     wealthSubscribeTaskClaimed || (isConnected && wealthSubscribeDetailActionDone && wealthSubscribeTaskDone)
   );
@@ -4100,9 +4327,8 @@ function WealthInner() {
   const walletProfileProgress = walletProfileSnapshot.progress || {};
   const walletProfileWealthTaskClaims = normalizeWealthTaskClaims(walletProfileProgress.wealthTaskClaims);
   const effectiveWealthTaskClaims = {
-    ...walletProfileWealthTaskClaims,
-    subscribe: Boolean(walletProfileWealthTaskClaims.subscribe || wealthSubscribeTaskClaimed),
-    settlement: Boolean(walletProfileWealthTaskClaims.settlement || wealthSettlementTaskClaimed)
+    subscribe: Boolean((!wealthVaultConfigured && walletProfileWealthTaskClaims.subscribe) || wealthSubscribeTaskClaimed),
+    settlement: Boolean((!wealthVaultConfigured && walletProfileWealthTaskClaims.settlement) || wealthSettlementTaskClaimed)
   };
   const milestoneCount = [
     isConnected,
@@ -4692,17 +4918,28 @@ function WealthInner() {
   const selectedWealthTaskReadyToClaim = Boolean(wealthTaskReadyToClaimById[selectedWealthTask.id]);
   const selectedWealthTaskClaimed =
     selectedWealthTask.id === 'settlement' ? wealthSettlementTaskClaimed : wealthSubscribeTaskClaimed;
-  const selectedWealthTaskClaimedOnchain =
+  const selectedWealthTaskFlagOnchain =
     selectedWealthTask.id === 'settlement' ? Boolean(wealthSettlementTaskOnchain) : Boolean(wealthSubscribeTaskOnchain);
+  const selectedWealthTaskCollectibleOwned =
+    selectedWealthTask.id === 'settlement'
+      ? wealthSettlementTaskCollectibleOwned
+      : wealthSubscribeTaskCollectibleOwned;
+  const selectedWealthTaskTokenId =
+    selectedWealthTask.id === 'settlement' ? WEALTH_TASK_TOKEN_IDS.settlement : WEALTH_TASK_TOKEN_IDS.subscribe;
+  const selectedWealthTaskClaimedOnchain =
+    selectedWealthTask.id === 'settlement' ? wealthSettlementTaskClaimedOnchain : wealthSubscribeTaskClaimedOnchain;
   const selectedWealthTaskClaiming =
     wealthClaimTaskId === selectedWealthTask.id &&
-    (isWealthTaskClaimSubmitting || isWealthTaskClaimConfirming || isSwitchingChain);
+    (isWealthTaskClaimSubmitting ||
+      isWealthTaskClaimConfirming ||
+      isSwitchingChain ||
+      (Boolean(wealthTaskClaimHash) && wealthTaskClaimConfirmed && !selectedWealthTaskClaimedOnchain));
   const selectedWealthTaskClaimStatus = selectedWealthTaskClaimed
     ? {
         tone: 'done',
         text: 'Claimed',
         copy: selectedWealthTaskClaimedOnchain
-          ? `Sepolia task badge confirmed. +${WEALTH_MILESTONE_BONUS.toLocaleString()} PT is included in shared wallet buying power.`
+          ? `Sepolia collectible token #${selectedWealthTaskTokenId} is confirmed in this wallet. +${WEALTH_MILESTONE_BONUS.toLocaleString()} PT is included in shared wallet buying power.`
           : `Local badge claimed. +${WEALTH_MILESTONE_BONUS.toLocaleString()} PT is included in shared wallet buying power.`,
         actionLabel: 'Already claimed',
         actionDisabled: true
@@ -4712,9 +4949,9 @@ function WealthInner() {
           tone: 'ready',
           text: '3/3 ready',
           copy: wealthVaultConfigured
-            ? '3/3 detail actions are detected. Claim now submits markWealthTask on Sepolia, then the PT reward is recorded after confirmation.'
+            ? `3/3 detail actions are detected. Claim submits markWealthTask on Sepolia, then Wealth waits until token #${selectedWealthTaskTokenId} appears in the wallet collectible balance.`
             : '3/3 detail actions are detected. This build can record the local reward; configure the Wealth vault address to require a Sepolia claim.',
-          actionLabel: wealthVaultConfigured ? 'Claim onchain badge + PT' : 'Get local badge + PT',
+          actionLabel: wealthVaultConfigured ? 'Claim Sepolia collectible + PT' : 'Get local badge + PT',
           actionDisabled: selectedWealthTaskClaiming
         }
       : {
@@ -4724,7 +4961,25 @@ function WealthInner() {
           actionLabel: 'Complete task first',
           actionDisabled: true
         };
-  const selectedWealthTaskClaimSteps = [];
+  const selectedWealthTaskClaimSteps = wealthVaultConfigured
+    ? [
+        {
+          label: 'Sepolia vault configured',
+          done: true,
+          copy: `${shortAddress(WEALTH_VAULT_ADDRESS)} / ERC-1155 token #${selectedWealthTaskTokenId}`
+        },
+        {
+          label: 'Task flag read onchain',
+          done: selectedWealthTaskFlagOnchain,
+          copy: 'Reads hasWealthTask(wallet, taskId) from Sepolia.'
+        },
+        {
+          label: 'Wallet collectible owned',
+          done: selectedWealthTaskCollectibleOwned,
+          copy: 'Reads balanceOf(wallet, tokenId) before showing Claimed.'
+        }
+      ]
+    : [];
   const timelinePreviewRows = useMemo(() => {
     const rows = portfolioRows.length
       ? portfolioRows.map((row) => ({ ...row, previewOnly: false }))
@@ -4954,23 +5209,89 @@ function WealthInner() {
     if (!wealthTaskClaimError) return;
     const message = String(wealthTaskClaimError?.shortMessage || wealthTaskClaimError?.message || wealthTaskClaimError);
     setWealthClaimTaskId('');
+    setWealthTaskClaimHash(undefined);
+    setWealthClaimRecipientKey('');
     setFeedback(message.toLowerCase().includes('rejected') ? 'Wealth badge claim was cancelled in MetaMask.' : message);
   }, [wealthTaskClaimError]);
 
   useEffect(() => {
-    if (!wealthTaskClaimConfirmed || !wealthClaimTaskId || !address) return;
+    if (!wealthTaskClaimConfirmed || !wealthClaimTaskId || !address || !wealthVaultConfigured) return;
+    const currentAddressKey = String(address).toLowerCase();
+    if (wealthClaimRecipientKey && wealthClaimRecipientKey !== currentAddressKey) {
+      setFeedback('Sepolia claim confirmed for a different wallet. Reconnect that wallet before recording the reward.');
+      setWealthClaimTaskId('');
+      setWealthTaskClaimHash(undefined);
+      setWealthClaimRecipientKey('');
+      return;
+    }
+
+    const onchainCollectibleConfirmed =
+      wealthClaimTaskId === 'settlement' ? wealthSettlementTaskClaimedOnchain : wealthSubscribeTaskClaimedOnchain;
+    if (onchainCollectibleConfirmed) {
+      recordWealthTaskClaim(wealthClaimTaskId, 'onchain');
+      setWealthClaimTaskId('');
+      setWealthTaskClaimHash(undefined);
+      setWealthClaimRecipientKey('');
+      return;
+    }
+
     const refetchTask =
       wealthClaimTaskId === 'settlement' ? refetchWealthSettlementTask : refetchWealthSubscribeTask;
+    const refetchCollectible =
+      wealthClaimTaskId === 'settlement'
+        ? refetchWealthSettlementTaskCollectible
+        : refetchWealthSubscribeTaskCollectible;
 
-    void Promise.allSettled([refetchTask?.()]);
-    recordWealthTaskClaim(wealthClaimTaskId, 'onchain');
-    setWealthClaimTaskId('');
+    let cancelled = false;
+
+    async function verifyClaimedCollectible() {
+      setFeedback('Sepolia transaction confirmed. Reading the wallet collectible before marking this badge claimed.');
+      const [taskResult, collectibleResult] = await Promise.allSettled([
+        refetchTask?.(),
+        refetchCollectible?.()
+      ]);
+
+      if (cancelled) return;
+
+      const taskFlagConfirmed = taskResult.status === 'fulfilled' ? Boolean(taskResult.value?.data) : false;
+      const collectibleOwned =
+        collectibleResult.status === 'fulfilled' && hasPositiveOnchainBalance(collectibleResult.value?.data);
+
+      if (taskFlagConfirmed && collectibleOwned) {
+        recordWealthTaskClaim(wealthClaimTaskId, 'onchain');
+        setWealthClaimTaskId('');
+        setWealthTaskClaimHash(undefined);
+        setWealthClaimRecipientKey('');
+        return;
+      }
+
+      setFeedback(
+        taskFlagConfirmed
+          ? 'Sepolia marked the task, but the wallet collectible balance is not visible yet. Refresh the Sepolia read before treating it as claimed.'
+          : 'Sepolia transaction confirmed, but Wealth could not read the task badge from the vault yet. Refresh and retry the claim only if it stays missing.'
+      );
+      setWealthClaimTaskId('');
+      setWealthTaskClaimHash(undefined);
+      setWealthClaimRecipientKey('');
+    }
+
+    void verifyClaimedCollectible();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     address,
+    refetchWealthSettlementTaskCollectible,
     refetchWealthSettlementTask,
+    refetchWealthSubscribeTaskCollectible,
     refetchWealthSubscribeTask,
+    wealthClaimRecipientKey,
     wealthClaimTaskId,
-    wealthTaskClaimConfirmed
+    wealthSettlementTaskClaimedOnchain,
+    wealthSubscribeTaskClaimedOnchain,
+    wealthTaskClaimConfirmed,
+    wealthVaultConfigured
   ]);
 
   function recordWealthTaskClaim(taskId, sourceLabel = 'local') {
@@ -5017,6 +5338,10 @@ function WealthInner() {
   }
 
   function handleConnect() {
+    if (!hasMetaMaskInstalled) {
+      setWalletError('MetaMask is not installed in this browser yet. Install the extension, pin it to the toolbar, and reopen this wallet panel.');
+      return;
+    }
     if (!metaMaskConnector) {
       setWalletError('MetaMask connector is not available in this browser.');
       return;
@@ -5025,6 +5350,80 @@ function WealthInner() {
     setWalletNicknameFeedback('');
     setPendingWalletNickname(normalizeWalletNickname(walletNicknameDraft) || null);
     connect({ connector: metaMaskConnector });
+  }
+
+  function handleWalletDisconnect() {
+    setWalletError('');
+    setWalletNicknameFeedback('');
+    setProfileBackupStatus('Wallet disconnected. Wealth backups stay on this device; reconnect the same MetaMask account to recover them.');
+    disconnect();
+  }
+
+  async function handleSignProfileBackup() {
+    if (!isConnected || !address) {
+      setProfileBackupStatus('Connect MetaMask first so the Wealth backup can be tied to the current account.');
+      return;
+    }
+
+    setProfileBackupStatus('Opening MetaMask signature for this Wealth profile...');
+    try {
+      const record = await signAndStoreProfilePointer(
+        address,
+        {
+          ...readWalletProfile(address),
+          progress: progressState,
+          wealth: wealthState,
+          paper: paperProfileState
+        },
+        signMessageAsync
+      );
+      setProfileBackupStatus(`Wealth profile backup signed for ${shortAddress(address)}. Content hash ${record.contentHash.slice(0, 12)}...`);
+    } catch (error) {
+      setProfileBackupStatus(String(error?.message || 'Wealth profile backup signature was cancelled.'));
+    }
+  }
+
+  function handleRecoverSelectedProfileBackup() {
+    if (!selectedProfileBackupAddress) {
+      setProfileBackupStatus('No historical Wealth backup is selected on this device yet.');
+      return;
+    }
+
+    if (!isConnected || !address) {
+      setProfileBackupStatus('Connect MetaMask first. A backup can identify a historical account, but the wallet still has to approve this session.');
+      return;
+    }
+
+    if (selectedProfileBackupAddress !== connectedAddressKey) {
+      setProfileBackupStatus(`Selected backup belongs to ${shortAddress(selectedProfileBackupAddress)}. Switch MetaMask to that account, reconnect, then recover it here.`);
+      return;
+    }
+
+    const pointerRecord = readStorageJson(getWalletProfilePointerKey(selectedProfileBackupAddress), null);
+    if (!pointerRecord?.profile) {
+      setProfileBackupStatus(`No signed backup was found for ${shortAddress(selectedProfileBackupAddress)} on this device yet.`);
+      return;
+    }
+
+    const recoveredProfile = pointerRecord.profile;
+    writeWalletProfilePatch(selectedProfileBackupAddress, {
+      ...recoveredProfile,
+      storage: {
+        ...(recoveredProfile.storage || {}),
+        contentHash: pointerRecord.contentHash || recoveredProfile.storage?.contentHash || '',
+        cidReadyPointer: pointerRecord.cidReadyPointer || recoveredProfile.storage?.cidReadyPointer || '',
+        signedAt: pointerRecord.createdAt || recoveredProfile.storage?.signedAt || '',
+        hasSignature: Boolean(pointerRecord.signature || recoveredProfile.storage?.hasSignature),
+        lastRecoveredAt: new Date().toISOString()
+      }
+    });
+    setProgressState((current) => ({
+      ...current,
+      ...(recoveredProfile.progress || {})
+    }));
+    setWealthState(readRecoveredWealthState(selectedProfileBackupAddress));
+    setPaperProfileState(readRecoveredPaperState(selectedProfileBackupAddress));
+    setProfileBackupStatus(`Saved Wealth state restored for ${shortAddress(selectedProfileBackupAddress)}. Positions, cash, receipt history, and Paper carry context are back on this device.`);
   }
 
   async function handleClaimWealthTaskBadge(taskId) {
@@ -5056,14 +5455,16 @@ function WealthInner() {
     }
 
     try {
-      setFeedback('Open MetaMask to claim the Wealth task badge on Sepolia.');
+      setFeedback(`Open MetaMask to claim Sepolia collectible token #${WEALTH_TASK_TOKEN_IDS[taskId]}.`);
+      setWealthTaskClaimHash(undefined);
+      setWealthClaimRecipientKey(String(address).toLowerCase());
 
       if (chainId !== SEPOLIA_CHAIN_ID) {
         await switchChainAsync({ chainId: SEPOLIA_CHAIN_ID });
       }
 
       setWealthClaimTaskId(taskId);
-      await writeWealthTaskContractAsync({
+      const claimHash = await writeWealthTaskContractAsync({
         address: WEALTH_VAULT_ADDRESS,
         abi: wealthVaultAbi,
         functionName: 'markWealthTask',
@@ -5071,8 +5472,11 @@ function WealthInner() {
         chainId: SEPOLIA_CHAIN_ID,
         gas: 220000n
       });
+      setWealthTaskClaimHash(claimHash);
     } catch (claimError) {
       setWealthClaimTaskId('');
+      setWealthTaskClaimHash(undefined);
+      setWealthClaimRecipientKey('');
       const message = String(claimError?.shortMessage || claimError?.message || claimError || '');
       setFeedback(message.toLowerCase().includes('rejected') ? 'Wealth badge claim was cancelled in MetaMask.' : message);
     }
@@ -9235,6 +9639,7 @@ function WealthInner() {
         open={walletModalOpen}
         onClose={() => setWalletModalOpen(false)}
         onConnect={handleConnect}
+        onDisconnect={handleWalletDisconnect}
         onSaveNickname={handleSaveWalletNickname}
         isPending={isPending}
         isConnected={isConnected}
@@ -9247,6 +9652,19 @@ function WealthInner() {
         nicknameFeedback={walletNicknameFeedback}
         errorText={walletError}
         hasMetaMaskInstalled={hasMetaMaskInstalled}
+        isProfileSigning={isWealthSigning}
+        profileBackupAccounts={profileBackupAccounts}
+        selectedProfileBackupAddress={selectedProfileBackupAddress}
+        onSelectedProfileBackupAddressChange={setSelectedProfileBackupAddress}
+        onSignProfileBackup={handleSignProfileBackup}
+        onRecoverSelectedProfileBackup={handleRecoverSelectedProfileBackup}
+        profileBackupSummaryText={profileBackupStatus || (
+          isConnected
+            ? `Connected as ${walletDisplayName}. Sign a Wealth backup, or recover a saved snapshot for this same wallet.`
+            : profileBackupAccounts.length
+              ? `${profileBackupAccounts.length} historical backup${profileBackupAccounts.length === 1 ? '' : 's'} found on this device. Connect the matching MetaMask account before recovery.`
+              : 'Connect MetaMask to create or recover a signed Wealth profile backup.'
+        )}
       />
       <DeveloperModeModal
         open={devModeOpen}

@@ -586,7 +586,14 @@ select option {
 
 .wallet-modal-main-connected {
   align-content: flex-start;
-  padding-top: 72px;
+  padding-top: 36px;
+  padding-bottom: 24px;
+}
+
+.wallet-modal-main-connected .wallet-modal-hero {
+  width: 68px;
+  height: 68px;
+  border-radius: 20px;
 }
 
 .wallet-modal-close {
@@ -634,6 +641,11 @@ select option {
 
 .wallet-option.disabled {
   opacity: 0.85;
+}
+
+.wallet-option.connected {
+  border-color: rgba(164,255,47,0.28);
+  background: linear-gradient(180deg, rgba(164,255,47,0.14), rgba(34,109,64,0.1));
 }
 
 .wallet-option-icon {
@@ -695,6 +707,7 @@ select option {
 .wallet-modal-backup-card {
   width: min(460px, 100%);
   text-align: left;
+  font-size: 13px;
 }
 
 .wallet-modal-backup-note {
@@ -3398,7 +3411,7 @@ label {
 .profile-backup-main,
 .profile-backup-side {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .profile-backup-stat-grid,
@@ -3410,8 +3423,8 @@ label {
 
 .profile-backup-stat-card {
   display: grid;
-  gap: 6px;
-  padding: 12px;
+  gap: 4px;
+  padding: 10px;
   border-radius: 16px;
   border: 1px solid rgba(255,255,255,0.08);
   background: rgba(7, 12, 20, 0.28);
@@ -3425,18 +3438,23 @@ label {
 
 .profile-backup-stat-card strong {
   color: var(--text);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.4;
 }
 
 .profile-backup-policy-card {
-  min-height: 108px;
+  min-height: 0;
+}
+
+.profile-backup-policy-card .v {
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .profile-backup-state {
   display: grid;
   gap: 6px;
-  padding: 14px;
+  padding: 12px;
   border-radius: 16px;
   border: 1px solid rgba(255,255,255,0.08);
   background: rgba(255,255,255,0.04);
@@ -3467,6 +3485,40 @@ label {
 .profile-backup-actions .ghost-btn,
 .profile-backup-actions .secondary-btn {
   flex: 1 1 100%;
+}
+
+.profile-backup-history {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.16);
+}
+
+.profile-backup-history label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.profile-backup-history select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  padding: 9px 10px;
+  background: rgba(5, 10, 18, 0.88);
+  color: var(--text);
+  font-weight: 800;
+}
+
+.profile-backup-history-copy {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .wealth-opportunity-section {
