@@ -9,6 +9,7 @@
     "deploy:badge": "hardhat run scripts/deploy-welcome-badge.js --network sepolia",
     "deploy:wealth-vault": "hardhat run scripts/deploy-wealth-vault.js --network sepolia",
     "deploy:replay-badges": "hardhat run scripts/deploy-replay-achievement-badge.js --network sepolia",
+    "deploy:unified-hub": "hardhat run scripts/deploy-unified-demo-hub.js --network sepolia",
     "update:wealth-vault": "hardhat run scripts/update-wealth-vault-state.js --network sepolia",
     "profile-storage:dev": "node scripts/profile-storage-gateway.mjs",
     "refresh:wealth-data": "node scripts/downloadWealthRwaData.mjs"

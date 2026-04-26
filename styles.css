@@ -8465,6 +8465,84 @@ label {
   background: rgba(255,255,255,0.03);
 }
 
+.wealth-lifecycle-map {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+  margin-top: 14px;
+}
+
+.wealth-lifecycle-map.compact {
+  margin-top: 12px;
+}
+
+.wealth-lifecycle-node,
+.wealth-dual-step {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  background: rgba(9,16,28,0.6);
+}
+
+.wealth-lifecycle-node span,
+.wealth-dual-step span {
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--green);
+  background: rgba(164,255,47,0.1);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.wealth-lifecycle-node strong,
+.wealth-dual-step strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.wealth-lifecycle-node small,
+.wealth-dual-step small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.wealth-lifecycle-link {
+  display: grid;
+  place-items: center;
+  color: var(--green);
+  font-weight: 900;
+}
+
+.wealth-dual-visual {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.wealth-dual-visual-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.wealth-dual-step.focus {
+  border-color: rgba(111,165,255,0.24);
+  background: rgba(111,165,255,0.08);
+}
+
+.wealth-dual-branch-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .wealth-action-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -8483,7 +8561,14 @@ label {
   .wealth-task-guide-grid,
   .wealth-recommended-strip,
   .wealth-opportunity-grid.compact,
-  .wealth-settlement-policy-card {
+  .wealth-settlement-policy-card,
+  .wealth-lifecycle-map,
+  .wealth-dual-visual-main,
+  .wealth-dual-branch-grid {
     grid-template-columns: 1fr;
+  }
+
+  .wealth-lifecycle-link {
+    justify-content: start;
   }
 }

@@ -9,7 +9,16 @@ const SEPOLIA_RPC_URL = process.env.SEPOLIA_RPC_URL || 'https://ethereum-sepolia
 
 export default defineConfig({
   plugins: [hardhatEthers],
-  solidity: '0.8.24',
+  solidity: {
+    version: '0.8.24',
+    settings: {
+      viaIR: true,
+      optimizer: {
+        enabled: true,
+        runs: 200
+      }
+    }
+  },
   networks: {
     sepolia: {
       type: 'http',

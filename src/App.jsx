@@ -723,21 +723,29 @@ export default function App() {
       adminUnlocked: false
     });
     const profileProgress = readWalletProfile(address).progress;
+    const initialViewedRiskCards = storedProgress.viewedRiskCards?.length
+      ? storedProgress.viewedRiskCards
+      : profileProgress.viewedRiskCards?.length
+        ? profileProgress.viewedRiskCards
+        : selectedRiskProduct
+          ? [selectedRiskProduct]
+          : [];
 
-    setViewedRiskCards(storedProgress.viewedRiskCards?.length ? storedProgress.viewedRiskCards : profileProgress.viewedRiskCards || []);
-    setGuideCompleted(Boolean(storedProgress.guideCompleted || profileProgress.guideCompleted));
+    setViewedRiskCards(initialViewedRiskCards);
+    setGuideCompleted(Boolean(storedProgress.guideCompleted || profileProgress.guideCompleted || initialViewedRiskCards.length >= 3));
     setQuizCompleted(Boolean(storedProgress.quizCompleted || profileProgress.quizCompleted));
     setPaperTradesCompleted(Math.max(Number(storedProgress.paperTradesCompleted || 0), Number(profileProgress.paperTradesCompleted || 0)));
     setProgressAccountKey(nextProgressAccountKey);
-  }, [address, progressStorageKey]);
+  }, [address, progressStorageKey, selectedRiskProduct]);
 
   useEffect(() => {
     if (!address || progressAccountKey !== connectedAddressKey) return;
     const existingProgress = readStorageJson(progressStorageKey, {});
     const profileProgress = readWalletProfile(address).progress;
+    const nextGuideCompleted = Boolean(guideCompleted || viewedRiskCards.length >= 3);
     const nextProgress = {
       viewedRiskCards,
-      guideCompleted,
+      guideCompleted: nextGuideCompleted,
       quizCompleted,
       paperTradesCompleted,
       homeOnboardingCompleted: Boolean(existingProgress.homeOnboardingCompleted || profileProgress.homeOnboardingCompleted),
@@ -771,6 +779,12 @@ export default function App() {
     web2Intent,
     web3Intent
   ]);
+
+  useEffect(() => {
+    if (viewedRiskCards.length >= 3 && !guideCompleted) {
+      setGuideCompleted(true);
+    }
+  }, [guideCompleted, viewedRiskCards]);
 
   useEffect(() => {
     if (!address) {

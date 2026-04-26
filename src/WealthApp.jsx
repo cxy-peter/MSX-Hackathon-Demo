@@ -76,6 +76,7 @@ const DUAL_CURRENCY_DIRECTION_OPTIONS = [
 ];
 const DETAIL_TOPIC_OPTIONS = [
   { id: 'flow', label: 'Buy / settle / pledge', helper: 'Use this after reading the overview and AI diligence. Buy, time-jump settlement, and collateral pledge live here; redeem only appears when product terms allow it.' },
+  { id: 'receipt', label: 'Receipt detail', helper: 'Plain-English map of what the receipt represents, what settle means, and when pledge is useful.' },
   { id: 'snapshot', label: 'Overview', helper: 'Read the compact one-screen summary: what the product is, what it earns from, and how difficult it is.' },
   { id: 'nav', label: 'Timeline', helper: 'Check the NAV path and time-window result without duplicating the order controls.' },
   { id: 'diligence', label: 'AI Diligence', helper: 'Use this before buying: evidence matrix, red flags, AI memo, and what changed.' },
@@ -287,7 +288,7 @@ const WEALTH_PRODUCT_TYPE_FILTERS = [
   { id: 'privateCredit', label: 'Private Credit' },
 ];
 
-const WEALTH_TASK_BADGES = { identity: 'W1', diligence: 'W2', subscribe: 'W3', settlement: 'W4', collateral: 'W5' };
+const WEALTH_TASK_BADGES = { subscribe: 'W1', settlement: 'W2' };
 const WEALTH_AMOUNT_PRESET_VALUES = [1000, 5000, 10000, 25000, 50000, 100000];
 const WEALTH_SETTLEMENT_POLICIES = {
   'superstate-ustb': {
@@ -926,6 +927,11 @@ function getCategoryIdForProduct(product) {
   return ['cash', 'public', 'private', 'auto', 'earn'].includes(surface) ? surface : 'all';
 }
 
+function isDualInvestmentProduct(product = {}) {
+  const text = `${product.id || ''} ${product.productType || ''} ${product.name || ''} ${product.shortName || ''} ${product.underlying || ''} ${product.yieldSource || ''}`.toLowerCase();
+  return /dual investment|dual currency|dual-btc|buy-the-dip|reverse convertible/.test(text);
+}
+
 function getWealthProductTypeTooltip(category = {}) {
   if (category.id === 'all') return 'Show every productized wealth receipt in the current shelf.';
   if (category.id === 'dual') {
@@ -1081,6 +1087,16 @@ function getUnlockCopy(product, progressState) {
   }
 
   return '';
+}
+
+function sortProductsWithOwnedFirst(products = [], positions = {}) {
+  const ownedProductIds = new Set(
+    Object.entries(positions || {})
+      .filter(([, position]) => Number(position?.shares || 0) > 0 || Number(position?.principal || 0) > 0)
+      .map(([productId]) => productId)
+  );
+
+  return [...products].sort((left, right) => Number(ownedProductIds.has(right.id)) - Number(ownedProductIds.has(left.id)));
 }
 
 function getSubscriptionError({
@@ -1564,6 +1580,64 @@ function ModeledCallGrid({ cards = [], compact = false }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function ReceiptLifecycleDiagram({ product, compact = false }) {
+  const settlementPolicy = getSettlementPolicy(product);
+
+  return (
+    <div className={`wealth-lifecycle-map ${compact ? 'compact' : ''}`}>
+      <div className="wealth-lifecycle-node">
+        <span>1</span>
+        <strong>Buy one receipt</strong>
+        <small>PT subscription mints {product.shareToken}</small>
+      </div>
+      <div className="wealth-lifecycle-link">-&gt;</div>
+      <div className="wealth-lifecycle-node">
+        <span>2</span>
+        <strong>Hold the receipt</strong>
+        <small>NAV, yield source, and risk stay visible</small>
+      </div>
+      <div className="wealth-lifecycle-link">-&gt;</div>
+      <div className="wealth-lifecycle-node">
+        <span>3</span>
+        <strong>Settle or pledge</strong>
+        <small>{settlementPolicy.timing}</small>
+      </div>
+    </div>
+  );
+}
+
+function DualInvestmentVisual({ product }) {
+  if (!isDualInvestmentProduct(product)) return null;
+
+  return (
+    <div className="wealth-dual-visual">
+      <div className="wealth-dual-visual-main">
+        <div className="wealth-dual-step">
+          <span>Deposit</span>
+          <strong>Quote asset</strong>
+          <small>Example: USDC principal enters the 7-day receipt.</small>
+        </div>
+        <div className="wealth-lifecycle-link">-&gt;</div>
+        <div className="wealth-dual-step focus">
+          <span>Observe</span>
+          <strong>Target price</strong>
+          <small>At settlement, the final BTC price decides the payout asset.</small>
+        </div>
+      </div>
+      <div className="wealth-dual-branch-grid">
+        <div className="reason-card">
+          <div className="entry-title">Target not triggered</div>
+          <div className="entry-copy">User keeps the original currency and earns the modeled premium.</div>
+        </div>
+        <div className="reason-card">
+          <div className="entry-title">Target triggered</div>
+          <div className="entry-copy">User receives the other asset at the target-price rule, plus the premium.</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2075,29 +2149,20 @@ function SubscriptionPreviewModal({
           </div>
         </div>
 
-        <div className="product-title" style={{ marginTop: 18 }}>Approve, subscribe, and exit preview</div>
-        <FlowPreviewGrid cards={flowPreviewCards} compact />
-        <div className="product-title" style={{ marginTop: 18 }}>Future wallet call preview</div>
-        <ModeledCallGrid cards={modeledCallCards} compact />
-
-        <div className="wealth-modal-layout">
+        <div className="wealth-modal-layout compact">
           <div className="paper-mode-card wealth-modal-panel">
-            <div className="product-title">First deposit walkthrough</div>
-            <div className="wealth-walkthrough-list">
-              {firstInvestSteps.map((step) => (
-                <div className="wealth-walkthrough-step" key={step.label}>
-                  <span className={`wealth-step-badge ${step.status}`}>{step.status}</span>
-                  <div>
-                    <div className="entry-title">{step.label}</div>
-                    <div className="entry-copy">{step.detail}</div>
-                  </div>
-                </div>
-              ))}
+            <div className="product-title">What this button will do</div>
+            <ReceiptLifecycleDiagram product={product} compact />
+            <div className="wealth-inline-note paper-inline-note">
+              <strong>Settle.</strong> Finish the receipt lifecycle: close, redeem, roll, or wait for maturity so the receipt turns back into cash or the promised payoff.
             </div>
+            <DualInvestmentVisual product={product} />
+          </div>
 
-            <div className="product-title">Before you continue</div>
+          <div className="paper-mode-card wealth-modal-panel">
+            <div className="product-title">Quick checks</div>
             <div className="wealth-checklist">
-              {accessChecklist.map((item) => (
+              {accessChecklist.slice(0, 3).map((item) => (
                 <div className="wealth-check-row" key={item.label}>
                   <span className={`wealth-check-badge ${item.done ? 'done' : 'todo'}`}>{item.done ? 'Ready' : 'Pending'}</span>
                   <div>
@@ -2108,70 +2173,18 @@ function SubscriptionPreviewModal({
               ))}
             </div>
 
-            <div className="product-title" style={{ marginTop: 18 }}>Lifecycle and settlement</div>
-            <div className="starter-reasons">
-              {lifecycleNotes.map((note) => (
-                <div className="reason-card" key={note}>
-                  <div className="entry-copy">{note}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="paper-mode-card wealth-modal-panel">
-            <div className="product-title">Before you invest</div>
-            <div className="wealth-check-card-grid">
-              {preInvestChecks.map((item) => (
-                <div className="reason-card wealth-check-card" key={item.label}>
-                  <div className="wealth-check-card-head">
-                    <span className={`pill ${item.tone === 'pass' ? 'risk-low' : item.tone === 'review' ? 'risk-medium' : 'risk-high'}`}>
-                      {item.label}
-                    </span>
-                    <div className="entry-title">{item.title}</div>
+            <div className="product-title" style={{ marginTop: 18 }}>First deposit steps</div>
+            <div className="wealth-walkthrough-list">
+              {firstInvestSteps.slice(0, 3).map((step) => (
+                <div className="wealth-walkthrough-step" key={step.label}>
+                  <span className={`wealth-step-badge ${step.status}`}>{step.status}</span>
+                  <div>
+                    <div className="entry-title">{step.label}</div>
+                    <div className="entry-copy">{step.detail}</div>
                   </div>
-                  <div className="entry-copy">{item.detail}</div>
                 </div>
               ))}
             </div>
-
-            <div className="product-title">Scenario ladder</div>
-            <div className="muted">{product.scenario.horizon}</div>
-            <div className="wealth-scenario-grid wealth-modal-scenarios">
-              <div className="reason-card">
-                <div className="entry-title">Conservative</div>
-                <div className="entry-copy">{product.scenario.conservative}</div>
-              </div>
-              <div className="reason-card">
-                <div className="entry-title">Base</div>
-                <div className="entry-copy">{product.scenario.base}</div>
-              </div>
-              <div className="reason-card">
-                <div className="entry-title">Pressure</div>
-                <div className="entry-copy">{product.scenario.pressure}</div>
-              </div>
-            </div>
-
-            <div className="product-title" style={{ marginTop: 18 }}>Share-token rights</div>
-            <div className="starter-reasons">
-              {product.shareRights.map((line) => (
-                <div className="reason-card" key={line}>
-                  <div className="entry-copy">{line}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="product-title" style={{ marginTop: 18 }}>Modeled onchain mechanics</div>
-            <div className="wealth-contract-grid">
-              {onchainMechanics.map((item) => (
-                <div className="reason-card wealth-contract-card" key={item.title}>
-                  <div className="entry-title">{item.title}</div>
-                  <div className="entry-copy">{item.copy}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="product-title" style={{ marginTop: 18 }}>Live vault snapshot</div>
-            <OnchainVaultGrid snapshot={vaultSnapshot} product={product} />
           </div>
         </div>
 
@@ -2570,60 +2583,31 @@ function WealthInner() {
         .some((value) => String(value).toLowerCase().includes(normalizedShelfSearchQuery))
     );
   }, [baseShelfProducts, normalizedShelfSearchQuery]);
+  const shelfProducts = useMemo(
+    () => sortProductsWithOwnedFirst(searchableShelfProducts, wealthState.positions),
+    [searchableShelfProducts, wealthState.positions]
+  );
 
   const wealthActivityTypes = getActivityTypeSet(wealthState);
   const wealthQuestRows = [
     {
-      id: 'identity',
-      taskNumber: 1,
-      badge: WEALTH_TASK_BADGES.identity,
-      activityLabel: 'Home badge',
-      title: 'Carry one wallet identity',
-      copy: 'Use the same wallet from Home so the welcome badge, risk path, and wealth receipts sit under one profile.',
-      done: Boolean(isConnected && (hasMintedBadgeOnchain || address)),
-      statusLabel: isConnected ? 'Linked' : 'To do',
-      statusTone: isConnected ? 'done' : 'todo'
-    },
-    {
-      id: 'diligence',
-      taskNumber: 2,
-      badge: WEALTH_TASK_BADGES.diligence,
-      activityLabel: 'AI diligence',
-      title: 'Open AI diligence before buying',
-      copy: 'Every product detail starts from evidence, liquidity timing, rights, and suitability instead of a naked APR.',
-      done: Boolean(progressState.guideCompleted || riskBadgeOnchain || progressState.quizCompleted || quizBadgeOnchain),
-      statusLabel: progressState.guideCompleted || riskBadgeOnchain || progressState.quizCompleted || quizBadgeOnchain ? 'Reviewed' : 'To do',
-      statusTone: progressState.guideCompleted || riskBadgeOnchain || progressState.quizCompleted || quizBadgeOnchain ? 'done' : 'todo'
-    },
-    {
-      id: 'paper-bridge',
-      taskNumber: 3,
-      badge: 'PAPER',
-      activityLabel: 'Replay bridge',
-      title: 'Complete one paper replay',
-      copy: 'Closed-end, leverage, hedge, and option-linked products should inherit at least one replay experience.',
-      done: progressState.paperTradesCompleted > 0 || Boolean(paperBadgeOnchain),
-      statusLabel: progressState.paperTradesCompleted > 0 || Boolean(paperBadgeOnchain) ? 'Completed' : 'Optional gate',
-      statusTone: progressState.paperTradesCompleted > 0 || Boolean(paperBadgeOnchain) ? 'done' : 'todo'
-    },
-    {
       id: 'subscribe',
-      taskNumber: 4,
+      taskNumber: 1,
       badge: WEALTH_TASK_BADGES.subscribe,
       activityLabel: 'Receipt mint',
       title: 'Buy one receipt',
-      copy: 'Choose a product, review the unified buy flow, then mint a local receipt balance in the wealth ledger.',
+      copy: 'Choose a product, open Receipt detail, review the buy flow, then mint a local receipt balance in the wealth ledger.',
       done: Object.keys(wealthState.positions || {}).length > 0,
       statusLabel: Object.keys(wealthState.positions || {}).length > 0 ? 'Receipt live' : 'To do',
       statusTone: Object.keys(wealthState.positions || {}).length > 0 ? 'done' : 'todo'
     },
     {
       id: 'settlement',
-      taskNumber: 5,
+      taskNumber: 2,
       badge: WEALTH_TASK_BADGES.settlement,
       activityLabel: 'Settle / pledge',
       title: 'Simulate settle or pledge',
-      copy: 'Use the same detail flow to preview T+1, maturity, no-early-redeem, and collateral behavior before signing.',
+      copy: 'Settle means close, redeem, roll, or mature the receipt. Pledge means lock it as collateral before release.',
       done: wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') || Object.keys(wealthState.collateral || {}).length > 0,
       statusLabel: wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') || Object.keys(wealthState.collateral || {}).length > 0 ? 'Completed' : 'To do',
       statusTone: wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') || Object.keys(wealthState.collateral || {}).length > 0 ? 'done' : 'todo'
@@ -2636,11 +2620,15 @@ function WealthInner() {
   const selectedShelfSubtitle = selectedCategory === 'all'
     ? 'Goal-filtered shelf. Use product-type chips below to jump directly into a productized lane.'
     : `${selectedCategoryMeta.label} productized as a buyable wealth receipt, not as a raw strategy terminal.`;
-  const recommendedProductsForView = (selectedCategory === 'all' ? recommendedProducts : searchableShelfProducts.slice(0, 4)).filter(Boolean);
+  const recommendedProductsForView = (
+    selectedCategory === 'all'
+      ? sortProductsWithOwnedFirst(recommendedProducts, wealthState.positions)
+      : shelfProducts.slice(0, 4)
+  ).filter(Boolean);
   const shelfMetricsMap = useMemo(
     () =>
       new Map(
-        searchableShelfProducts.map((product) => {
+        shelfProducts.map((product) => {
           const diligenceModel = buildDiligenceModel(product, day1BriefState.data);
           return [
             product.id,
@@ -2656,9 +2644,8 @@ function WealthInner() {
           ];
         })
       ),
-    [day1BriefState.data, searchableShelfProducts]
+    [day1BriefState.data, shelfProducts]
   );
-  const shelfProducts = searchableShelfProducts;
 
   useEffect(() => {
     if (!shelfProducts.some((product) => product.id === selectedProductId)) {
@@ -5749,6 +5736,39 @@ function WealthInner() {
                       </div>
                     ) : null}
 
+                    {selectedDetailTopics.includes('receipt') ? (
+                      <div className="paper-mode-card wealth-detail-section">
+                        <div className="product-top">
+                          <div>
+                            <div className="eyebrow">Receipt detail</div>
+                            <div className="product-title">Buy one receipt, then decide how it exits</div>
+                            <div className="muted">
+                              A receipt is the wallet-facing proof of this product position. It can be held, settled, redeemed, rolled, or pledged depending on the product terms.
+                            </div>
+                          </div>
+                          <span className={`pill ${selectedSettlementPolicy.tone}`}>{selectedSettlementPolicy.label}</span>
+                        </div>
+
+                        <ReceiptLifecycleDiagram product={selectedProduct} />
+                        <DualInvestmentVisual product={selectedProduct} />
+
+                        <div className="starter-reasons" style={{ marginTop: 14 }}>
+                          <div className="reason-card">
+                            <div className="entry-title">Buy one receipt</div>
+                            <div className="entry-copy">Subscribe PT into the product. The demo mints {selectedProduct.shareToken} locally so the wallet has something concrete to track.</div>
+                          </div>
+                          <div className="reason-card">
+                            <div className="entry-title">Settle</div>
+                            <div className="entry-copy">Settle means finish the lifecycle: close, redeem, roll, or wait for maturity so the receipt converts into cash, another receipt, or the promised payoff.</div>
+                          </div>
+                          <div className="reason-card">
+                            <div className="entry-title">Pledge</div>
+                            <div className="entry-copy">Pledge means lock the receipt as collateral, borrow PT against it, and repay or release it before normal redemption or settlement.</div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
                     {selectedDetailTopics.includes('flow') ? (
                       <div className="paper-mode-card wealth-detail-section wealth-action-card">
                         <div className="product-top">
@@ -5811,6 +5831,8 @@ function WealthInner() {
                           </div>
                           <span className={`pill ${selectedSettlementPolicy.tone}`}>{selectedSettlementPolicy.label}</span>
                         </div>
+
+                        <ReceiptLifecycleDiagram product={selectedProduct} compact />
 
                         <div className="toolbar wealth-action-toolbar">
                           <button className="primary-btn" onClick={handleOpenSubscribeModal} disabled={selectedProductLocked}>
