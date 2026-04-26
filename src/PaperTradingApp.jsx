@@ -98,6 +98,7 @@ const PAPER_LEFT_COLUMN_GAP = 18;
 const PAPER_TUTORIAL_PATH_MIN_HEIGHT = 180;
 const PRODUCT_LEADERBOARD_FLOAT_STORAGE_KEY = 'msx.paperProductLeaderboardFloat';
 const AUTO_SELL_DOCK_STORAGE_KEY = 'msx.paperAutoSellDockOpen';
+const AUTO_SELL_DOCK_FLOAT_STORAGE_KEY = 'msx.paperAutoSellDockFloat';
 const PRODUCT_LEADERBOARD_FLOAT_EDGE_GAP = 18;
 const PRODUCT_LEADERBOARD_FLOAT_MIN_WIDTH = 320;
 const PRODUCT_LEADERBOARD_FLOAT_MAX_WIDTH = 760;
@@ -118,11 +119,6 @@ const PAPER_LOCKUP_FILTERS = [
   { id: 'all', label: 'All lockup' },
   { id: 'flex', label: 'Flexible exit' },
   { id: 'lockup', label: 'Can lock' }
-];
-const PAPER_VOL_FILTERS = [
-  { id: 'all', label: 'All vol' },
-  { id: 'low', label: 'Lower vol' },
-  { id: 'high', label: 'Higher vol' }
 ];
 const HIDDEN_REPLAY_PRODUCT_LANES = new Set(['yield', 'strategy', 'ai']);
 const HIDDEN_REPLAY_LANE_TAB_IDS = new Set([]);
@@ -693,6 +689,33 @@ function normalizeProductLeaderboardFloat(payload, viewport = getProductLeaderbo
       ? clampNumber(arrowTopCandidate, 72, Math.max(72, viewport.height - 72))
       : fallback.arrowTop
   };
+}
+
+function buildDefaultAutoSellDockFloat(viewport = getProductLeaderboardViewport()) {
+  const base = buildDefaultProductLeaderboardFloat(viewport);
+  const width = clampNumber(455, PRODUCT_LEADERBOARD_FLOAT_MIN_WIDTH, Math.min(PRODUCT_LEADERBOARD_FLOAT_MAX_WIDTH, viewport.width - PRODUCT_LEADERBOARD_FLOAT_EDGE_GAP * 2));
+  const height = clampNumber(580, PRODUCT_LEADERBOARD_FLOAT_MIN_HEIGHT, Math.min(PRODUCT_LEADERBOARD_FLOAT_MAX_HEIGHT, viewport.height - PRODUCT_LEADERBOARD_FLOAT_EDGE_GAP * 2 - 48));
+
+  return {
+    ...base,
+    width,
+    height,
+    left: Math.max(PRODUCT_LEADERBOARD_FLOAT_EDGE_GAP, viewport.width - width - 28),
+    top: clampNumber(180, 72, Math.max(72, viewport.height - height - PRODUCT_LEADERBOARD_FLOAT_EDGE_GAP)),
+    arrowSide: 'right',
+    arrowTop: clampNumber(300, 72, Math.max(72, viewport.height - 72))
+  };
+}
+
+function normalizeAutoSellDockFloat(payload, viewport = getProductLeaderboardViewport()) {
+  const fallback = buildDefaultAutoSellDockFloat(viewport);
+  return normalizeProductLeaderboardFloat(
+    {
+      ...fallback,
+      ...(payload || {})
+    },
+    viewport
+  );
 }
 
 function readStorageJson(key, fallback) {
@@ -4510,6 +4533,32 @@ function formatHoldingPresetLabel(days) {
   return `${safeDays}D`;
 }
 
+function getSuggestedHoldingDays(product = {}, guide = {}, routeId = 'spot', maxDays = 90) {
+  const safeMaxDays = Math.max(1, Math.round(Number(maxDays || 1)));
+  const lockupDays = Number(guide?.lockupDays || 0);
+  const settlementLagDays = Number(guide?.settlementLagDays || 0);
+  const baseSuggestion =
+    routeId === 'borrow'
+      ? 30
+      : routeId === 'perp'
+        ? 14
+        : product?.lane === 'private'
+          ? 90
+          : product?.lane === 'funding'
+            ? 30
+            : Math.max(14, lockupDays || settlementLagDays || 30);
+
+  return clampNumber(Math.round(baseSuggestion), 1, safeMaxDays);
+}
+
+function getSuggestedTicketRatio(product = {}, routeId = 'spot') {
+  if (routeId === 'perp') return 0.18;
+  const risk = String(product?.risk || '').toLowerCase();
+  if (risk.includes('low')) return 0.35;
+  if (risk.includes('high')) return 0.18;
+  return 0.25;
+}
+
 const PRODUCT_ROUTE_PLAYBOOKS = {
   spot: {
     defaultRoute: 'spot',
@@ -5538,7 +5587,6 @@ function PaperTradingInner() {
   const [replayFillsPage, setReplayFillsPage] = useState(1);
   const [productRiskFilter, setProductRiskFilter] = useState('all');
   const [productLockupFilter, setProductLockupFilter] = useState('all');
-  const [productVolatilityFilter, setProductVolatilityFilter] = useState('all');
   const [paperWorkspaceHeightPx, setPaperWorkspaceHeightPx] = useState(() => {
     const stored = Number(readStorageJson(PAPER_WORKSPACE_HEIGHT_STORAGE_KEY, DEFAULT_PAPER_WORKSPACE_HEIGHT));
     return Number.isFinite(stored)
@@ -5571,6 +5619,8 @@ function PaperTradingInner() {
   const [tradeOutcomeModal, setTradeOutcomeModal] = useState(null);
   const [tradeOutcomeBursts, setTradeOutcomeBursts] = useState([]);
   const [autoSellPreviewOpen, setAutoSellPreviewOpen] = useState(false);
+  const [autoSellTargetProductId, setAutoSellTargetProductId] = useState('');
+  const [autoSellPreviewProductId, setAutoSellPreviewProductId] = useState('');
   const [flashLoanTicketConfirmOpen, setFlashLoanTicketConfirmOpen] = useState(false);
   const [flashLoanQuoteOpen, setFlashLoanQuoteOpen] = useState(false);
   const [flashLoanDraftQuotes, setFlashLoanDraftQuotes] = useState({});
@@ -5640,7 +5690,11 @@ function PaperTradingInner() {
   const [autoSellDockOpen, setAutoSellDockOpen] = useState(() =>
     readStorageJson(AUTO_SELL_DOCK_STORAGE_KEY, false) === true
   );
+  const [autoSellDockFloat, setAutoSellDockFloat] = useState(() =>
+    normalizeAutoSellDockFloat(readStorageJson(AUTO_SELL_DOCK_FLOAT_STORAGE_KEY, null))
+  );
   const [productLeaderboardGesture, setProductLeaderboardGesture] = useState(null);
+  const [autoSellDockGesture, setAutoSellDockGesture] = useState(null);
   const [developerOverride, setDeveloperOverride] = useState(() => Boolean(readStorageJson(DEV_AUTH_STORAGE_KEY, false)));
   const hoverDebugEnabled = useMemo(() => {
     if (typeof window === 'undefined') return false;
@@ -5752,8 +5806,13 @@ function PaperTradingInner() {
   }, [autoSellDockOpen]);
 
   useEffect(() => {
+    writeStorageJson(AUTO_SELL_DOCK_FLOAT_STORAGE_KEY, autoSellDockFloat);
+  }, [autoSellDockFloat]);
+
+  useEffect(() => {
     function handleWindowResize() {
       setProductLeaderboardFloat((current) => normalizeProductLeaderboardFloat(current));
+      setAutoSellDockFloat((current) => normalizeAutoSellDockFloat(current));
     }
 
     window.addEventListener('resize', handleWindowResize);
@@ -5842,6 +5901,76 @@ function PaperTradingInner() {
       window.removeEventListener('pointercancel', finishPointerGesture);
     };
   }, [productLeaderboardGesture]);
+
+  useEffect(() => {
+    if (!autoSellDockGesture) return undefined;
+
+    const previousUserSelect = document.body.style.userSelect;
+    const previousCursor = document.body.style.cursor;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'grabbing';
+
+    function handlePointerMove(event) {
+      const viewport = getProductLeaderboardViewport();
+      const deltaX = event.clientX - autoSellDockGesture.startX;
+      const deltaY = event.clientY - autoSellDockGesture.startY;
+
+      if (autoSellDockGesture.type === 'drag') {
+        setAutoSellDockFloat((current) =>
+          normalizeAutoSellDockFloat(
+            {
+              ...current,
+              left: autoSellDockGesture.left + deltaX,
+              top: autoSellDockGesture.top + deltaY
+            },
+            viewport
+          )
+        );
+        return;
+      }
+
+      setAutoSellDockFloat((current) =>
+        normalizeAutoSellDockFloat(
+          {
+            ...current,
+            arrowSide: event.clientX <= viewport.width / 2 ? 'left' : 'right',
+            arrowTop: autoSellDockGesture.arrowTop + deltaY
+          },
+          viewport
+        )
+      );
+    }
+
+    function finishPointerGesture(event) {
+      if (autoSellDockGesture.type === 'arrow') {
+        const deltaX = event.clientX - autoSellDockGesture.startX;
+        const deltaY = event.clientY - autoSellDockGesture.startY;
+        if (Math.abs(deltaX) + Math.abs(deltaY) < 8) {
+          setAutoSellDockFloat((current) =>
+            normalizeAutoSellDockFloat({
+              ...current,
+              isCollapsed: false
+            })
+          );
+          setAutoSellDockOpen(true);
+        }
+      }
+
+      setAutoSellDockGesture(null);
+    }
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', finishPointerGesture);
+    window.addEventListener('pointercancel', finishPointerGesture);
+
+    return () => {
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.cursor = previousCursor;
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', finishPointerGesture);
+      window.removeEventListener('pointercancel', finishPointerGesture);
+    };
+  }, [autoSellDockGesture]);
 
   function scrollToRef(targetRef, options = {}) {
     const targetNode = targetRef.current;
@@ -6304,7 +6433,7 @@ function PaperTradingInner() {
   const remainingPaperTokens = walletProfileSummary.remainingPT;
   const simulationRiskPreference = productRiskFilter === 'all' ? 'balanced' : productRiskFilter;
   const allowLockup = productLockupFilter !== 'flex';
-  const acceptPrincipalVolatility = productVolatilityFilter !== 'low';
+  const acceptPrincipalVolatility = true;
 
   const filteredProducts = useMemo(
     () =>
@@ -6313,10 +6442,9 @@ function PaperTradingInner() {
         const guide = getReplayProductGuide(product);
         if (productRiskFilter !== 'all' && getReplayRiskFit(product) !== productRiskFilter) return false;
         if (productLockupFilter !== 'all' && getReplayLockupFit(guide) !== productLockupFilter) return false;
-        if (productVolatilityFilter !== 'all' && getReplayVolatilityFit(product) !== productVolatilityFilter) return false;
         return true;
       }),
-    [productLockupFilter, productRiskFilter, productVolatilityFilter, selectedLane]
+    [productLockupFilter, productRiskFilter, selectedLane]
   );
   const selectedLaneLabel = REPLAY_LANE_OPTIONS.find((lane) => lane.id === selectedLane)?.label || 'Products';
   const paperShelfPageCount = Math.max(1, Math.ceil(filteredProducts.length / PAPER_SHELF_PAGE_SIZE));
@@ -6437,7 +6565,7 @@ function PaperTradingInner() {
 
   useEffect(() => {
     setPaperShelfPage(1);
-  }, [selectedLane, productRiskFilter, productLockupFilter, productVolatilityFilter]);
+  }, [selectedLane, productRiskFilter, productLockupFilter]);
 
   useEffect(() => {
     if (!timedExitRangeToast) return undefined;
@@ -7725,6 +7853,20 @@ function PaperTradingInner() {
     Math.min(Math.max(0, Number(tradeAmount || 0)), Math.max(0, tradeAmountSliderMax)),
     2
   );
+  const routeSuggestedTicketRatio = getSuggestedTicketRatio(selectedProduct, selectedAdvancedRoute);
+  const tradeAmountSuggestedValue = hedgeFocusActive
+    ? hedgeSizingReady
+      ? roundNumber(Math.min(Math.max(0, hedgeProtectedSleeveNotional * Number(hedgeRatio || 0)), tradeAmountSliderMax), 2)
+      : 0
+    : roundNumber(
+        Math.min(
+          Math.max(0, tradeAmountSliderMax),
+          Math.max(MIN_PAPER_TRADE, Math.max(0, tradeAmountSliderMax) * routeSuggestedTicketRatio)
+        ),
+        2
+      );
+  const tradeAmountSuggestedPercent =
+    tradeAmountSliderMax > 0 ? clampNumber((tradeAmountSuggestedValue / tradeAmountSliderMax) * 100, 0, 100) : 0;
   const tradeAmountWalletSegmentEnd = roundNumber(Math.min(tradeAmountSliderMax, routeMaxWalletBackedNotional), 2);
   const tradeAmountAttestedSegmentEnd = roundNumber(Math.min(tradeAmountSliderMax, routeMaxAttestedNotional), 2);
   const tradeAmountWalletSegmentPercent =
@@ -8811,6 +8953,22 @@ function PaperTradingInner() {
     setTradeAmountInput(String(nextAmount));
   }
 
+  function handleApplySuggestedTradeAmount() {
+    if (tradeAmountSuggestedValue <= 0) return;
+    setTradeAmountMaxApplied(false);
+    setTradeAmount(tradeAmountSuggestedValue);
+    setTradeAmountInput(String(tradeAmountSuggestedValue));
+  }
+
+  function handleApplySuggestedStrategyControls() {
+    const suggested = getOptionStrategyDefaults(selectedStrategyTemplateId);
+    setStrategyDownsidePct(suggested.downsidePct);
+    setStrategyProfitHarvestPct(suggested.profitHarvestPct);
+    setStrategyUpsideCapPct(suggested.upsideCapPct);
+    setStrategyPremiumPct(suggested.premiumPct);
+    setStrategyStrikePct(suggested.strikePct);
+  }
+
   function handleApplyHedgeSuggestedSize() {
     if (!hedgeFocusActive || !hedgeSizingReady || hedgeFundableSuggestedNotional <= 0) return;
     setTradeAmountMaxApplied(false);
@@ -8908,6 +9066,7 @@ function PaperTradingInner() {
 
   useEffect(() => {
     setAutoSellPreviewOpen(false);
+    setAutoSellPreviewProductId('');
   }, [selectedProductId, selectedView?.cursor]);
 
   useEffect(() => {
@@ -9779,7 +9938,118 @@ function PaperTradingInner() {
     });
   }
 
-  async function handleTimedExitReplay() {
+  async function executeTimedSpotExit(productId = selectedProductId) {
+    const product = productMap[productId];
+    const view = productViews[productId];
+    const currentPosition = paperState.positions[productId] || { units: 0 };
+
+    if (!product || !view?.bars?.length) {
+      setFeedback('Replay bars are still loading for this product.');
+      return false;
+    }
+
+    if (currentPosition.units <= 0) {
+      setFeedback(`Buy ${product.ticker || product.name} first so the timed exit button has units to unwind.`);
+      return false;
+    }
+
+    const anchorIndex = Math.max(0, Math.min(view.cursor || 0, view.bars.length - 1));
+    const anchorBar = view.bars[anchorIndex];
+    const targetIndex = findReplayIndexAfterDays(view.bars, anchorIndex, simulationHoldingDays);
+    if (targetIndex <= anchorIndex) {
+      setFeedback(`The ${product.ticker || product.name} row is locked until a later replay bar. Pick a longer window or move its cursor earlier before auto-selling.`);
+      return false;
+    }
+
+    const targetBar = view.bars[targetIndex];
+    const targetSnapshot = buildPositionSnapshot(product, currentPosition, Number(targetBar?.close || 0), targetBar?.ts);
+    const executedHoldingDays = Math.max(1, Math.round(getHoldingDays(anchorBar?.ts, targetBar?.ts)));
+    const autoSellSigned = await ensureReplayTradeSignature({
+      side: 'auto-sell',
+      tradeBar: targetBar,
+      tradeInterval: view.interval,
+      notional: targetSnapshot.netExitValue,
+      unitsPreview: currentPosition.units
+    });
+
+    if (!autoSellSigned) return false;
+
+    setIsPlaying(false);
+    setHoveredReplayIndex(null);
+    updateReplayForProduct(productId, {
+      cursor: targetIndex,
+      replayStarted: false
+    });
+
+    setPaperState((current) => {
+      const livePosition = current.positions[productId] || currentPosition;
+      if (!livePosition.units) return current;
+
+      const liveSnapshot = buildPositionSnapshot(product, livePosition, Number(targetBar?.close || 0), targetBar?.ts);
+      const nextPositions = { ...current.positions };
+      delete nextPositions[productId];
+
+      return {
+        ...current,
+        cash: roundNumber(current.cash + liveSnapshot.netExitValue, 2),
+        realizedPnl: roundNumber(Number(current.realizedPnl || 0) + liveSnapshot.netPnl, 2),
+        positions: nextPositions,
+        trades: [
+          {
+            id: `${productId}-${targetBar.ts}-sell-${current.trades.length}`,
+            productId,
+            side: 'sell',
+            notional: liveSnapshot.grossValue,
+            units: livePosition.units,
+            price: Number(targetBar?.close || 0),
+            ts: targetBar.ts,
+            interval: view.interval,
+            realizedPnl: liveSnapshot.netPnl,
+            feeTotal: liveSnapshot.exitCosts.nonTaxCost,
+            taxTotal: liveSnapshot.exitCosts.estimatedTax,
+            carryTotal: liveSnapshot.unpaidCarry
+          },
+          ...current.trades
+        ]
+      };
+    });
+
+    const finalizedOutcome = finalizeTradeOutcome({
+      product,
+      routeId: 'spot',
+      actionLabel: 'Auto-sell',
+      tradeTs: targetBar.ts,
+      pnl: targetSnapshot.netPnl,
+      exitValue: targetSnapshot.netExitValue
+    });
+
+    updateProgressAfterTrade();
+    setHedgeSleeveReadyByProduct((current) => {
+      if (!current[productId]) return current;
+      const next = { ...current };
+      delete next[productId];
+      return next;
+    });
+    setFeedback(
+      `Auto-sell executed for ${product.ticker || product.name} after about ${executedHoldingDays}D: ${formatReplayDate(
+        anchorBar?.ts,
+        view.interval
+      )} -> ${formatReplayDate(targetBar?.ts, view.interval)}. Sold ${formatUnits(currentPosition.units)} units at ${formatPrice(
+        targetBar?.close
+      )} for about ${formatSigned(targetSnapshot.netPnl)} PT take-home PnL.` +
+        (finalizedOutcome?.compensationGranted
+          ? ` Daily recovery grant +${formatNotional(finalizedOutcome.compensationGranted)} PT was added after the close.`
+          : '')
+    );
+    return true;
+  }
+
+  async function handleTimedExitReplay(productId = selectedProductId) {
+    if (productId !== selectedProductId) {
+      await executeTimedSpotExit(productId);
+      return;
+    }
+
     const timedExitAllowed = leverageRouteActive ? advancedActivityEnabled : selectedAdvancedRoute === 'spot' || routeActionsLocked || advancedActivityEnabled;
 
     if (!timedExitAllowed) {
@@ -9792,7 +10062,7 @@ function PaperTradingInner() {
       return;
     }
 
-    if (selectedAdvancedRoute === 'perp') {
+    if (selectedAdvancedRoute === 'perp' && productId === selectedProductId && activePerpLeg) {
       if (!activePerpLeg) {
         setFeedback(
           hedgeFocusActive
@@ -9888,57 +10158,7 @@ function PaperTradingInner() {
       return;
     }
 
-    const currentPosition = paperState.positions[selectedProductId] || {
-      units: 0
-    };
-
-    if (currentPosition.units <= 0) {
-      setFeedback('Buy this product first so the timed exit button has units to unwind.');
-      return;
-    }
-
-    const anchorIndex = Math.max(0, Math.min(selectedView.cursor || 0, selectedView.bars.length - 1));
-    const anchorBar = selectedView.bars[anchorIndex];
-    const targetIndex = findReplayIndexAfterDays(selectedView.bars, anchorIndex, simulationHoldingDays);
-    if (targetIndex <= anchorIndex) {
-      setFeedback('Choose an earlier replay bar first so holding period can jump forward before auto-selling the position.');
-      return;
-    }
-
-    const targetBar = selectedView.bars[targetIndex];
-    const targetSnapshot = buildPositionSnapshot(selectedProduct, currentPosition, Number(targetBar?.close || 0), targetBar?.ts);
-    const executedHoldingDays = Math.max(1, Math.round(getHoldingDays(anchorBar?.ts, targetBar?.ts)));
-    const autoSellSigned = await ensureReplayTradeSignature({
-      side: 'auto-sell',
-      tradeBar: targetBar,
-      tradeInterval: selectedView.interval,
-      notional: targetSnapshot.netExitValue,
-      unitsPreview: currentPosition.units
-    });
-
-    if (!autoSellSigned) return;
-
-    const customFeedback = `Auto-sell executed after about ${executedHoldingDays}D: ${formatReplayDate(anchorBar?.ts, selectedView.interval)} -> ${formatReplayDate(
-      targetBar?.ts,
-      selectedView.interval
-    )}. Sold ${formatUnits(currentPosition.units)} units of ${selectedProduct.ticker} at ${formatPrice(targetBar?.close)} for about ${formatSigned(
-      targetSnapshot.netPnl
-    )} PT take-home PnL.`;
-
-    setIsPlaying(false);
-    setHoveredReplayIndex(null);
-    updateSelectedReplay({
-      cursor: targetIndex,
-      replayStarted: false
-    });
-    void executeReplayTrade({
-      side: 'sell',
-      tradeBar: targetBar,
-      tradeInterval: selectedView.interval,
-      forceSellAll: true,
-      customFeedback,
-      outcomeActionLabel: 'Auto-sell'
-    });
+    await executeTimedSpotExit(productId);
   }
 
   function handleOpenFlashLoanConfirm() {
@@ -10176,6 +10396,53 @@ function PaperTradingInner() {
         isCollapsed: false
       })
     );
+  }
+
+  function beginAutoSellDockDrag(event) {
+    if (event.button !== 0) return;
+    if (event.target?.closest?.('button, input, select, textarea, a, label')) return;
+    event.preventDefault();
+    setAutoSellDockGesture({
+      type: 'drag',
+      startX: event.clientX,
+      startY: event.clientY,
+      left: autoSellDockFloat.left,
+      top: autoSellDockFloat.top
+    });
+  }
+
+  function beginAutoSellDockArrowGesture(event) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    setAutoSellDockGesture({
+      type: 'arrow',
+      startX: event.clientX,
+      startY: event.clientY,
+      arrowTop: autoSellDockFloat.arrowTop
+    });
+  }
+
+  function handleCollapseAutoSellDock() {
+    const anchor = getCollapsedProductLeaderboardAnchor(autoSellDockFloat);
+    setAutoSellDockFloat((current) =>
+      normalizeAutoSellDockFloat({
+        ...current,
+        isCollapsed: true,
+        arrowSide: anchor.arrowSide,
+        arrowTop: anchor.arrowTop
+      })
+    );
+    setAutoSellDockOpen(false);
+  }
+
+  function handleExpandAutoSellDock() {
+    setAutoSellDockFloat((current) =>
+      normalizeAutoSellDockFloat({
+        ...current,
+        isCollapsed: false
+      })
+    );
+    setAutoSellDockOpen(true);
   }
 
   function handleSelectLearningRoute(nextValue) {
@@ -10450,10 +10717,15 @@ function PaperTradingInner() {
   }
 
   function updateSelectedReplay(patch) {
+    updateReplayForProduct(selectedProductId, patch);
+  }
+
+  function updateReplayForProduct(productId, patch) {
+    if (!productId) return;
     setProductViews((current) => ({
       ...current,
-      [selectedProductId]: {
-        ...current[selectedProductId],
+      [productId]: {
+        ...current[productId],
         ...patch
       }
     }));
@@ -11964,12 +12236,7 @@ function PaperTradingInner() {
 
       handlePlaceTrade('sell');
     };
-    const showRouteStructureTools = selectedAdvancedRoute !== 'spot';
-    const routeStructureToolsAutoOpen = selectedAdvancedRoute === 'perp';
-    const showAdvancedTools =
-      showRouteStructureTools &&
-      advancedActivityEnabled &&
-      (routeStructureToolsAutoOpen || showAdvancedDeskControls);
+    const showAdvancedTools = selectedAdvancedRoute !== 'spot' && advancedActivityEnabled;
     const timedExitLosingRows =
       leverageRouteActive && timedExitLeveragedSnapshot && timedExitEstimatedPnl < 0
         ? [
@@ -12180,39 +12447,72 @@ function PaperTradingInner() {
         timedExitMaxHoldingDays || 1,
         ...autoSellRows.map((row) => Number(row.maxHoldingDays || 1))
       );
+      const autoSellSuggestedHoldingDays = getSuggestedHoldingDays(selectedProduct, selectedProductGuide, selectedAdvancedRoute, autoSellGlobalMaxHoldingDays);
       const autoSellPresetDays = [...new Set([7, 14, 30, 90, autoSellGlobalMaxHoldingDays].filter((days) => days <= autoSellGlobalMaxHoldingDays))]
         .sort((left, right) => left - right);
-      const selectedAutoSellRow = autoSellRows.find((row) => row.id === selectedProductId);
-      const selectedAutoSellReady = leverageRouteActive ? timedExitReady : Boolean(selectedAutoSellRow?.ready);
-      const topDelta = leverageRouteActive ? timedExitEstimatedPnl : timedExitPortfolioDelta;
-      const topValue = leverageRouteActive ? timedExitEstimatedValue : timedExitPortfolioNetExitValue;
-      const autoSellDockAvailable = !hedgeFocusActive || Boolean(activePerpLeg);
+      const targetRowExists = autoSellRows.some((row) => row.id === autoSellTargetProductId);
+      const selectedAutoSellProductId =
+        targetRowExists
+          ? autoSellTargetProductId
+          : autoSellRows.some((row) => row.id === selectedProductId)
+            ? selectedProductId
+            : autoSellRows[0]?.id || '';
+      const selectedAutoSellRow = autoSellRows.find((row) => row.id === selectedAutoSellProductId) || null;
+      const selectedAutoSellReady = Boolean(selectedAutoSellRow?.ready);
+      const activeLeverageCloseContribution = leverageRouteActive && activePerpLeg && timedExitReady ? timedExitEstimatedPnl : 0;
+      const activeLeverageCloseValue = leverageRouteActive && activePerpLeg && timedExitReady ? timedExitEstimatedValue : 0;
+      const topDelta = roundNumber(timedExitPortfolioDelta + activeLeverageCloseContribution, 2);
+      const topValue = roundNumber(timedExitPortfolioNetExitValue + activeLeverageCloseValue, 2);
+      const autoSellDockAvailable = true;
+      const openAutoSellPreviewForProduct = (productId) => {
+        if (!productId) return;
+        setAutoSellTargetProductId(productId);
+        setAutoSellPreviewProductId(productId);
+        setAutoSellPreviewOpen(true);
+      };
 
       if (!autoSellDockAvailable) return null;
 
-      if (!autoSellDockOpen) {
+      if (!autoSellDockOpen || autoSellDockFloat.isCollapsed) {
+        const collapsedStyle =
+          autoSellDockFloat.arrowSide === 'left'
+            ? { top: `${autoSellDockFloat.arrowTop}px`, left: '10px', right: 'auto', bottom: 'auto' }
+            : { top: `${autoSellDockFloat.arrowTop}px`, right: '10px', left: 'auto', bottom: 'auto' };
+
         return (
           <div
-            className="paper-floating-leaderboard-toggle right paper-floating-auto-sell-collapse-toggle"
+            className={`paper-floating-leaderboard-toggle ${autoSellDockFloat.arrowSide} paper-floating-auto-sell-collapse-toggle`}
+            style={collapsedStyle}
             role="button"
             tabIndex={0}
             aria-label="Open auto-sell timeline"
-            onClick={() => setAutoSellDockOpen(true)}
+            onPointerDown={beginAutoSellDockArrowGesture}
             onKeyDown={(event) => {
               if (event.key !== 'Enter' && event.key !== ' ') return;
               event.preventDefault();
-              setAutoSellDockOpen(true);
+              handleExpandAutoSellDock();
             }}
           >
-            <span>{'<'}</span>
+            <span>{autoSellDockFloat.arrowSide === 'left' ? '>' : '<'}</span>
             <small>{leverageRouteActive ? 'Close' : 'Exit'}</small>
           </div>
         );
       }
 
       return (
-        <aside className="wealth-floating-timeline paper-floating-auto-sell" aria-label="Auto-sell timeline simulator">
-          <div className="paper-floating-product-leaderboard-head">
+        <aside
+          className="wealth-floating-timeline paper-floating-auto-sell"
+          aria-label="Auto-sell timeline simulator"
+          style={{
+            left: `${autoSellDockFloat.left}px`,
+            top: `${autoSellDockFloat.top}px`,
+            right: 'auto',
+            bottom: 'auto',
+            width: `${autoSellDockFloat.width}px`,
+            height: `${autoSellDockFloat.height}px`
+          }}
+        >
+          <div className="paper-floating-product-leaderboard-head" onPointerDown={beginAutoSellDockDrag}>
             <div>
               <div className="eyebrow">Auto-sell timeline</div>
               <h3>{leverageRouteActive ? 'Timed close' : 'Multi-position exit'}</h3>
@@ -12220,7 +12520,7 @@ function PaperTradingInner() {
             <button
               className="ghost-btn compact paper-floating-product-leaderboard-close"
               aria-label="Collapse auto-sell timeline"
-              onClick={() => setAutoSellDockOpen(false)}
+              onClick={handleCollapseAutoSellDock}
             >
               X
             </button>
@@ -12233,17 +12533,17 @@ function PaperTradingInner() {
           <div className="wealth-floating-timeline-body paper-floating-auto-sell-body">
             <div className="paper-floating-auto-sell-total">
               <div>
-                <span>{leverageRouteActive ? 'Selected route change' : 'Total projected change'}</span>
+                <span>Total projected change</span>
                 <strong className={topDelta >= 0 ? 'risk-low' : 'risk-high'}>{formatSigned(topDelta)} PT</strong>
               </div>
               <div>
-                <span>{leverageRouteActive ? 'Close value' : 'Projected exit value'}</span>
+                <span>Payoff / est. take-home</span>
                 <strong>{formatNotional(topValue)} PT</strong>
               </div>
             </div>
 
             <label className="wealth-field compact paper-floating-auto-sell-slider">
-              Global hold window: {timedExitRequestedDays}D
+              Global hold window: {timedExitRequestedDays}D / suggested {autoSellSuggestedHoldingDays}D
               <input
                 type="range"
                 min="0"
@@ -12252,9 +12552,23 @@ function PaperTradingInner() {
                 value={Math.min(timedExitRequestedDays, autoSellGlobalMaxHoldingDays)}
                 onChange={(event) => updateSimulationHoldingDays(Number(event.target.value), { showToast: false })}
               />
+              <div className="paper-range-suggestion-row">
+                <span
+                  className="paper-range-suggestion-marker"
+                  style={{ left: `${autoSellGlobalMaxHoldingDays > 0 ? clampNumber((autoSellSuggestedHoldingDays / autoSellGlobalMaxHoldingDays) * 100, 0, 100) : 0}%` }}
+                />
+                <span>Suggested {formatHoldingPresetLabel(autoSellSuggestedHoldingDays)}</span>
+              </div>
             </label>
 
             <div className="paper-floating-auto-sell-presets">
+              <button
+                type="button"
+                className={`ghost-btn compact ${simulationHoldingDays === autoSellSuggestedHoldingDays ? 'active-toggle' : ''}`}
+                onClick={() => updateSimulationHoldingDays(autoSellSuggestedHoldingDays, { showToast: false })}
+              >
+                Suggested
+              </button>
               {autoSellPresetDays.map((days) => (
                 <button
                   key={days}
@@ -12272,18 +12586,28 @@ function PaperTradingInner() {
             <div className="wealth-floating-timeline-list paper-floating-auto-sell-list">
               {autoSellRows.length ? (
                 autoSellRows.map((row) => (
-                  <button
+                  <div
                     key={row.id}
-                    type="button"
-                    className={`wealth-floating-timeline-row paper-floating-auto-sell-row ${selectedProductId === row.id ? 'active' : ''}`}
-                    onClick={() => handleSelectProduct(row.id)}
+                    role="button"
+                    tabIndex={0}
+                    className={`wealth-floating-timeline-row paper-floating-auto-sell-row ${selectedAutoSellProductId === row.id ? 'active' : ''} ${row.ready ? '' : 'locked'}`.trim()}
+                    onClick={() => {
+                      setAutoSellTargetProductId(row.id);
+                      handleSelectProduct(row.id);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter' && event.key !== ' ') return;
+                      event.preventDefault();
+                      setAutoSellTargetProductId(row.id);
+                      handleSelectProduct(row.id);
+                    }}
                   >
                     <div>
                       <div className="product-title">{row.ticker || row.name}</div>
                       <div className="muted">
                         {row.ready
-                          ? `${formatReplayDate(row.targetBar?.ts, productViews[row.id]?.interval)} / ${row.actualHoldingDays}D / ${formatUnits(row.units)} units`
-                          : `Needs a shorter window. Max visible ${row.maxHoldingDays}D.`}
+                          ? `Locked until ${formatReplayDate(row.targetBar?.ts, productViews[row.id]?.interval)} / ${row.actualHoldingDays}D / ${formatUnits(row.units)} units`
+                          : `Locked. Needs a shorter window or earlier cursor. Max visible ${row.maxHoldingDays}D.`}
                       </div>
                     </div>
                     <div className="wealth-leader-move">
@@ -12291,8 +12615,20 @@ function PaperTradingInner() {
                       <div className={`wealth-leader-subtext ${row.projectedDelta >= 0 ? 'risk-low' : 'risk-high'}`}>
                         {formatSigned(row.projectedDelta)} vs now
                       </div>
+                      <button
+                        type="button"
+                        className="ghost-btn compact paper-floating-auto-sell-row-action"
+                        disabled={!row.ready}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          openAutoSellPreviewForProduct(row.id);
+                        }}
+                      >
+                        {row.ready ? 'Settle' : 'Locked'}
+                      </button>
                     </div>
-                  </button>
+                  </div>
                 ))
               ) : (
                 <div className="paper-floating-auto-sell-empty">
@@ -12304,10 +12640,10 @@ function PaperTradingInner() {
             <button
               type="button"
               className="primary-btn paper-floating-auto-sell-action"
-              onClick={() => setAutoSellPreviewOpen(true)}
+              onClick={() => openAutoSellPreviewForProduct(selectedAutoSellProductId)}
               disabled={!selectedAutoSellReady}
             >
-              {selectedAutoSellReady ? timedExitActionLabel : 'Select a ready position'}
+              {selectedAutoSellReady && selectedAutoSellRow ? `Settle ${selectedAutoSellRow.ticker || selectedAutoSellRow.name}` : 'Select a ready position'}
             </button>
           </div>
         </aside>
@@ -12361,6 +12697,37 @@ function PaperTradingInner() {
           ? 'The locked replay cursor is now the combo anchor. Treat the live leg as the active side of a leverage + hedge template until you move the white dot again.'
           : 'Buy or Sell currently uses the locked replay cursor. Move the white dot to another bar if you want a different trade date.';
     const fundingBreakdown = deskSimulation.fundingBreakdown;
+    const autoSellPreviewResolvedProductId = autoSellPreviewProductId || selectedProductId;
+    const autoSellPreviewProduct = productMap[autoSellPreviewResolvedProductId] || selectedProduct;
+    const autoSellPreviewRow = timedExitPortfolioRows.find((row) => row.id === autoSellPreviewResolvedProductId) || null;
+    const autoSellPreviewView = productViews[autoSellPreviewResolvedProductId];
+    const autoSellPreviewIsLeverage =
+      leverageRouteActive &&
+      activePerpLeg &&
+      autoSellPreviewResolvedProductId === selectedProductId &&
+      !autoSellPreviewRow;
+    const autoSellPreviewAnchorLabel = autoSellPreviewIsLeverage
+      ? formatReplayDate(timedExitAnchorBar?.ts, selectedView?.interval)
+      : formatReplayDate(autoSellPreviewRow?.anchorBar?.ts || timedExitAnchorBar?.ts, autoSellPreviewView?.interval || selectedView?.interval);
+    const autoSellPreviewTargetLabel = autoSellPreviewIsLeverage
+      ? formatReplayDate(timedExitTargetBar?.ts, selectedView?.interval)
+      : formatReplayDate(autoSellPreviewRow?.targetBar?.ts || timedExitTargetBar?.ts, autoSellPreviewView?.interval || selectedView?.interval);
+    const autoSellPreviewSellUnits = autoSellPreviewIsLeverage && timedExitLeveragedSnapshot
+      ? timedExitLeveragedSnapshot.exposureNotional
+      : autoSellPreviewRow?.units ?? selectedPosition.units;
+    const autoSellPreviewSellSizeLabel =
+      autoSellPreviewIsLeverage && timedExitLeveragedSnapshot
+        ? `Close ${leverageDirection} ${formatNotional(timedExitLeveragedSnapshot.exposureNotional)} PT notional (${routeLeverageMultiple}x)`
+        : '';
+    const autoSellPreviewHoldingDays = autoSellPreviewIsLeverage
+      ? timedExitActualHoldingDays
+      : autoSellPreviewRow?.actualHoldingDays || timedExitActualHoldingDays;
+    const autoSellPreviewEstimatedValue = autoSellPreviewIsLeverage
+      ? timedExitEstimatedValue
+      : autoSellPreviewRow?.projectedValue ?? timedExitEstimatedValue;
+    const autoSellPreviewEstimatedPnl = autoSellPreviewIsLeverage
+      ? timedExitEstimatedPnl
+      : autoSellPreviewRow?.projectedPnl ?? timedExitEstimatedPnl;
 
     return (
       <div
@@ -12649,7 +13016,7 @@ function PaperTradingInner() {
                   <div className="paper-inline-trade-amount-slider">
                     <div className="paper-inline-trade-amount-slider-head">
                       <span>{tradeAmountSliderLabel}</span>
-                      <strong>0 - {formatNotional(tradeAmountSliderMax)} PT</strong>
+                      <strong>Suggested {formatNotional(tradeAmountSuggestedValue)} PT / max {formatNotional(tradeAmountSliderMax)} PT</strong>
                     </div>
                     <input
                       type="range"
@@ -12660,6 +13027,12 @@ function PaperTradingInner() {
                       onChange={(event) => handleTradeAmountSliderChange(event.target.value)}
                       disabled={tradeAmountSliderMax <= 0}
                     />
+                    {tradeAmountSliderMax > 0 && tradeAmountSuggestedValue > 0 ? (
+                      <div className="paper-range-suggestion-row">
+                        <span className="paper-range-suggestion-marker" style={{ left: `${tradeAmountSuggestedPercent}%` }} />
+                        <span>Suggested {formatNotional(tradeAmountSuggestedValue)} PT</span>
+                      </div>
+                    ) : null}
                     {leverageRouteActive ? (
                       <div className="paper-inline-trade-amount-zone-bar" aria-hidden="true">
                         {displayWalletSegmentPercent > 0 ? (
@@ -12736,6 +13109,9 @@ function PaperTradingInner() {
                       </div>
                     ) : (
                       <div className="paper-inline-trade-amount-presets">
+                        <button type="button" className="ghost-btn compact" onClick={handleApplySuggestedTradeAmount}>
+                          Suggested
+                        </button>
                         <button type="button" className="ghost-btn compact" onClick={() => handleTradeAmountPreset(0.25)}>
                           1/4 size
                         </button>
@@ -12764,9 +13140,14 @@ function PaperTradingInner() {
                           {OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'Strategy'} uses the current historical window, then settles by holding period.
                         </div>
                       </div>
-                      <span className={`pill ${optionStrategyPreview?.netPnl >= 0 ? 'risk-low' : 'risk-high'}`}>
-                        {optionStrategyPreview ? `${formatSigned(optionStrategyPreview.netPnl)} PT` : 'No payoff yet'}
-                      </span>
+                      <div className="paper-inline-action-head-tools">
+                        <button type="button" className="ghost-btn compact" onClick={handleApplySuggestedStrategyControls}>
+                          Suggested
+                        </button>
+                        <span className={`pill ${optionStrategyPreview?.netPnl >= 0 ? 'risk-low' : 'risk-high'}`}>
+                          {optionStrategyPreview ? `${formatSigned(optionStrategyPreview.netPnl)} PT` : 'No payoff yet'}
+                        </span>
+                      </div>
                     </div>
                     <div className="paper-strategy-parameter-grid">
                       <label className="paper-strategy-parameter-field">
@@ -12914,7 +13295,15 @@ function PaperTradingInner() {
                         <button
                           type="button"
                           className="ghost-btn compact paper-inline-action-button"
-                          onClick={selectedAdvancedRoute === 'borrow' ? handleSettleOptionStrategy : () => setAutoSellPreviewOpen(true)}
+                          onClick={
+                            selectedAdvancedRoute === 'borrow'
+                              ? handleSettleOptionStrategy
+                              : () => {
+                                  setAutoSellPreviewProductId(selectedProductId);
+                                  setAutoSellTargetProductId(selectedProductId);
+                                  setAutoSellPreviewOpen(true);
+                                }
+                          }
                           disabled={!timedExitReady}
                         >
                           {timedExitActionLabel}
@@ -13004,58 +13393,6 @@ function PaperTradingInner() {
               </div>
             ) : null}
 
-            {hedgeFocusActive ? (
-              <div
-                className={`paper-inline-action-card paper-inline-action-card-compact paper-inline-timed-exit-card paper-inline-hedge-unwind-card ${
-                  timedExitReady ? 'ready' : 'locked'
-                }`.trim()}
-              >
-                <div className="paper-inline-action-head">
-                  <div>
-                    <div className="k">{timedExitCardTitle}</div>
-                    <div className="muted">Pick when the protection should come off after the hedge leg is opened.</div>
-                  </div>
-                  <span className={`pill ${timedExitStatus.tone}`}>{timedExitStatus.label}</span>
-                </div>
-                {timedExitRangeToast ? <div className="paper-inline-toast paper-inline-toast-inline">{timedExitRangeToast}</div> : null}
-                <div className="paper-inline-muted-help">
-                  The floating auto-sell timeline now owns the shared hedge window slider and presets.
-                </div>
-                {activePerpLeg && timedExitLeveragedSnapshot ? (
-                  <>
-                    <div className="paper-inline-action-metric-grid">
-                      <div className="paper-inline-action-metric">
-                        <span>{timedExitTargetLabel}</span>
-                        <strong>{formatReplayDate(timedExitTargetBar?.ts, selectedView?.interval)}</strong>
-                      </div>
-                      <div className="paper-inline-action-metric">
-                        <span>{timedExitSizeLabel}</span>
-                        <strong>{formatNotional(timedExitLeveragedSnapshot.exposureNotional)} PT</strong>
-                      </div>
-                      <div className="paper-inline-action-metric">
-                        <span>Protection after drag</span>
-                        <strong className={timedExitEstimatedPnl >= 0 ? 'risk-low' : 'risk-high'}>
-                          {formatSigned(timedExitEstimatedPnl)} PT
-                        </strong>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="ghost-btn compact paper-inline-action-button"
-                      onClick={() => setAutoSellPreviewOpen(true)}
-                      disabled={!timedExitReady}
-                    >
-                      {timedExitActionLabel}
-                    </button>
-                  </>
-                ) : (
-                  <div className="paper-inline-muted-help">
-                    Open the protective hedge first; the full close preview appears here after a live hedge leg exists.
-                  </div>
-                )}
-              </div>
-            ) : null}
-
             {optionStrategyPreview ? (
               <div className="paper-inline-action-card paper-inline-action-card-compact paper-inline-option-preview-card">
                 <div className="paper-inline-action-head">
@@ -13138,110 +13475,32 @@ function PaperTradingInner() {
               </button>
             </div>
 
-            {showRouteStructureTools ? (
+            {showAdvancedTools && selectedAdvancedRoute === 'perp' ? (
               <>
-                {routeStructureToolsAutoOpen ? (
-                  <div className={`paper-inline-static-advanced-label ${advancedActivityEnabled ? '' : 'locked'}`.trim()}>
-                    {advancedActivityEnabled
-                      ? 'Route and structure tools'
-                      : 'Finish Task 1 + Task 2 to unlock route and structure tools'}
+                <div className="paper-inline-structure-strip">
+                  {(hedgeFocusActive ? [1, 2, 3, 5] : [1, 2, 3, 5, 10]).map((multiple) => (
+                    <button
+                      key={multiple}
+                      type="button"
+                      className={`ghost-btn compact ${contractLeverage === multiple ? 'active-toggle' : ''}`}
+                      onClick={() => setContractLeverage(multiple)}
+                    >
+                      {multiple === 1 ? 'No leverage' : `${multiple}x leverage`}
+                    </button>
+                  ))}
+                </div>
+                {comboFocusActive ? (
+                  <div className="wealth-inline-note paper-inline-note">
+                    Combo mode still opens one live perp leg here, but read it as the active leg inside a broader leverage + hedge template rather than a pure one-way punt.
                   </div>
-                ) : (
-                  <label className={`paper-advanced-toggle ${advancedActivityEnabled ? '' : 'locked'}`.trim()}>
-                    <input
-                      type="checkbox"
-                      checked={advancedActivityEnabled && showAdvancedDeskControls}
-                      disabled={!advancedActivityEnabled}
-                      onChange={(event) => setShowAdvancedDeskControls(event.target.checked)}
-                    />
-                    <span>
-                      {advancedActivityEnabled
-                        ? 'Route and structure tools'
-                        : 'Finish Task 1 + Task 2 to unlock route and structure tools'}
-                    </span>
-                  </label>
-                )}
-
-                {showAdvancedTools ? (
-                  <>
-                    {!leverageRouteActive ? (
-                      <div className="paper-inline-structure-select">
-                        <label className="paper-route-select-wrap">
-                          <span>Advanced overlay</span>
-                          <select
-                            value={effectiveDeskStructureMode}
-                            onChange={(event) => handleSelectDeskStructureMode(event.target.value)}
-                          >
-                            {routeStructureOptions.map((option) => (
-                              <option key={option.id} value={option.id}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                    ) : null}
-
-                    {selectedAdvancedRoute === 'perp' ? (
-                      <>
-                        <div className="paper-inline-structure-strip">
-                          {(hedgeFocusActive ? [1, 2, 3, 5] : [1, 2, 3, 5, 10]).map((multiple) => (
-                            <button
-                              key={multiple}
-                              type="button"
-                              className={`ghost-btn compact ${contractLeverage === multiple ? 'active-toggle' : ''}`}
-                              onClick={() => setContractLeverage(multiple)}
-                            >
-                              {multiple === 1 ? 'No leverage' : `${multiple}x leverage`}
-                            </button>
-                          ))}
-                        </div>
-                        {comboFocusActive ? (
-                          <div className="wealth-inline-note paper-inline-note">
-                            Combo mode still opens one live perp leg here, but read it as the active leg inside a broader leverage + hedge template rather than a pure one-way punt.
-                          </div>
-                        ) : null}
-                      </>
-                    ) : null}
-
-                    {selectedAdvancedRoute === 'borrow' ? (
-                      <div className="paper-inline-note-box paper-inline-route-capacity-note">
-                        Strategy route is template-first: pick the payoff above, then compare cap, floor, premium, breakeven, and leg drag before any option-chain controls.
-                      </div>
-                    ) : null}
-
-                    {selectedAdvancedRoute === 'lending' ? (
-                      <div className="paper-inline-structure-strip">
-                        {timedExitPresetDays.map((days) => (
-                          <button
-                            key={days}
-                            type="button"
-                            className={`ghost-btn compact ${simulationHoldingDays === days ? 'active-toggle' : ''}`}
-                            onClick={() => updateSimulationHoldingDays(days)}
-                          >
-                            {formatHoldingPresetLabel(days)}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {selectedAdvancedRoute === 'routing' ? (
-                      <div className="paper-inline-structure-strip">
-                        {['T+0', 'T+1', 'T+N'].map((mode) => (
-                          <button
-                            key={mode}
-                            type="button"
-                            className={`ghost-btn compact ${routeSettlementMode === mode ? 'active-toggle' : ''}`}
-                            onClick={() => setRouteSettlementMode(mode)}
-                          >
-                            {mode}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </>
                 ) : null}
               </>
+            ) : null}
+
+            {showAdvancedTools && selectedAdvancedRoute === 'borrow' ? (
+              <div className="paper-inline-note-box paper-inline-route-capacity-note">
+                Strategy route is template-first: pick the payoff above, then compare cap, floor, premium, breakeven, and leg drag before any option-chain controls.
+              </div>
             ) : null}
 
             {!hedgeFocusActive ? (
@@ -13434,24 +13693,25 @@ function PaperTradingInner() {
 
         <AutoSellPreviewModal
           open={autoSellPreviewOpen}
-          product={selectedProduct}
-          anchorLabel={formatReplayDate(timedExitAnchorBar?.ts, selectedView?.interval)}
-          targetLabel={formatReplayDate(timedExitTargetBar?.ts, selectedView?.interval)}
-          sellUnits={leverageRouteActive && timedExitLeveragedSnapshot ? timedExitLeveragedSnapshot.exposureNotional : selectedPosition.units}
-          sellSizeLabel={
-            leverageRouteActive && timedExitLeveragedSnapshot
-              ? `Close ${leverageDirection} ${formatNotional(timedExitLeveragedSnapshot.exposureNotional)} PT notional (${routeLeverageMultiple}x)`
-              : ''
-          }
-          holdingDays={timedExitActualHoldingDays}
-          estimatedValue={timedExitEstimatedValue}
-          estimatedPnl={timedExitEstimatedPnl}
+          product={autoSellPreviewProduct}
+          anchorLabel={autoSellPreviewAnchorLabel}
+          targetLabel={autoSellPreviewTargetLabel}
+          sellUnits={autoSellPreviewSellUnits}
+          sellSizeLabel={autoSellPreviewSellSizeLabel}
+          holdingDays={autoSellPreviewHoldingDays}
+          estimatedValue={autoSellPreviewEstimatedValue}
+          estimatedPnl={autoSellPreviewEstimatedPnl}
           venueNotes={autoSellVenueNotes}
-          closeMode={leverageRouteActive}
-          onClose={() => setAutoSellPreviewOpen(false)}
+          closeMode={autoSellPreviewIsLeverage}
+          onClose={() => {
+            setAutoSellPreviewOpen(false);
+            setAutoSellPreviewProductId('');
+          }}
           onConfirm={() => {
             setAutoSellPreviewOpen(false);
-            handleTimedExitReplay();
+            const productIdToSettle = autoSellPreviewResolvedProductId;
+            setAutoSellPreviewProductId('');
+            handleTimedExitReplay(productIdToSettle);
           }}
         />
 
@@ -13964,10 +14224,6 @@ function PaperTradingInner() {
                   >
                 <div className="learn-quest-ribbon">Task {achievement.taskNumber}</div>
                 <div className="quest-inline-status-card paper-task-cover-summary">
-                  <div>
-                    <div className="quest-panel-title">{achievement.title}</div>
-                    <div className="muted">{achievement.requirement}</div>
-                  </div>
                   <span className={`checklist-status-badge ${achievement.unlocked || achievement.onchainClaimed || achievement.inherited ? 'done' : 'todo'}`}>
                     {achievement.unlocked || achievement.onchainClaimed || achievement.inherited ? 'Complete' : 'To do'}
                   </span>
@@ -14147,15 +14403,6 @@ function PaperTradingInner() {
                 key={filter.id}
                 className={`risk-card-tab ${productLockupFilter === filter.id ? 'active' : ''}`}
                 onClick={() => setProductLockupFilter(filter.id)}
-              >
-                {filter.label}
-              </button>
-            ))}
-            {PAPER_VOL_FILTERS.map((filter) => (
-              <button
-                key={filter.id}
-                className={`risk-card-tab ${productVolatilityFilter === filter.id ? 'active' : ''}`}
-                onClick={() => setProductVolatilityFilter(filter.id)}
               >
                 {filter.label}
               </button>

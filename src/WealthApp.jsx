@@ -335,10 +335,89 @@ const WEALTH_OPPORTUNITY_PRODUCT_IDS = WEALTH_OPPORTUNITY_TYPES.reduce((acc, ite
 const FEATURED_WEALTH_OPPORTUNITY_IDS = new Set(['protected-growth', 'growth-access']);
 const FEATURED_WEALTH_OPPORTUNITIES = WEALTH_OPPORTUNITY_TYPES.filter((type) => FEATURED_WEALTH_OPPORTUNITY_IDS.has(type.id));
 const WEALTH_PRODUCT_TYPE_FILTERS = [
-  ...CATEGORY_OPTIONS.filter((category) => !['public', 'private', 'earn'].includes(category.id)),
+  ...CATEGORY_OPTIONS.filter((category) => category.id !== 'earn'),
   { id: 'protected', label: 'Protected' },
   { id: 'growth', label: 'Growth' }
 ];
+const WEALTH_TIMELINE_FLOAT_STORAGE_KEY = 'msx.wealthTimelineFloat';
+const WEALTH_TIMELINE_FLOAT_EDGE_GAP = 18;
+const WEALTH_TIMELINE_FLOAT_MIN_WIDTH = 340;
+const WEALTH_TIMELINE_FLOAT_MAX_WIDTH = 560;
+const WEALTH_TIMELINE_FLOAT_MIN_HEIGHT = 360;
+const WEALTH_TIMELINE_FLOAT_MAX_HEIGHT = 760;
+
+function getFloatingTimelineViewport() {
+  if (typeof window === 'undefined') {
+    return { width: 1440, height: 900 };
+  }
+
+  return {
+    width: Math.max(1080, Number(window.innerWidth || 1440)),
+    height: Math.max(720, Number(window.innerHeight || 900))
+  };
+}
+
+function buildDefaultWealthTimelineFloat(viewport = getFloatingTimelineViewport()) {
+  const maxWidth = Math.max(
+    WEALTH_TIMELINE_FLOAT_MIN_WIDTH,
+    Math.min(WEALTH_TIMELINE_FLOAT_MAX_WIDTH, viewport.width - WEALTH_TIMELINE_FLOAT_EDGE_GAP * 2)
+  );
+  const maxHeight = Math.max(
+    WEALTH_TIMELINE_FLOAT_MIN_HEIGHT,
+    Math.min(WEALTH_TIMELINE_FLOAT_MAX_HEIGHT, viewport.height - WEALTH_TIMELINE_FLOAT_EDGE_GAP * 2 - 48)
+  );
+  const width = clamp(430, WEALTH_TIMELINE_FLOAT_MIN_WIDTH, maxWidth);
+  const height = clamp(560, WEALTH_TIMELINE_FLOAT_MIN_HEIGHT, maxHeight);
+
+  return {
+    isCollapsed: false,
+    left: Math.max(WEALTH_TIMELINE_FLOAT_EDGE_GAP, viewport.width - width - 28),
+    top: clamp(180, 72, Math.max(72, viewport.height - height - WEALTH_TIMELINE_FLOAT_EDGE_GAP)),
+    width,
+    height,
+    arrowSide: 'right',
+    arrowTop: clamp(280, 72, Math.max(72, viewport.height - 72))
+  };
+}
+
+function getCollapsedWealthTimelineAnchor(layout, viewport = getFloatingTimelineViewport()) {
+  const side = layout.left + layout.width / 2 <= viewport.width / 2 ? 'left' : 'right';
+  return {
+    arrowSide: side,
+    arrowTop: clamp(layout.top + Math.min(48, layout.height / 2), 72, Math.max(72, viewport.height - 72))
+  };
+}
+
+function normalizeWealthTimelineFloat(payload, viewport = getFloatingTimelineViewport()) {
+  const fallback = buildDefaultWealthTimelineFloat(viewport);
+  const maxWidth = Math.max(
+    WEALTH_TIMELINE_FLOAT_MIN_WIDTH,
+    Math.min(WEALTH_TIMELINE_FLOAT_MAX_WIDTH, viewport.width - WEALTH_TIMELINE_FLOAT_EDGE_GAP * 2)
+  );
+  const maxHeight = Math.max(
+    WEALTH_TIMELINE_FLOAT_MIN_HEIGHT,
+    Math.min(WEALTH_TIMELINE_FLOAT_MAX_HEIGHT, viewport.height - WEALTH_TIMELINE_FLOAT_EDGE_GAP * 2 - 48)
+  );
+  const widthCandidate = Number(payload?.width);
+  const heightCandidate = Number(payload?.height);
+  const width = Number.isFinite(widthCandidate) ? clamp(widthCandidate, WEALTH_TIMELINE_FLOAT_MIN_WIDTH, maxWidth) : fallback.width;
+  const height = Number.isFinite(heightCandidate) ? clamp(heightCandidate, WEALTH_TIMELINE_FLOAT_MIN_HEIGHT, maxHeight) : fallback.height;
+  const maxLeft = Math.max(WEALTH_TIMELINE_FLOAT_EDGE_GAP, viewport.width - width - WEALTH_TIMELINE_FLOAT_EDGE_GAP);
+  const maxTop = Math.max(72, viewport.height - height - WEALTH_TIMELINE_FLOAT_EDGE_GAP);
+  const leftCandidate = Number(payload?.left);
+  const topCandidate = Number(payload?.top);
+  const arrowTopCandidate = Number(payload?.arrowTop);
+
+  return {
+    isCollapsed: Boolean(payload?.isCollapsed),
+    left: Number.isFinite(leftCandidate) ? clamp(leftCandidate, WEALTH_TIMELINE_FLOAT_EDGE_GAP, maxLeft) : fallback.left,
+    top: Number.isFinite(topCandidate) ? clamp(topCandidate, 72, maxTop) : fallback.top,
+    width,
+    height,
+    arrowSide: payload?.arrowSide === 'left' ? 'left' : 'right',
+    arrowTop: Number.isFinite(arrowTopCandidate) ? clamp(arrowTopCandidate, 72, Math.max(72, viewport.height - 72)) : fallback.arrowTop
+  };
+}
 
 const WEALTH_TASK_BADGES = { subscribe: 'W1', settlement: 'W2' };
 const WEALTH_AMOUNT_PRESET_VALUES = [1000, 5000, 10000, 25000, 50000, 100000];
@@ -694,7 +773,8 @@ function normalizeWealthState(value) {
             shares: roundNumber(shares, 6),
             principal: roundNumber(Number.isFinite(principal) ? principal : 0, 2),
             entryNav: Number(position?.entryNav || 0),
-            entryTs: position?.entryTs || ''
+            entryTs: position?.entryTs || '',
+            lastActivityTs: position?.lastActivityTs || position?.lastSubscribeTs || position?.entryTs || ''
           }
         ];
       })
@@ -1146,6 +1226,8 @@ function productMatchesWealthCategory(product, categoryId) {
   const surface = getWealthProductSurface(product);
   const text = `${product.id || ''} ${product.productType || ''} ${product.name || ''} ${product.yieldSource || ''}`.toLowerCase();
 
+  if (categoryId === 'public') return surface === 'public' || /pre-ipo|private-growth|late-stage|secondary window|private growth|spv access/.test(text);
+  if (categoryId === 'private') return surface === 'private' || /pre-ipo|private-growth|late-stage|private share|secondary window|private growth|spv access/.test(text);
   if (categoryId === 'dual') return /dual investment|dual currency|buy-the-dip|reverse convertible/.test(text);
   if (categoryId === 'protected') {
     return (
@@ -1318,6 +1400,42 @@ function isRedeemableProduct(product = {}) {
   return Boolean(getSettlementPolicy(product).redeemable);
 }
 
+function getWealthLockDays(product = {}) {
+  const policy = getSettlementPolicy(product);
+  const text = `${policy.timing || ''} ${policy.detail || ''} ${product?.fees?.lockup || ''} ${product?.redemption || ''}`.toLowerCase();
+
+  if (/7-day|7 day|weekly/.test(text)) return 7;
+  if (/90-day|90 day|quarter/.test(text)) return 90;
+  if (/12-month|12 month|1-year|1 year|annual/.test(text)) return 365;
+  if (/monthly|30-day|30 day/.test(text)) return 30;
+  if (/maturity|closed-end|no early|transfer-only|liquidity event/.test(text)) return 180;
+  return 0;
+}
+
+function getWealthPositionHoldingDays(position = {}) {
+  const entryTime = new Date(position?.entryTs || '').getTime();
+  if (!Number.isFinite(entryTime)) return 0;
+  return Math.max(0, Math.floor((Date.now() - entryTime) / DAY_MS));
+}
+
+function getWealthLockStatus(product = {}, position = {}, forwardDays = 0) {
+  const lockDays = getWealthLockDays(product);
+  const holdingDays = getWealthPositionHoldingDays(position);
+  const totalDays = holdingDays + Math.max(0, Number(forwardDays || 0));
+  const daysLeft = Math.max(0, lockDays - totalDays);
+  const earlyHaircutRate = lockDays > 0 ? Math.min(0.18, 0.025 + daysLeft / Math.max(1, lockDays) * 0.075) : 0;
+
+  return {
+    lockDays,
+    holdingDays,
+    totalDays,
+    daysLeft: Math.ceil(daysLeft),
+    isLocked: lockDays > 0 && daysLeft > 0,
+    isMature: lockDays > 0 && daysLeft <= 0,
+    earlyHaircutRate
+  };
+}
+
 function getAmountPresetRows({ minimumTicket = WEALTH_MIN_SUBSCRIPTION, availableCash = 0, currentAmount = 0 } = {}) {
   const min = Math.max(WEALTH_MIN_SUBSCRIPTION, Number(minimumTicket || 0));
   const max = Math.max(0, Math.floor(Number(availableCash || 0)));
@@ -1366,8 +1484,21 @@ function sortProductsWithOwnedFirst(products = [], positions = {}) {
       .filter(([, position]) => Number(position?.shares || 0) > 0 || Number(position?.principal || 0) > 0)
       .map(([productId]) => productId)
   );
+  const activityRank = (productId) => {
+    const position = positions?.[productId] || {};
+    const timestamp = position.lastActivityTs || position.lastSubscribeTs || position.entryTs || '';
+    const parsed = timestamp ? Date.parse(timestamp) : 0;
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
 
-  return [...products].sort((left, right) => Number(ownedProductIds.has(right.id)) - Number(ownedProductIds.has(left.id)));
+  return [...products].sort((left, right) => {
+    const ownedDelta = Number(ownedProductIds.has(right.id)) - Number(ownedProductIds.has(left.id));
+    if (ownedDelta !== 0) return ownedDelta;
+    if (ownedProductIds.has(left.id) && ownedProductIds.has(right.id)) {
+      return activityRank(right.id) - activityRank(left.id);
+    }
+    return 0;
+  });
 }
 
 function getSubscriptionError({
@@ -2687,6 +2818,10 @@ function WealthInner() {
   const [settlementAction, setSettlementAction] = useState('roll');
   const [settlementTransferProductId, setSettlementTransferProductId] = useState('');
   const [timelineDockOpen, setTimelineDockOpen] = useState(true);
+  const [timelineDockFloat, setTimelineDockFloat] = useState(() =>
+    normalizeWealthTimelineFloat(readStorageJson(WEALTH_TIMELINE_FLOAT_STORAGE_KEY, null))
+  );
+  const [timelineDockGesture, setTimelineDockGesture] = useState(null);
   const [dualCurrencyPairId, setDualCurrencyPairId] = useState(DUAL_CURRENCY_PAIR_OPTIONS[0].id);
   const [dualCurrencyDirection, setDualCurrencyDirection] = useState('buy-low');
   const [dualCurrencyTargetPct, setDualCurrencyTargetPct] = useState(-2);
@@ -2701,6 +2836,8 @@ function WealthInner() {
   });
   const [wealthState, setWealthState] = useState(defaultWealthState());
   const [paperProfileState, setPaperProfileState] = useState({});
+  const [wealthStateAddressKey, setWealthStateAddressKey] = useState('');
+  const [paperProfileAddressKey, setPaperProfileAddressKey] = useState('');
   const [pendingScrollProductId, setPendingScrollProductId] = useState(null);
   const [pendingFocusRequest, setPendingFocusRequest] = useState(null);
   const productCardRefs = useRef(new Map());
@@ -2917,24 +3054,32 @@ function WealthInner() {
   useEffect(() => {
     if (!address) {
       setWealthState(defaultWealthState());
+      setWealthStateAddressKey('');
       return;
     }
 
+    const walletAddressKey = String(address).toLowerCase();
     const storedWealthState = normalizeWealthState(readStorageJson(wealthStorageKey, defaultWealthState()));
     setWealthState(normalizeWealthState(readRecoveredWealthState(address, storedWealthState)));
+    setWealthStateAddressKey(walletAddressKey);
   }, [address, wealthStorageKey]);
 
   useEffect(() => {
     if (!address) {
       setPaperProfileState({});
+      setPaperProfileAddressKey('');
       return;
     }
 
+    const walletAddressKey = String(address).toLowerCase();
     setPaperProfileState(readRecoveredPaperState(address, readStorageJson(paperReplayStateKey, {})));
+    setPaperProfileAddressKey(walletAddressKey);
   }, [address, paperReplayStateKey]);
 
   useEffect(() => {
     if (!address) return;
+    const walletAddressKey = String(address).toLowerCase();
+    if (wealthStateAddressKey !== walletAddressKey || paperProfileAddressKey !== walletAddressKey) return;
     writeWalletProfilePatch(address, {
       wealth: {
         state: wealthState
@@ -2943,12 +3088,96 @@ function WealthInner() {
         state: paperProfileState
       }
     });
-  }, [address, wealthState, paperProfileState]);
+  }, [address, wealthState, paperProfileState, wealthStateAddressKey, paperProfileAddressKey]);
 
   useEffect(() => {
     if (!address) return;
+    if (wealthStateAddressKey !== String(address).toLowerCase()) return;
     writeStorageJson(wealthStorageKey, wealthState);
-  }, [address, wealthState, wealthStorageKey]);
+  }, [address, wealthState, wealthStorageKey, wealthStateAddressKey]);
+
+  useEffect(() => {
+    writeStorageJson(WEALTH_TIMELINE_FLOAT_STORAGE_KEY, timelineDockFloat);
+  }, [timelineDockFloat]);
+
+  useEffect(() => {
+    function handleWindowResize() {
+      setTimelineDockFloat((current) => normalizeWealthTimelineFloat(current));
+    }
+
+    window.addEventListener('resize', handleWindowResize);
+    return () => window.removeEventListener('resize', handleWindowResize);
+  }, []);
+
+  useEffect(() => {
+    if (!timelineDockGesture) return undefined;
+
+    const previousUserSelect = document.body.style.userSelect;
+    const previousCursor = document.body.style.cursor;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'grabbing';
+
+    function handlePointerMove(event) {
+      const viewport = getFloatingTimelineViewport();
+      const deltaX = event.clientX - timelineDockGesture.startX;
+      const deltaY = event.clientY - timelineDockGesture.startY;
+
+      if (timelineDockGesture.type === 'drag') {
+        setTimelineDockFloat((current) =>
+          normalizeWealthTimelineFloat(
+            {
+              ...current,
+              left: timelineDockGesture.left + deltaX,
+              top: timelineDockGesture.top + deltaY
+            },
+            viewport
+          )
+        );
+        return;
+      }
+
+      setTimelineDockFloat((current) =>
+        normalizeWealthTimelineFloat(
+          {
+            ...current,
+            arrowSide: event.clientX <= viewport.width / 2 ? 'left' : 'right',
+            arrowTop: timelineDockGesture.arrowTop + deltaY
+          },
+          viewport
+        )
+      );
+    }
+
+    function finishPointerGesture(event) {
+      if (timelineDockGesture.type === 'arrow') {
+        const deltaX = event.clientX - timelineDockGesture.startX;
+        const deltaY = event.clientY - timelineDockGesture.startY;
+        if (Math.abs(deltaX) + Math.abs(deltaY) < 8) {
+          setTimelineDockFloat((current) =>
+            normalizeWealthTimelineFloat({
+              ...current,
+              isCollapsed: false
+            })
+          );
+          setTimelineDockOpen(true);
+        }
+      }
+
+      setTimelineDockGesture(null);
+    }
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', finishPointerGesture);
+    window.addEventListener('pointercancel', finishPointerGesture);
+
+    return () => {
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.cursor = previousCursor;
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', finishPointerGesture);
+      window.removeEventListener('pointercancel', finishPointerGesture);
+    };
+  }, [timelineDockGesture]);
 
   useEffect(() => {
     let active = true;
@@ -3034,6 +3263,9 @@ function WealthInner() {
     };
   }, []);
 
+  const currentWalletAddressKey = address ? String(address).toLowerCase() : '';
+  const wealthStateReadyForWallet = !address || wealthStateAddressKey === currentWalletAddressKey;
+  const displayWealthState = wealthStateReadyForWallet ? wealthState : defaultWealthState();
   const currentGoal = useMemo(() => getGoalById(selectedGoal), [selectedGoal]);
   const wealthCategoryOptions = useMemo(() => WEALTH_PRODUCT_TYPE_FILTERS, []);
   const recommendedProducts = useMemo(
@@ -3079,11 +3311,11 @@ function WealthInner() {
     );
   }, [baseShelfProducts, normalizedShelfSearchQuery]);
   const shelfProducts = useMemo(
-    () => sortProductsWithOwnedFirst(searchableShelfProducts, wealthState.positions),
-    [searchableShelfProducts, wealthState.positions]
+    () => sortProductsWithOwnedFirst(searchableShelfProducts, displayWealthState.positions),
+    [searchableShelfProducts, displayWealthState.positions]
   );
 
-  const wealthActivityTypes = getActivityTypeSet(wealthState);
+  const wealthActivityTypes = getActivityTypeSet(displayWealthState);
   const wealthQuestRows = [
     {
       id: 'subscribe',
@@ -3092,9 +3324,9 @@ function WealthInner() {
       activityLabel: 'Receipt mint',
       title: 'Buy one receipt',
       copy: 'Choose a product, open the lifecycle desk, review the buy flow, then mint a local receipt balance in the wealth ledger.',
-      done: Object.keys(wealthState.positions || {}).length > 0,
-      statusLabel: Object.keys(wealthState.positions || {}).length > 0 ? 'Receipt live' : 'To do',
-      statusTone: Object.keys(wealthState.positions || {}).length > 0 ? 'done' : 'todo'
+      done: Object.keys(displayWealthState.positions || {}).length > 0,
+      statusLabel: Object.keys(displayWealthState.positions || {}).length > 0 ? 'Receipt live' : 'To do',
+      statusTone: Object.keys(displayWealthState.positions || {}).length > 0 ? 'done' : 'todo'
     },
     {
       id: 'settlement',
@@ -3103,9 +3335,9 @@ function WealthInner() {
       activityLabel: 'Settle / pledge',
       title: 'Simulate settle or pledge',
       copy: 'Settle means close, redeem, roll, or mature the receipt. Pledge means locking it as route support before release.',
-      done: wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') || Object.keys(wealthState.collateral || {}).length > 0,
-      statusLabel: wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') || Object.keys(wealthState.collateral || {}).length > 0 ? 'Completed' : 'To do',
-      statusTone: wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') || Object.keys(wealthState.collateral || {}).length > 0 ? 'done' : 'todo'
+      done: wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') || Object.keys(displayWealthState.collateral || {}).length > 0,
+      statusLabel: wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') || Object.keys(displayWealthState.collateral || {}).length > 0 ? 'Completed' : 'To do',
+      statusTone: wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') || Object.keys(displayWealthState.collateral || {}).length > 0 ? 'done' : 'todo'
     }
   ];
   const wealthTaskCompletedCount = wealthQuestRows.filter((quest) => quest.done).length;
@@ -3118,7 +3350,7 @@ function WealthInner() {
     : `${selectedCategoryMeta.label} productized as a buyable wealth receipt, not as a raw strategy terminal.`;
   const recommendedProductsForView = (
     selectedCategory === 'all'
-      ? sortProductsWithOwnedFirst(recommendedProducts, wealthState.positions)
+      ? sortProductsWithOwnedFirst(recommendedProducts, displayWealthState.positions)
       : shelfProducts.slice(0, 4)
   ).filter(Boolean);
   const categoryCompareSeedIds = useMemo(() => {
@@ -3268,11 +3500,11 @@ function WealthInner() {
   ].filter(Boolean).length;
 
   const milestoneBonus = milestoneCount * WEALTH_MILESTONE_BONUS;
-  const availableCash = wealthState.cash + milestoneBonus;
+  const availableCash = displayWealthState.cash + milestoneBonus;
   const walletProfileSummary = getWalletProfileSummary({
     ...readWalletProfile(address),
     wealth: {
-      state: wealthState
+      state: displayWealthState
     },
     paper: {
       state: paperProfileState
@@ -3282,7 +3514,7 @@ function WealthInner() {
 
   const portfolioRows = useMemo(
     () =>
-      Object.entries(wealthState.positions)
+      Object.entries(displayWealthState.positions)
         .map(([productId, position]) => {
           const product = productMap[productId];
           if (!product) return null;
@@ -3294,12 +3526,20 @@ function WealthInner() {
             ...product,
             shares: position.shares,
             principal: position.principal,
+            entryTs: position.entryTs || '',
+            entryNav: position.entryNav || product.nav,
+            lastActivityTs: position.lastActivityTs || position.entryTs || '',
             currentValue,
             pnl
           };
         })
-        .filter(Boolean),
-    [productMap, wealthState.positions]
+        .filter(Boolean)
+        .sort((left, right) => {
+          const leftTs = Date.parse(left.lastActivityTs || left.entryTs || '');
+          const rightTs = Date.parse(right.lastActivityTs || right.entryTs || '');
+          return (Number.isFinite(rightTs) ? rightTs : 0) - (Number.isFinite(leftTs) ? leftTs : 0);
+        }),
+    [productMap, displayWealthState.positions]
   );
 
   const totalInvested = portfolioRows.reduce((sum, row) => sum + row.principal, 0);
@@ -3323,10 +3563,13 @@ function WealthInner() {
   );
   const strategyValue = roundNumber(portfolioRows.filter((row) => row.bucket === 'strategy').reduce((sum, row) => sum + row.currentValue, 0), 2);
 
-  const selectedPosition = wealthState.positions[selectedProduct.id] || { shares: 0, principal: 0 };
+  const selectedPosition = displayWealthState.positions[selectedProduct.id] || { shares: 0, principal: 0 };
+  const selectedTimelineNav = getForwardProjectedNav(selectedProduct, Number(settlementDays));
   const selectedPositionValue = roundNumber(selectedPosition.shares * selectedProduct.nav, 2);
   const selectedPositionPnl = roundNumber(selectedPositionValue - selectedPosition.principal, 2);
-  const selectedCollateralState = wealthState.collateral?.[selectedProduct.id] || { pledgedShares: 0, borrowedAmount: 0 };
+  const selectedPositionTimelineValue = roundNumber(selectedPosition.shares * selectedTimelineNav, 2);
+  const selectedPositionTimelinePnl = roundNumber(selectedPositionTimelineValue - selectedPosition.principal, 2);
+  const selectedCollateralState = displayWealthState.collateral?.[selectedProduct.id] || { pledgedShares: 0, borrowedAmount: 0 };
   const selectedPledgedShares = roundNumber(Math.min(selectedPosition.shares || 0, selectedCollateralState.pledgedShares || 0), 6);
   const selectedBorrowedAmount = roundNumber(selectedCollateralState.borrowedAmount || 0, 2);
   const selectedFreeShares = roundNumber(Math.max(0, (selectedPosition.shares || 0) - selectedPledgedShares), 6);
@@ -3342,6 +3585,7 @@ function WealthInner() {
   const selectedMinimumTicket = Math.max(WEALTH_MIN_SUBSCRIPTION, selectedProduct.minSubscription);
   const selectedSettlementPolicy = getSettlementPolicy(selectedProduct);
   const selectedRedeemAllowed = isRedeemableProduct(selectedProduct);
+  const selectedLockStatus = getWealthLockStatus(selectedProduct, selectedPosition, settlementDays);
   const subscriptionAmountPresets = getAmountPresetRows({
     minimumTicket: selectedMinimumTicket,
     availableCash,
@@ -3372,7 +3616,7 @@ function WealthInner() {
     settlementTransferProducts.find((product) => product.id === settlementTransferProductId) ||
     settlementTransferProducts[0] ||
     selectedProduct;
-  const settlementProjectedNav = getForwardProjectedNav(selectedProduct, Number(settlementDays));
+  const settlementProjectedNav = selectedTimelineNav;
   const settlementPreviewShares = selectedFreeShares > 0 ? selectedFreeShares : roundNumber(simulatedTicketAmount / selectedProduct.nav, 6);
   const settlementPreviewValue = roundNumber(settlementPreviewShares * settlementProjectedNav, 2);
   const settlementBasisRatio = selectedPosition.shares > 0 ? Math.min(1, settlementPreviewShares / selectedPosition.shares) : 1;
@@ -3388,6 +3632,11 @@ function WealthInner() {
     Number(settlementDays || 0) <= 0
       ? 'Current window'
       : `${Number(settlementDays || 0)} days forward`;
+  const suggestedSettlementDays = clamp(
+    Math.max(30, selectedLockStatus.daysLeft > 0 ? selectedLockStatus.daysLeft : getWealthLockDays(selectedProduct) || 90),
+    0,
+    730
+  );
   const dualCurrencyPair = DUAL_CURRENCY_PAIR_OPTIONS.find((pair) => pair.id === dualCurrencyPairId) || DUAL_CURRENCY_PAIR_OPTIONS[0];
   const dualCurrencyDirectionMeta =
     DUAL_CURRENCY_DIRECTION_OPTIONS.find((option) => option.id === dualCurrencyDirection) || DUAL_CURRENCY_DIRECTION_OPTIONS[0];
@@ -3415,7 +3664,7 @@ function WealthInner() {
     (quizTaskDone ? 1 : 0) +
     (paperTaskDone ? 2 : 0) +
     (paperFlashSignal ? 2 : 0) +
-    (Object.keys(wealthState.collateral || {}).length > 0 ? 2 : 0) +
+    (Object.keys(displayWealthState.collateral || {}).length > 0 ? 2 : 0) +
     (wealthActivityTypes.has('settlement') ? 1 : 0);
   const walletProfileLevel = walletProfileScore >= 6 ? 'advanced' : walletProfileScore >= 3 ? 'intermediate' : 'starter';
   const walletProfileLabel =
@@ -3482,16 +3731,16 @@ function WealthInner() {
         'Try settle, roll, or transfer first if you want to rehearse how value returns to the wallet.',
         'Use pledge only as route support. It should not count as fresh PT profit or spendable wealth cash.'
       ],
-      ctaLabel: Object.keys(wealthState.positions || {}).length > 0 ? 'Open owned receipt' : 'Open a starter receipt',
-      ctaProductId: Object.keys(wealthState.positions || {})[0] || aiRecommendedProduct.id,
+      ctaLabel: Object.keys(displayWealthState.positions || {}).length > 0 ? 'Open owned receipt' : 'Open a starter receipt',
+      ctaProductId: Object.keys(displayWealthState.positions || {})[0] || aiRecommendedProduct.id,
       ctaCategoryId: getCategoryIdForProduct(
-        Object.keys(wealthState.positions || {})[0]
-          ? getProductByIdFrom(liveProducts, Object.keys(wealthState.positions || {})[0]) || aiRecommendedProduct
+        Object.keys(displayWealthState.positions || {})[0]
+          ? getProductByIdFrom(liveProducts, Object.keys(displayWealthState.positions || {})[0]) || aiRecommendedProduct
           : aiRecommendedProduct
       ),
       supportBadges: [
         { label: 'Paper task', value: paperTaskDone ? 'Unlocked' : 'Still gated' },
-        { label: 'Collateral activity', value: Object.keys(wealthState.collateral || {}).length > 0 ? 'Seen in wallet' : 'Not used yet' },
+        { label: 'Collateral activity', value: Object.keys(displayWealthState.collateral || {}).length > 0 ? 'Seen in wallet' : 'Not used yet' },
         { label: 'Settlement activity', value: wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') ? 'Already practiced' : 'Still open' }
       ]
     }
@@ -3514,7 +3763,9 @@ function WealthInner() {
       const projectedNav = getForwardProjectedNav(row, Number(settlementDays));
       const projectedValue = roundNumber((row.shares || 0) * projectedNav, 2);
       const projectedGain = roundNumber(projectedValue - Number(row.principal || 0), 2);
-      const pledgedShares = Number(wealthState.collateral?.[row.id]?.pledgedShares || 0);
+      const pledgedShares = Number(displayWealthState.collateral?.[row.id]?.pledgedShares || 0);
+      const lockStatus = getWealthLockStatus(row, row, settlementDays);
+      const earlyHaircutValue = roundNumber(projectedValue * lockStatus.earlyHaircutRate, 2);
 
       return {
         ...row,
@@ -3523,10 +3774,12 @@ function WealthInner() {
         projectedGain,
         pledgedShares,
         freeShares: roundNumber(Math.max(0, (row.shares || 0) - pledgedShares), 6),
+        lockStatus,
+        earlyHaircutValue,
         settlementLabel: isClosedEndProduct(row) ? 'Maturity / roll' : 'Redeem / roll'
       };
     });
-  }, [portfolioRows, selectedProduct, settlementDays, simulatedTicketAmount, wealthState.collateral]);
+  }, [portfolioRows, selectedProduct, settlementDays, simulatedTicketAmount, displayWealthState.collateral]);
 
   useEffect(() => {
     if (!settlementTransferProducts.length) return;
@@ -3802,6 +4055,36 @@ function WealthInner() {
     applyProductFocus(productId, topic);
   }
 
+  function handleProductTypeSelect(category) {
+    const nextCategory = category?.id || 'all';
+    setSelectedCategory(nextCategory);
+    setShelfSearchQuery('');
+
+    if (nextCategory === 'private') {
+      setSelectedGoal('private');
+      return;
+    }
+
+    if (nextCategory === 'public' || nextCategory === 'growth') {
+      setSelectedGoal('public');
+      return;
+    }
+
+    if (nextCategory === 'cash') {
+      setSelectedGoal('parkCash');
+      return;
+    }
+
+    if (nextCategory === 'auto') {
+      setSelectedGoal('auto');
+      return;
+    }
+
+    if (['protected', 'protectedGrowth', 'premiumIncome', 'autoCall', 'dual'].includes(nextCategory)) {
+      setSelectedGoal(nextCategory === 'dual' ? 'earn' : 'public');
+    }
+  }
+
   function handleOpportunitySelect(type) {
     if (!type) return;
     setSelectedGoal(type.goalId || 'earn');
@@ -3960,16 +4243,21 @@ function WealthInner() {
 
     setWealthState((current) => {
       const currentPosition = current.positions[selectedProduct.id] || { shares: 0, principal: 0 };
+      const nextShares = roundNumber(currentPosition.shares + sharesMinted, 6);
+      const nextPrincipal = roundNumber(currentPosition.principal + requestedAmount, 2);
+      const nextEntryNav = nextShares > 0 ? roundNumber(nextPrincipal / nextShares, 6) : selectedProduct.nav;
+      const now = new Date().toISOString();
       const nextState = {
         ...current,
         cash: roundNumber(current.cash - requestedAmount, 2),
         positions: {
           ...current.positions,
           [selectedProduct.id]: {
-            shares: roundNumber(currentPosition.shares + sharesMinted, 6),
-            principal: roundNumber(currentPosition.principal + requestedAmount, 2),
-            entryNav: currentPosition.entryNav || selectedProduct.nav,
-            entryTs: currentPosition.entryTs || new Date().toISOString()
+            shares: nextShares,
+            principal: nextPrincipal,
+            entryNav: nextEntryNav,
+            entryTs: currentPosition.entryTs || now,
+            lastActivityTs: now
           }
         }
       };
@@ -3986,6 +4274,7 @@ function WealthInner() {
     setFeedback(
       `Signed subscription placed: ${requestedAmount.toLocaleString()} PT into ${selectedProduct.name}. Demo wallet received ${sharesMinted.toLocaleString()} ${selectedProduct.shareToken} shares.`
     );
+    setSettlementDays(0);
     setIsSubscribeModalOpen(false);
   }
 
@@ -4096,6 +4385,9 @@ function WealthInner() {
       shares: selectedPledgedShares,
       extraLines: [
         `Current LTV: ${(selectedCollateralLtv * 100).toFixed(2)}%`,
+        selectedLockStatus.isLocked
+          ? `Lock status: ${selectedLockStatus.daysLeft}D left; early release should assume about ${(selectedLockStatus.earlyHaircutRate * 100).toFixed(1)}% haircut risk.`
+          : 'Lock status: maturity or flexible window is available.',
         'Release removes route support and returns the receipt to the free balance before settlement.'
       ]
     });
@@ -4120,7 +4412,11 @@ function WealthInner() {
     });
 
     setFeedback(
-      `${selectedProduct.shareToken} collateral released: removed ${selectedBorrowedAmount.toLocaleString()} PT of route support and unlocked ${selectedPledgedShares.toLocaleString()} shares for normal settlement again.`
+      `${selectedProduct.shareToken} collateral released: removed ${selectedBorrowedAmount.toLocaleString()} PT of route support and unlocked ${selectedPledgedShares.toLocaleString()} shares for normal settlement again.${
+        selectedLockStatus.isLocked
+          ? ` This receipt still has about ${selectedLockStatus.daysLeft}D left; taking it out before maturity should be treated as haircut risk.`
+          : ''
+      }`
     );
   }
 
@@ -4175,11 +4471,13 @@ function WealthInner() {
       if (remainingShares <= 0) {
         delete nextPositions[selectedProduct.id];
       } else {
+        const nextEntryNav = remainingShares > 0 ? roundNumber(Math.max(0, selectedPosition.principal - principalReduction) / remainingShares, 6) : selectedProduct.nav;
         nextPositions[selectedProduct.id] = {
           shares: remainingShares,
           principal: roundNumber(Math.max(0, selectedPosition.principal - principalReduction), 2),
-          entryNav: selectedPosition.entryNav || selectedProduct.nav,
-          entryTs: selectedPosition.entryTs || ''
+          entryNav: nextEntryNav,
+          entryTs: selectedPosition.entryTs || '',
+          lastActivityTs: new Date().toISOString()
         };
       }
       const nextState = {
@@ -4200,6 +4498,7 @@ function WealthInner() {
     setFeedback(
       `Signed redemption placed: ${redeemValue.toLocaleString()} PT from ${selectedProduct.name}. ${sharesToBurn.toLocaleString()} ${selectedProduct.shareToken} shares were burned in the demo ledger.`
     );
+    setSettlementDays(0);
   }
 
   async function handleSimulateSettlement() {
@@ -4215,6 +4514,13 @@ function WealthInner() {
 
     if (selectedFreeShares <= 0) {
       setFeedback('All current shares are pledged as collateral. Release the support line first before settling, transferring, or exiting this receipt.');
+      return;
+    }
+
+    if (!selectedSettlementPolicy.redeemable && settlementAction !== 'preview' && selectedLockStatus.isLocked) {
+      setFeedback(
+        `${selectedProduct.shareToken} is still locked for about ${selectedLockStatus.daysLeft}D. Move the timeline to the suggested maturity window before settle, roll, or transfer; early exit would be shown as a haircut, not an open settlement.`
+      );
       return;
     }
 
@@ -4245,6 +4551,7 @@ function WealthInner() {
       const nextPositions = { ...current.positions };
       const remainingShares = roundNumber(Math.max(0, currentPosition.shares - sharesToSettle), 6);
       const remainingPrincipal = roundNumber(Math.max(0, currentPosition.principal - principalReduction), 2);
+      const now = new Date().toISOString();
       let nextCash = current.cash;
 
       if (settlementAction === 'preview') {
@@ -4259,11 +4566,15 @@ function WealthInner() {
       }
 
       if (settlementAction === 'roll') {
+        const rolledShares = selectedProduct.nav > 0 ? roundNumber(valueToSettle / selectedProduct.nav, 6) : 0;
+        const nextShares = roundNumber(remainingShares + rolledShares, 6);
+        const nextPrincipal = roundNumber(remainingPrincipal + valueToSettle, 2);
         nextPositions[selectedProduct.id] = {
-          shares: currentPosition.shares,
-          principal: roundNumber(remainingPrincipal + valueToSettle, 2),
-          entryNav: settlementProjectedNav,
-          entryTs: new Date().toISOString()
+          shares: nextShares,
+          principal: nextPrincipal,
+          entryNav: nextShares > 0 ? roundNumber(nextPrincipal / nextShares, 6) : selectedProduct.nav,
+          entryTs: now,
+          lastActivityTs: now
         };
       } else if (settlementAction === 'transfer' && settlementTransferProduct) {
         if (remainingShares <= 0) {
@@ -4272,18 +4583,22 @@ function WealthInner() {
           nextPositions[selectedProduct.id] = {
             shares: remainingShares,
             principal: remainingPrincipal,
-            entryNav: currentPosition.entryNav || selectedProduct.nav,
-            entryTs: currentPosition.entryTs || ''
+            entryNav: remainingShares > 0 ? roundNumber(remainingPrincipal / remainingShares, 6) : selectedProduct.nav,
+            entryTs: currentPosition.entryTs || '',
+            lastActivityTs: now
           };
         }
 
         const targetPosition = current.positions[settlementTransferProduct.id] || { shares: 0, principal: 0 };
         const targetShares = roundNumber(valueToSettle / settlementTransferProduct.nav, 6);
+        const nextTargetShares = roundNumber((targetPosition.shares || 0) + targetShares, 6);
+        const nextTargetPrincipal = roundNumber((targetPosition.principal || 0) + valueToSettle, 2);
         nextPositions[settlementTransferProduct.id] = {
-          shares: roundNumber((targetPosition.shares || 0) + targetShares, 6),
-          principal: roundNumber((targetPosition.principal || 0) + valueToSettle, 2),
-          entryNav: targetPosition.entryNav || settlementTransferProduct.nav,
-          entryTs: targetPosition.entryTs || new Date().toISOString()
+          shares: nextTargetShares,
+          principal: nextTargetPrincipal,
+          entryNav: nextTargetShares > 0 ? roundNumber(nextTargetPrincipal / nextTargetShares, 6) : settlementTransferProduct.nav,
+          entryTs: targetPosition.entryTs || now,
+          lastActivityTs: now
         };
       } else {
         if (remainingShares <= 0) {
@@ -4292,8 +4607,9 @@ function WealthInner() {
           nextPositions[selectedProduct.id] = {
             shares: remainingShares,
             principal: remainingPrincipal,
-            entryNav: currentPosition.entryNav || selectedProduct.nav,
-            entryTs: currentPosition.entryTs || ''
+            entryNav: remainingShares > 0 ? roundNumber(remainingPrincipal / remainingShares, 6) : selectedProduct.nav,
+            entryTs: currentPosition.entryTs || '',
+            lastActivityTs: now
           };
         }
         nextCash = roundNumber(current.cash + valueToSettle, 2);
@@ -4323,6 +4639,10 @@ function WealthInner() {
         false
       )} across the ${settlementWindowLabel}.`
     );
+    if (settlementAction !== 'preview') {
+      setSettlementDays(0);
+      setFastForwardTarget('today');
+    }
   }
 
   function handlePreviewMaturity() {
@@ -4342,8 +4662,9 @@ function WealthInner() {
 
     const nextSettlementAction =
       action === 'roll' ? 'roll' : action === 'transfer' ? 'transfer' : action === 'pledge' || action === 'preview' ? 'preview' : 'exit';
-    const position = wealthState.positions?.[productId] || { shares: 0 };
+    const position = displayWealthState.positions?.[productId] || { shares: 0 };
     const maxSupport = roundNumber(Number(position.shares || 0) * Number(product.nav || 0) * getCollateralAdvanceRate(product), 2);
+    const lockStatus = getWealthLockStatus(product, position, settlementDays);
 
     setSettlementAction(nextSettlementAction);
     if (action === 'pledge') {
@@ -4355,9 +4676,64 @@ function WealthInner() {
     });
     setFeedback(
       action === 'pledge'
-        ? `${product.shareToken} pledge view opened. Set the support target, then sign the support line if this receipt should back Paper routes.`
-        : `${product.shareToken} ${nextSettlementAction} view opened. Review the settlement desk, then sign when ready.`
+        ? `${product.shareToken} pledge view opened. ${
+            lockStatus.isLocked
+              ? `This term receipt still has about ${lockStatus.daysLeft}D locked; releasing or exiting early should assume about ${(lockStatus.earlyHaircutRate * 100).toFixed(1)}% haircut risk. `
+              : ''
+          }Set the support target, then sign the support line if this receipt should back Paper routes.`
+        : `${product.shareToken} ${nextSettlementAction} view opened. ${
+            !getSettlementPolicy(product).redeemable && lockStatus.isLocked
+              ? `Locked for about ${lockStatus.daysLeft}D more; use the suggested maturity window before signing settlement. `
+              : ''
+          }Review the settlement desk, then sign when ready.`
     );
+  }
+
+  function beginWealthTimelineDrag(event) {
+    if (event.button !== 0) return;
+    if (event.target?.closest?.('button, input, select, textarea, a, label')) return;
+    event.preventDefault();
+    setTimelineDockGesture({
+      type: 'drag',
+      startX: event.clientX,
+      startY: event.clientY,
+      left: timelineDockFloat.left,
+      top: timelineDockFloat.top
+    });
+  }
+
+  function beginWealthTimelineArrowGesture(event) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    setTimelineDockGesture({
+      type: 'arrow',
+      startX: event.clientX,
+      startY: event.clientY,
+      arrowTop: timelineDockFloat.arrowTop
+    });
+  }
+
+  function handleCollapseWealthTimeline() {
+    const anchor = getCollapsedWealthTimelineAnchor(timelineDockFloat);
+    setTimelineDockFloat((current) =>
+      normalizeWealthTimelineFloat({
+        ...current,
+        isCollapsed: true,
+        arrowSide: anchor.arrowSide,
+        arrowTop: anchor.arrowTop
+      })
+    );
+    setTimelineDockOpen(false);
+  }
+
+  function handleExpandWealthTimeline() {
+    setTimelineDockFloat((current) =>
+      normalizeWealthTimelineFloat({
+        ...current,
+        isCollapsed: false
+      })
+    );
+    setTimelineDockOpen(true);
   }
 
   function renderDualCurrencyGuideSection() {
@@ -4419,7 +4795,20 @@ function WealthInner() {
                 value={dualCurrencyTargetPct}
                 onChange={(event) => setDualCurrencyTargetPct(Number(event.target.value))}
               />
+              <div className="paper-range-suggestion-row">
+                <span className="paper-range-suggestion-marker" style={{ left: `${((dualCurrencyDirection === 'buy-low' ? -4 : 5) + 12) / 24 * 100}%` }} />
+                <span>Suggested {dualCurrencyDirection === 'buy-low' ? '-4%' : '+5%'}</span>
+              </div>
             </label>
+            <div className="wealth-amount-preset-row compact">
+              <button
+                type="button"
+                className="ghost-btn compact"
+                onClick={() => setDualCurrencyTargetPct(dualCurrencyDirection === 'buy-low' ? -4 : 5)}
+              >
+                Suggested
+              </button>
+            </div>
           </div>
         </div>
 
@@ -4473,24 +4862,120 @@ function WealthInner() {
     );
   }
 
+  function renderDualInvestmentShelfSection() {
+    const dualProducts = liveProducts.filter(isDualInvestmentProduct);
+    if (!dualProducts.length) return null;
+
+    const primaryDualProduct = dualProducts[0];
+    const directionCards = [
+      {
+        id: 'buy-low',
+        title: 'Buy-low dual',
+        offset: '-4%',
+        copy: 'Deposit quote asset, earn premium, and accept settlement into the base asset if the target is reached.'
+      },
+      {
+        id: 'sell-high',
+        title: 'Sell-high dual',
+        offset: '+5%',
+        copy: 'Start from the base asset, earn premium, and accept settlement into quote asset if the take-profit target is reached.'
+      }
+    ];
+
+    return (
+      <section className="card wealth-dual-shelf-card">
+        <div className="section-head">
+          <div>
+            <div className="eyebrow">Product shelf / Dual Investment</div>
+            <h2>Target-price receipts in two directions</h2>
+          </div>
+          <span className="pill risk-medium">{dualProducts.length} dual receipts</span>
+        </div>
+
+        <div className="wealth-dual-method-grid">
+          {directionCards.map((card) => (
+            <button
+              key={card.id}
+              type="button"
+              className={`wealth-dual-method-card ${dualCurrencyDirection === card.id ? 'active' : ''}`}
+              onClick={() => {
+                setSelectedCategory('dual');
+                setDualCurrencyDirection(card.id);
+                setDualCurrencyTargetPct(card.id === 'buy-low' ? -4 : 5);
+                focusProduct(primaryDualProduct.id, { topic: 'flow', categoryId: 'dual' });
+              }}
+            >
+              <span>{card.offset} suggested target</span>
+              <strong>{card.title}</strong>
+              <p>{card.copy}</p>
+            </button>
+          ))}
+        </div>
+
+        <div className="wealth-recommended-strip wealth-dual-product-strip">
+          {dualProducts.map((product) => (
+            <button
+              key={product.id}
+              type="button"
+              className="wealth-recommended-chip"
+              onClick={() => focusProduct(product.id, { topic: 'flow', categoryId: 'dual' })}
+            >
+              <span>{product.productType}</span>
+              <strong>{product.name}</strong>
+              <em>{getSettlementPolicy(product).timing}</em>
+            </button>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
   function renderTimelineDock() {
-    if (!timelineDockOpen) {
+    if (!timelineDockOpen || timelineDockFloat.isCollapsed) {
+      const collapsedStyle =
+        timelineDockFloat.arrowSide === 'left'
+          ? { top: `${timelineDockFloat.arrowTop}px`, left: '10px', right: 'auto', bottom: 'auto' }
+          : { top: `${timelineDockFloat.arrowTop}px`, right: '10px', left: 'auto', bottom: 'auto' };
+
       return (
-        <button className="wealth-floating-timeline-toggle" onClick={() => setTimelineDockOpen(true)}>
-          Timeline
-        </button>
+        <div
+          className={`paper-floating-leaderboard-toggle wealth-floating-timeline-toggle ${timelineDockFloat.arrowSide}`}
+          style={collapsedStyle}
+          role="button"
+          tabIndex={0}
+          aria-label="Open portfolio timeline"
+          onPointerDown={beginWealthTimelineArrowGesture}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            handleExpandWealthTimeline();
+          }}
+        >
+          <span>{timelineDockFloat.arrowSide === 'left' ? '>' : '<'}</span>
+        </div>
       );
     }
 
     return (
-      <aside className="wealth-floating-timeline" aria-label="Portfolio timeline simulator">
-        <div className="paper-floating-product-leaderboard-head">
+      <aside
+        className="wealth-floating-timeline wealth-floating-timeline-draggable"
+        aria-label="Portfolio timeline simulator"
+        style={{
+          left: `${timelineDockFloat.left}px`,
+          top: `${timelineDockFloat.top}px`,
+          right: 'auto',
+          bottom: 'auto',
+          width: `${timelineDockFloat.width}px`,
+          height: `${timelineDockFloat.height}px`
+        }}
+      >
+        <div className="paper-floating-product-leaderboard-head" onPointerDown={beginWealthTimelineDrag}>
           <div>
             <div className="eyebrow">Portfolio timeline</div>
             <h3>Multi-receipt settlement</h3>
           </div>
-          <button className="ghost-btn compact paper-floating-product-leaderboard-close" onClick={() => setTimelineDockOpen(false)}>
-            Close
+          <button className="ghost-btn compact paper-floating-product-leaderboard-close" onClick={handleCollapseWealthTimeline}>
+            X
           </button>
         </div>
 
@@ -4500,7 +4985,7 @@ function WealthInner() {
 
         <div className="wealth-floating-timeline-body">
           <label className="wealth-field compact">
-            Global time jump: {settlementWindowLabel}
+            Global time jump: {settlementWindowLabel} / suggested {suggestedSettlementDays}D
             <input
               type="range"
               min="0"
@@ -4509,19 +4994,53 @@ function WealthInner() {
               value={settlementDays}
               onChange={(event) => setSettlementDays(Number(event.target.value))}
             />
+            <div className="paper-range-suggestion-row">
+              <span className="paper-range-suggestion-marker" style={{ left: `${(suggestedSettlementDays / 730) * 100}%` }} />
+              <span>Suggested {suggestedSettlementDays}D</span>
+            </div>
           </label>
+
+          <div className="paper-floating-auto-sell-presets">
+            <button type="button" className="ghost-btn compact" onClick={() => setSettlementDays(suggestedSettlementDays)}>
+              Suggested
+            </button>
+            {[30, 90, 180, 365].map((days) => (
+              <button
+                key={days}
+                type="button"
+                className={`ghost-btn compact ${settlementDays === days ? 'active-toggle' : ''}`}
+                onClick={() => setSettlementDays(days)}
+              >
+                {days}D
+              </button>
+            ))}
+          </div>
 
           <div className="wealth-floating-timeline-list">
             {timelinePreviewRows.map((row) => (
-              <button
+              <div
                 key={`${row.id}-${row.previewOnly ? 'preview' : 'owned'}`}
-                className="wealth-floating-timeline-row"
+                className={`wealth-floating-timeline-row wealth-floating-timeline-row-actions ${row.lockStatus?.isLocked ? 'locked' : ''} ${row.lockStatus?.isMature ? 'mature' : ''}`.trim()}
+                role="button"
+                tabIndex={0}
                 onClick={() => focusProduct(row.id)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  event.preventDefault();
+                  focusProduct(row.id);
+                }}
               >
                 <div>
                   <div className="product-title">{row.previewOnly ? `Preview: ${row.shortName || row.name}` : row.shortName || row.name}</div>
                   <div className="muted">
                     {row.settlementLabel} / NAV {row.projectedNav.toFixed(3)} / free {formatShareBalance(row.freeShares, hideBalances)}
+                  </div>
+                  <div className={`wealth-timeline-lock-note ${row.lockStatus?.isLocked ? 'risk-medium' : 'risk-low'}`}>
+                    {row.lockStatus?.isLocked
+                      ? `Locked ${row.lockStatus.daysLeft}D more / early haircut est. ${formatValue(row.earlyHaircutValue, hideBalances)}`
+                      : row.lockStatus?.isMature
+                        ? 'Maturity reached / next step ready'
+                        : 'Flexible settlement window'}
                   </div>
                 </div>
                 <div className="wealth-leader-move">
@@ -4529,8 +5048,60 @@ function WealthInner() {
                   <div className={`wealth-leader-subtext ${row.projectedGain >= 0 ? 'risk-low' : 'risk-high'}`}>
                     {formatSignedValue(row.projectedGain, hideBalances)}
                   </div>
+                  {!row.previewOnly ? (
+                    <div className="wealth-timeline-action-strip">
+                      <button
+                        type="button"
+                        className="ghost-btn compact"
+                        disabled={row.lockStatus?.isLocked}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          handlePositionQuickAction(row.id, 'exit');
+                        }}
+                      >
+                        {row.lockStatus?.isLocked ? 'Locked' : 'Settle'}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-btn compact"
+                        disabled={row.lockStatus?.isLocked}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          handlePositionQuickAction(row.id, 'transfer');
+                        }}
+                      >
+                        Transfer
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-btn compact"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          handlePositionQuickAction(row.id, 'pledge');
+                        }}
+                      >
+                        Pledge
+                      </button>
+                    </div>
+                  ) : null}
+                  {row.lockStatus?.isMature && !row.previewOnly ? (
+                    <button
+                      type="button"
+                      className="secondary-btn compact wealth-wallet-reminder-btn"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setFeedback(`${row.shareToken} maturity reminder queued for wallet ${walletDisplayName}: choose settle, roll, transfer, or pledge release.`);
+                      }}
+                    >
+                      Wallet reminder
+                    </button>
+                  ) : null}
                 </div>
-              </button>
+              </div>
             ))}
           </div>
 
@@ -4632,10 +5203,6 @@ function WealthInner() {
             <div className="eyebrow">My wealth positions</div>
             <h2>Wallet-linked vault holdings</h2>
           </div>
-
-          <button className="ghost-btn compact" onClick={handleResetPortfolio}>
-            Reset wealth demo
-          </button>
         </div>
 
         {portfolioRows.length === 0 ? (
@@ -4684,16 +5251,16 @@ function WealthInner() {
                   </div>
 
                   <div className="wealth-position-action-row">
-                    <button type="button" className="secondary-btn compact" onClick={() => handlePositionQuickAction(row.id, 'exit')}>
+                    <button type="button" className="secondary-btn wealth-position-action-button primary" onClick={() => handlePositionQuickAction(row.id, 'exit')}>
                       {primaryExitLabel}
                     </button>
-                    <button type="button" className="ghost-btn compact" onClick={() => handlePositionQuickAction(row.id, 'roll')}>
+                    <button type="button" className="ghost-btn wealth-position-action-button" onClick={() => handlePositionQuickAction(row.id, 'roll')}>
                       Roll
                     </button>
-                    <button type="button" className="ghost-btn compact" onClick={() => handlePositionQuickAction(row.id, 'pledge')}>
+                    <button type="button" className="ghost-btn wealth-position-action-button" onClick={() => handlePositionQuickAction(row.id, 'pledge')}>
                       Pledge
                     </button>
-                    <button type="button" className="ghost-btn compact" onClick={() => handlePositionQuickAction(row.id, 'preview')}>
+                    <button type="button" className="ghost-btn wealth-position-action-button" onClick={() => handlePositionQuickAction(row.id, 'preview')}>
                       Open
                     </button>
                   </div>
@@ -4703,7 +5270,7 @@ function WealthInner() {
           </div>
         )}
 
-        {wealthState.activityLog?.length ? (
+        {displayWealthState.activityLog?.length ? (
           <div className="wealth-activity-section compact">
             <div className="section-head compact">
               <div>
@@ -4713,7 +5280,7 @@ function WealthInner() {
             </div>
 
             <div className="wealth-activity-list compact">
-              {wealthState.activityLog.slice(0, 4).map((entry) => {
+              {displayWealthState.activityLog.slice(0, 4).map((entry) => {
                 const entryProduct = getProductByIdFrom(liveProducts, entry.productId);
                 return (
                   <button
@@ -4933,8 +5500,14 @@ function WealthInner() {
               Buy the receipt, then handle settlement, rollover, transfer, or pledge in one place instead of jumping between separate explanation panels.
             </div>
           </div>
-          <span className={`pill ${riskClass(selectedProduct.risk)}`}>{selectedProduct.riskNote}</span>
+          <span className={`pill ${riskClass(selectedProduct.risk)}`}>{selectedProduct.risk} risk</span>
         </div>
+
+        {selectedProduct.riskNote ? (
+          <div className="wealth-inline-note paper-inline-note">
+            <strong>Risk note.</strong> {selectedProduct.riskNote}
+          </div>
+        ) : null}
 
         <label className="wealth-field">
           Subscribe amount
@@ -4967,13 +5540,13 @@ function WealthInner() {
             <div className="value">{formatShareBalance(selectedPosition.shares, hideBalances)}</div>
           </div>
           <div className="paper-balance-box">
-            <div className="label">Current value</div>
-            <div className="value">{formatValue(selectedPositionValue, hideBalances)}</div>
+            <div className="label">Value @ timeline</div>
+            <div className="value">{formatValue(selectedPositionTimelineValue, hideBalances)}</div>
           </div>
           <div className="paper-balance-box">
-            <div className="label">PnL</div>
-            <div className={`value ${selectedPositionPnl >= 0 ? 'risk-low' : 'risk-high'}`}>
-              {formatSignedValue(selectedPositionPnl, hideBalances)}
+            <div className="label">PnL @ timeline</div>
+            <div className={`value ${selectedPositionTimelinePnl >= 0 ? 'risk-low' : 'risk-high'}`}>
+              {formatSignedValue(selectedPositionTimelinePnl, hideBalances)}
             </div>
           </div>
         </div>
@@ -5030,7 +5603,7 @@ function WealthInner() {
           </div>
 
           <label className="wealth-field">
-            Days forward: {settlementWindowLabel}
+            Days forward: {settlementWindowLabel} / suggested {suggestedSettlementDays}D
             <input
               type="range"
               min="0"
@@ -5039,7 +5612,17 @@ function WealthInner() {
               value={settlementDays}
               onChange={(event) => setSettlementDays(Number(event.target.value))}
             />
+            <div className="paper-range-suggestion-row">
+              <span className="paper-range-suggestion-marker" style={{ left: `${(suggestedSettlementDays / 730) * 100}%` }} />
+              <span>Suggested {suggestedSettlementDays}D</span>
+            </div>
           </label>
+
+          <div className="wealth-amount-preset-row compact">
+            <button type="button" className="ghost-btn compact" onClick={() => setSettlementDays(suggestedSettlementDays)}>
+              Suggested
+            </button>
+          </div>
 
           <div className="wealth-compare-toolbar">
             <label>
@@ -5645,8 +6228,14 @@ function WealthInner() {
                     Start with the amount, review the buy preview, then follow the exact exit path this product allows. Open-ended sleeves can redeem later; closed-ended sleeves wait for maturity.
                   </div>
                 </div>
-                <span className={`pill ${riskClass(selectedProduct.risk)}`}>{selectedProduct.riskNote}</span>
+                <span className={`pill ${riskClass(selectedProduct.risk)}`}>{selectedProduct.risk} risk</span>
               </div>
+
+              {selectedProduct.riskNote ? (
+                <div className="wealth-inline-note paper-inline-note">
+                  <strong>Risk note.</strong> {selectedProduct.riskNote}
+                </div>
+              ) : null}
 
               <label className="wealth-field">
                 Subscribe amount
@@ -5678,16 +6267,16 @@ function WealthInner() {
                   <div className="label">Current shares</div>
                   <div className="value">{formatShareBalance(selectedPosition.shares, hideBalances)}</div>
                 </div>
-                <div className="paper-balance-box">
-                  <div className="label">Current value</div>
-                  <div className="value">{formatValue(selectedPositionValue, hideBalances)}</div>
-                </div>
-                <div className="paper-balance-box">
-                  <div className="label">PnL</div>
-                  <div className={`value ${selectedPositionPnl >= 0 ? 'risk-low' : 'risk-high'}`}>
-                    {formatSignedValue(selectedPositionPnl, hideBalances)}
+                  <div className="paper-balance-box">
+                    <div className="label">Value @ timeline</div>
+                    <div className="value">{formatValue(selectedPositionTimelineValue, hideBalances)}</div>
                   </div>
-                </div>
+                  <div className="paper-balance-box">
+                    <div className="label">PnL @ timeline</div>
+                    <div className={`value ${selectedPositionTimelinePnl >= 0 ? 'risk-low' : 'risk-high'}`}>
+                      {formatSignedValue(selectedPositionTimelinePnl, hideBalances)}
+                    </div>
+                  </div>
               </div>
 
               {isCollateralPilotProduct(selectedProduct) ? (
@@ -5731,7 +6320,7 @@ function WealthInner() {
                 <div className="product-title">Settlement desk</div>
 
                 <label className="wealth-field">
-                  Days forward: {settlementWindowLabel}
+                  Days forward: {settlementWindowLabel} / suggested {suggestedSettlementDays}D
                   <input
                     type="range"
                     min="0"
@@ -5740,6 +6329,10 @@ function WealthInner() {
                     value={settlementDays}
                     onChange={(event) => setSettlementDays(Number(event.target.value))}
                   />
+                  <div className="paper-range-suggestion-row">
+                    <span className="paper-range-suggestion-marker" style={{ left: `${(suggestedSettlementDays / 730) * 100}%` }} />
+                    <span>Suggested {suggestedSettlementDays}D</span>
+                  </div>
                 </label>
 
                 <div className="wealth-compare-toolbar">
@@ -6104,6 +6697,10 @@ function WealthInner() {
             {t('Wallet nickname', '钱包昵称')}
           </button>
 
+          <button className="secondary-btn compact wealth-reset-top-btn" onClick={handleResetPortfolio}>
+            Reset wealth demo
+          </button>
+
           <button className={`ghost-btn wallet-header-btn ${isConnected ? 'connected' : ''}`.trim()} onClick={() => setWalletModalOpen(true)} disabled={isPending}>
             {isConnected
               ? t(`Wallet connected ${walletDisplayName}`, `钱包已连接 ${walletDisplayName}`)
@@ -6306,7 +6903,7 @@ function WealthInner() {
                 <button
                   key={category.id}
                   className={`risk-card-tab ${selectedCategory === category.id ? 'active' : ''}`}
-                  onClick={() => setSelectedCategory(category.id)}
+                  onClick={() => handleProductTypeSelect(category)}
                   title={getWealthProductTypeTooltip(category)}
                 >
                   {category.label}
@@ -6317,23 +6914,20 @@ function WealthInner() {
 
           <div className="wealth-opportunity-section">
             <div className="wealth-opportunity-head">
-              <div className="eyebrow">TradFi opportunity map</div>
-              <span className="pill risk-low">{FEATURED_WEALTH_OPPORTUNITIES.length} lanes</span>
+              <div className="eyebrow">Product types</div>
+              <span className="pill risk-low">{wealthCategoryOptions.length} labels</span>
             </div>
 
             <div className="wealth-opportunity-grid compact">
-              {FEATURED_WEALTH_OPPORTUNITIES.map((type) => (
+              {wealthCategoryOptions.map((category) => (
                 <button
                   type="button"
-                  className={`wealth-opportunity-card clickable ${selectedCategory === type.filterCategory ? 'active' : ''}`}
-                  key={type.id}
-                  onClick={() => handleOpportunitySelect(type)}
+                  className={`wealth-opportunity-card wealth-product-type-card clickable ${selectedCategory === category.id ? 'active' : ''}`}
+                  key={category.id}
+                  onClick={() => handleProductTypeSelect(category)}
+                  title={getWealthProductTypeTooltip(category)}
                 >
-                  <div className="wealth-opportunity-meta">
-                    <span>{type.priority}</span>
-                    <span className="pill risk-low">Wealth</span>
-                  </div>
-                  <div className="wealth-opportunity-title">{type.label}</div>
+                  <div className="wealth-opportunity-title">{category.label}</div>
                 </button>
               ))}
             </div>
@@ -6439,8 +7033,8 @@ function WealthInner() {
                   const productAnnualYield = getAnnualYieldRate(product);
                   const productFactRows = getWealthProductFactRows(product);
                   const isExpanded = expandedProductId === product.id;
-                  const productPosition = wealthState.positions?.[product.id] || { shares: 0, principal: 0 };
-                  const productCollateral = wealthState.collateral?.[product.id] || { pledgedShares: 0, borrowedAmount: 0 };
+                  const productPosition = displayWealthState.positions?.[product.id] || { shares: 0, principal: 0 };
+                  const productCollateral = displayWealthState.collateral?.[product.id] || { pledgedShares: 0, borrowedAmount: 0 };
                   const productReceiptValue = roundNumber((productPosition.shares || 0) * product.nav, 2);
                   const productDifficulty = getProductDifficulty(product);
 
@@ -6912,8 +7506,14 @@ function WealthInner() {
                               Buy the receipt first, then read settlement, rollover, transfer, or pledge as one lifecycle instead of separate mystery buttons.
                             </div>
                           </div>
-                          <span className={`pill ${riskClass(selectedProduct.risk)}`}>{selectedProduct.riskNote}</span>
+                          <span className={`pill ${riskClass(selectedProduct.risk)}`}>{selectedProduct.risk} risk</span>
                         </div>
+
+                        {selectedProduct.riskNote ? (
+                          <div className="wealth-inline-note paper-inline-note">
+                            <strong>Risk note.</strong> {selectedProduct.riskNote}
+                          </div>
+                        ) : null}
 
                         <label className="wealth-field">
                           Subscribe amount
@@ -6946,13 +7546,13 @@ function WealthInner() {
                             <div className="value">{formatShareBalance(selectedPosition.shares, hideBalances)}</div>
                           </div>
                           <div className="paper-balance-box">
-                            <div className="label">Current value</div>
-                            <div className="value">{formatValue(selectedPositionValue, hideBalances)}</div>
+                            <div className="label">Value @ timeline</div>
+                            <div className="value">{formatValue(selectedPositionTimelineValue, hideBalances)}</div>
                           </div>
                           <div className="paper-balance-box">
-                            <div className="label">PnL</div>
-                            <div className={`value ${selectedPositionPnl >= 0 ? 'risk-low' : 'risk-high'}`}>
-                              {formatSignedValue(selectedPositionPnl, hideBalances)}
+                            <div className="label">PnL @ timeline</div>
+                            <div className={`value ${selectedPositionTimelinePnl >= 0 ? 'risk-low' : 'risk-high'}`}>
+                              {formatSignedValue(selectedPositionTimelinePnl, hideBalances)}
                             </div>
                           </div>
                         </div>
@@ -7274,6 +7874,8 @@ function WealthInner() {
                 </div>
               ) : null}
             </section>
+
+            {renderDualInvestmentShelfSection()}
           </div>
 
           <aside className="card wealth-ranking-sidebar">
