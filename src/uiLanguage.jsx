@@ -286,7 +286,7 @@ const EN_TO_ZH = {
   'Hover for the long explanation': '悬停查看完整解释',
   'All product types': '全部产品类型',
   'Cash & Treasury': '现金与国债',
-  'Auto / Managed': '自动 / 托管',
+  'Managed Strategy': '托管策略',
   Recommended: '推荐',
   'Click any card to open detail': '点击任意卡片打开详情',
   'Fits this wallet because': '适合这个钱包，因为',

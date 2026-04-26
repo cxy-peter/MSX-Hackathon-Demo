@@ -41,7 +41,7 @@ export const GOAL_OPTIONS = [
   },
   {
     id: 'auto',
-    label: 'Auto / Managed',
+    label: 'Managed Strategy',
     description: 'Use recurring buy, rebalance, alerts, yield optimizer, and risk copilot as permissioned rules layered on top of assets.',
     recommended: ['msx-quant-fund-1', 'msx-quant-fund-2', 'superstate-ustb']
   }
@@ -52,7 +52,6 @@ export const CATEGORY_OPTIONS = [
   { id: 'cash', label: 'Cash & Treasury' },
   { id: 'public', label: 'Pre-IPO Growth' },
   { id: 'private', label: 'Private' },
-  { id: 'auto', label: 'Auto / Managed' },
   { id: 'earn', label: 'Earn / Yield' }
 ];
 
