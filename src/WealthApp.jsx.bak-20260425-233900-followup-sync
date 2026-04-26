@@ -27,7 +27,6 @@ import {
 import {
   getWealthSpendableCash,
   getWalletProfileSummary,
-  readRecoveredPaperState,
   readRecoveredWealthState,
   readWalletProfile,
   writeWalletProfilePatch
@@ -67,9 +66,6 @@ const WEALTH_VAULT_ASSET_SCALE = 10 ** 6;
 const DEFAULT_COLLATERAL_ADVANCE_RATE = 0.55;
 const COLLATERAL_WARNING_LTV = 0.85;
 const WEALTH_ACTIVITY_LIMIT = 12;
-const DEV_MODE_USERNAME = 'msxadmin';
-const DEV_MODE_PASSWORD = 'msx2026';
-const DEV_AUTH_STORAGE_KEY = 'msx-dev-auth';
 const SETTLEMENT_ACTION_OPTIONS = [
   { id: 'roll', label: 'Roll into next term', helper: 'Settle the current receipt at the projected NAV, then reopen the same product with a new basis. This is the demo rollover path.' },
   { id: 'transfer', label: 'Transfer into another product', helper: 'Settle this receipt first, then remint the released value into the transfer target you pick below.' },
@@ -835,102 +831,6 @@ function WealthWalletModal({
           ) : null}
           {nicknameFeedback ? <div className="env-hint" style={{ maxWidth: 360 }}>{nicknameFeedback}</div> : null}
           {errorText ? <div className="env-hint" style={{ maxWidth: 360 }}>{errorText}</div> : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DeveloperModeModal({
-  open,
-  onClose,
-  isAuthed,
-  username,
-  password,
-  onUsernameChange,
-  onPasswordChange,
-  onLogin,
-  onLogout,
-  errorText,
-  noticeText,
-  isConnected,
-  walletDisplayName,
-  remainingPt
-}) {
-  if (!open) return null;
-
-  return (
-    <div className="wallet-modal-backdrop" onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="wallet-modal developer-modal">
-        <button className="wallet-modal-close" onClick={onClose} aria-label="Close developer mode">
-          X
-        </button>
-        <div className="wallet-modal-pane wallet-modal-sidebar">
-          <div className="wallet-modal-title">Developer Mode</div>
-          <div className="wallet-modal-subtitle">Wealth controls</div>
-          <div className="wallet-install-copy">
-            Browser-local admin access for the Wealth page. This uses the same demo credentials and storage key as the homepage so overrides stay consistent.
-          </div>
-          <button className="secondary-btn" onClick={onClose}>
-            Keep reviewing
-          </button>
-          {isAuthed ? (
-            <button className="ghost-btn compact" onClick={onLogout}>
-              Sign out of developer mode
-            </button>
-          ) : null}
-        </div>
-        <div className="wallet-modal-pane wallet-modal-main developer-modal-main">
-          {!isAuthed ? (
-            <div className="developer-auth-form">
-              <div className="wallet-modal-status">Developer sign in</div>
-              <div className="env-hint">
-                Demo-only admin access. Credentials are intentionally visible for local review: username <strong>{DEV_MODE_USERNAME}</strong>, password <strong>{DEV_MODE_PASSWORD}</strong>.
-              </div>
-              <label>
-                Username
-                <input value={username} onChange={(event) => onUsernameChange(event.target.value)} />
-              </label>
-              <label>
-                Password
-                <input type="password" value={password} onChange={(event) => onPasswordChange(event.target.value)} />
-              </label>
-              <button className="primary-btn" onClick={onLogin}>
-                Open admin controls
-              </button>
-              {errorText ? <div className="env-hint">{errorText}</div> : null}
-            </div>
-          ) : (
-            <div className="developer-analytics">
-              <div className="wallet-modal-status">Developer override active</div>
-              <div className="paper-balance-strip">
-                <div className="paper-balance-box">
-                  <div className="label">Browser override</div>
-                  <div className="value">On</div>
-                </div>
-                <div className="paper-balance-box">
-                  <div className="label">Wallet</div>
-                  <div className="value">{isConnected ? walletDisplayName : 'Not connected'}</div>
-                </div>
-                <div className="paper-balance-box">
-                  <div className="label">Remaining PT</div>
-                  <div className="value">{Number(remainingPt || 0).toLocaleString()} PT</div>
-                </div>
-              </div>
-              <div className="wealth-inline-note">
-                Wealth uses the same developer-access switch as the homepage. When this browser override is on, demo-only admin review can stay open while you inspect wallet-linked cash, holdings, and routing behavior.
-              </div>
-              <div className="toolbar">
-                <button className="secondary-btn" onClick={onClose}>
-                  Close panel
-                </button>
-                <button className="ghost-btn compact" onClick={onLogout}>
-                  Turn off developer mode
-                </button>
-              </div>
-              {noticeText ? <div className="env-hint">{noticeText}</div> : null}
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -2458,12 +2358,6 @@ function WealthInner() {
   const [walletNicknameDraft, setWalletNicknameDraft] = useState('');
   const [pendingWalletNickname, setPendingWalletNickname] = useState(null);
   const [walletNicknameFeedback, setWalletNicknameFeedback] = useState('');
-  const [devModeOpen, setDevModeOpen] = useState(false);
-  const [devModeAuthed, setDevModeAuthed] = useState(() => Boolean(readStorageJson(DEV_AUTH_STORAGE_KEY, false)));
-  const [devModeUsername, setDevModeUsername] = useState(DEV_MODE_USERNAME);
-  const [devModePassword, setDevModePassword] = useState(DEV_MODE_PASSWORD);
-  const [devModeError, setDevModeError] = useState('');
-  const [devModeNotice, setDevModeNotice] = useState('');
   const [hasMetaMaskInstalled, setHasMetaMaskInstalled] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState('parkCash');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -2543,17 +2437,6 @@ function WealthInner() {
       window.clearTimeout(timer);
       window.removeEventListener('ethereum#initialized', refreshMetaMaskState);
     };
-  }, []);
-
-  useEffect(() => {
-    function refreshDeveloperMode() {
-      setDevModeAuthed(Boolean(readStorageJson(DEV_AUTH_STORAGE_KEY, false)));
-    }
-
-    refreshDeveloperMode();
-    if (typeof window === 'undefined') return undefined;
-    window.addEventListener('storage', refreshDeveloperMode);
-    return () => window.removeEventListener('storage', refreshDeveloperMode);
   }, []);
 
   useEffect(() => {
@@ -2730,7 +2613,7 @@ function WealthInner() {
       return;
     }
 
-    setPaperProfileState(readRecoveredPaperState(address, readStorageJson(paperReplayStateKey, {})));
+    setPaperProfileState(readStorageJson(paperReplayStateKey, {}));
   }, [address, paperReplayStateKey]);
 
   useEffect(() => {
@@ -3065,7 +2948,6 @@ function WealthInner() {
       state: paperProfileState
     }
   });
-  const remainingPaperTokens = walletProfileSummary.remainingPT;
 
   const portfolioRows = useMemo(
     () =>
@@ -3510,33 +3392,6 @@ function WealthInner() {
     setWalletNicknameFeedback('');
     setPendingWalletNickname(normalizeWalletNickname(walletNicknameDraft) || null);
     connect({ connector: metaMaskConnector });
-  }
-
-  function openDeveloperMode() {
-    setDevModeAuthed(Boolean(readStorageJson(DEV_AUTH_STORAGE_KEY, false)));
-    setDevModeOpen(true);
-    setDevModeError('');
-    setDevModeNotice('');
-  }
-
-  function handleDeveloperLogin() {
-    if (devModeUsername.trim() === DEV_MODE_USERNAME && devModePassword.trim() === DEV_MODE_PASSWORD) {
-      writeStorageJson(DEV_AUTH_STORAGE_KEY, true);
-      setDevModeAuthed(true);
-      setDevModeError('');
-      setDevModeNotice('Developer controls are open for this browser.');
-      return;
-    }
-
-    setDevModeError('Incorrect developer credentials.');
-    setDevModeNotice('');
-  }
-
-  function handleDeveloperLogout() {
-    writeStorageJson(DEV_AUTH_STORAGE_KEY, false);
-    setDevModeAuthed(false);
-    setDevModeError('');
-    setDevModeNotice('Developer controls are closed for this browser.');
   }
 
   function handleSaveWalletNickname() {
@@ -5805,8 +5660,8 @@ function WealthInner() {
           </a>
 
           <div className="paper-token-pill wealth-pill">
-            <div className="paper-token-label">{t('Remaining paper tokens', '剩余模拟代币')}</div>
-            <div className="paper-token-value">{formatValue(remainingPaperTokens, hideBalances)}</div>
+            <div className="paper-token-label">{t('Available PT balance', '可用 PT 余额')}</div>
+            <div className="paper-token-value">{formatValue(availableCash, hideBalances)}</div>
             <div className="paper-token-tooltip">
               <div className="paper-token-tooltip-title">{t('How this works', '说明')}</div>
               <div>
@@ -5818,7 +5673,7 @@ function WealthInner() {
               <div>
                 Unified wallet memory: paper cash {walletProfileSummary.paperCash.toLocaleString()} PT,
                 wealth cash {walletProfileSummary.wealthCash.toLocaleString()} PT,
-                remaining PT {walletProfileSummary.remainingPT.toLocaleString()} PT.
+                policy balance {walletProfileSummary.availablePT.toLocaleString()} PT.
               </div>
             </div>
           </div>
@@ -5834,12 +5689,6 @@ function WealthInner() {
                 ? t('Connecting to MetaMask...', '正在连接 MetaMask...')
                 : t('Connect MetaMask', '连接 MetaMask')}
           </button>
-
-          <div className="header-admin-row">
-            <button className="ghost-btn compact" onClick={openDeveloperMode}>
-              {t('Developer mode', '开发者模式')}
-            </button>
-          </div>
         </div>
       </header>
 
@@ -7128,22 +6977,6 @@ function WealthInner() {
         nicknameFeedback={walletNicknameFeedback}
         errorText={walletError}
         hasMetaMaskInstalled={hasMetaMaskInstalled}
-      />
-      <DeveloperModeModal
-        open={devModeOpen}
-        onClose={() => setDevModeOpen(false)}
-        isAuthed={devModeAuthed}
-        username={devModeUsername}
-        password={devModePassword}
-        onUsernameChange={setDevModeUsername}
-        onPasswordChange={setDevModePassword}
-        onLogin={handleDeveloperLogin}
-        onLogout={handleDeveloperLogout}
-        errorText={devModeError}
-        noticeText={devModeNotice}
-        isConnected={isConnected}
-        walletDisplayName={walletDisplayName}
-        remainingPt={remainingPaperTokens}
       />
     </div>
   );

@@ -162,16 +162,6 @@ function normalizePaperReplay(value = {}) {
   };
 }
 
-function normalizePaperSummary(value = {}) {
-  return {
-    remainingPT: roundNumber(Number(value.remainingPT || 0), 2),
-    accountValue: roundNumber(Number(value.accountValue || 0), 2),
-    grossOpenPnl: roundNumber(Number(value.grossOpenPnl || 0), 2),
-    netOpenPnl: roundNumber(Number(value.netOpenPnl || 0), 2),
-    updatedAt: value.updatedAt || ''
-  };
-}
-
 function normalizeCollateralLedger(value = {}) {
   if (!isObject(value)) return {};
 
@@ -331,8 +321,7 @@ export function normalizeWalletProfile(value = {}, address = '') {
     },
     paper: {
       state: normalizePaperReplay(value.paper?.state || {}),
-      tradeOutcomeHistory: value.paper?.tradeOutcomeHistory || { entries: [] },
-      summary: normalizePaperSummary(value.paper?.summary || {})
+      tradeOutcomeHistory: value.paper?.tradeOutcomeHistory || { entries: [] }
     },
     wealth: {
       state: normalizeWealth(value.wealth?.state || {})
@@ -459,13 +448,11 @@ export function getWalletProfileSummary(profile = {}) {
   const homePT = roundNumber(normalized.home.paperBalanceSnapshot, 2);
   const highestLocalCash = Math.max(homePT, paperCash, wealthCash);
   const availablePT = roundNumber(Math.max(UNIFIED_PT_STARTING_BALANCE + earnedPT, highestLocalCash), 2);
-  const paperSummary = normalizePaperSummary(normalized.paper.summary);
   const paperDeployedPT = sumPrincipal(normalized.paper.state.positions);
   const wealthDeployedPT = sumPrincipal(normalized.wealth.state.positions);
   const wealthBorrowedPT = sumBorrowed(normalized.wealth.state.collateral);
   const totalDeployedPT = roundNumber(paperDeployedPT + wealthDeployedPT, 2);
   const reservePT = roundNumber(Math.max(0, availablePT - totalDeployedPT), 2);
-  const remainingPT = reservePT;
 
   return {
     symbol: UNIFIED_PT_SYMBOL,
@@ -477,16 +464,11 @@ export function getWalletProfileSummary(profile = {}) {
     paperCash,
     wealthCash,
     availablePT,
-    remainingPT,
     paperDeployedPT,
     wealthDeployedPT,
     wealthBorrowedPT,
     totalDeployedPT,
     reservePT,
-    paperAccountValue: paperSummary.accountValue,
-    paperGrossOpenPnl: paperSummary.grossOpenPnl,
-    paperNetOpenPnl: paperSummary.netOpenPnl,
-    paperSummaryUpdatedAt: paperSummary.updatedAt,
     sourceWalletCount: normalized.history.sourceAddresses.length,
     recoveredFromOtherWallet: normalized.history.recoveredFromOtherWallet,
     updatedAt: normalized.updatedAt,

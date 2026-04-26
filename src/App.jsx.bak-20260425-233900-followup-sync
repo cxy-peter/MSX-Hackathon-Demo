@@ -1615,6 +1615,7 @@ export default function App() {
     paperTaskBadgeMinted
   ].filter(Boolean).length * BADGE_REWARD_TOKENS;
   const paperBalanceForCurrentAccount = localProgressReady ? paperBalanceSnapshot : STARTING_PAPER_TOKENS;
+  const paperTokenBalance = paperBalanceForCurrentAccount + badgeRewardsEarned;
   const walletProfileSnapshot = readWalletProfile(address);
   const profileBackupRecord = address ? readStorageJson(getWalletProfilePointerKey(address), null) : null;
   const profileBackupConfigured = Boolean(profileBackupRecord?.contentHash || walletProfileSnapshot.storage?.contentHash);
@@ -1643,7 +1644,6 @@ export default function App() {
       web3Intent
     }
   });
-  const remainingPaperTokens = walletProfileSummary.remainingPT;
   const profileBackupSummaryText = profileBackupStatus || (
     isConnected
       ? profileBackupConfigured
@@ -2667,7 +2667,7 @@ export default function App() {
               <div className="header-wallet-stack">
                 <div className="paper-token-pill">
                   <div className="paper-token-label">{t('Remaining paper tokens', '剩余模拟代币')}</div>
-                  <div className="paper-token-value">{remainingPaperTokens.toLocaleString()} PT</div>
+                  <div className="paper-token-value">{paperTokenBalance.toLocaleString()} PT</div>
                   <div className="paper-token-tooltip">
                     <div className="paper-token-tooltip-title">{t('What is it?', '这是什么？')}</div>
                     <div>
@@ -2683,8 +2683,8 @@ export default function App() {
                       )}
                     </div>
                     <div>
-                      Wallet memory: remaining {walletProfileSummary.remainingPT.toLocaleString()} PT,
-                      total policy {walletProfileSummary.availablePT.toLocaleString()} PT,
+                      Wallet memory: {walletProfileSummary.availablePT.toLocaleString()} PT available policy,
+                      reserve {walletProfileSummary.reservePT.toLocaleString()} PT,
                       paper cash {walletProfileSummary.paperCash.toLocaleString()} PT,
                       wealth cash {walletProfileSummary.wealthCash.toLocaleString()} PT.
                     </div>
@@ -3553,7 +3553,7 @@ export default function App() {
                 <div className="paper-balance-strip home-paper-balance-strip">
                   <div className="paper-balance-box">
                     <div className="label">Remaining tokens</div>
-                    <div className="value">{remainingPaperTokens.toLocaleString()} PT</div>
+                    <div className="value">{paperTokenBalance.toLocaleString()} PT</div>
                   </div>
                   <div className="paper-balance-box">
                     <div className="label">Reward per badge</div>

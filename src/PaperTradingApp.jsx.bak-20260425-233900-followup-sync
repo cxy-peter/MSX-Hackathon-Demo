@@ -74,8 +74,6 @@ const DEFAULT_REPLAY_PLAYBACK_MS = 700;
 const REPLAY_SCORE_DAILY_LIMIT = 3;
 const REPLAY_DEVELOPER_MODE =
   import.meta.env.DEV || String(import.meta.env.VITE_REPLAY_DEVELOPER_MODE || '').toLowerCase() === 'true';
-const DEV_MODE_USERNAME = 'msxadmin';
-const DEV_MODE_PASSWORD = 'msx2026';
 const DEV_AUTH_STORAGE_KEY = 'msx-dev-auth';
 const ADMIN_UNLOCK_STORAGE_PREFIX = 'msx-admin-unlock';
 const PAPER_SHELF_PAGE_SIZE = 4;
@@ -779,102 +777,6 @@ function WalletModal({
           ) : null}
           {nicknameFeedback ? <div className="env-hint" style={{ maxWidth: 360 }}>{nicknameFeedback}</div> : null}
           {errorText ? <div className="env-hint" style={{ maxWidth: 360 }}>{errorText}</div> : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DeveloperModeModal({
-  open,
-  onClose,
-  isAuthed,
-  username,
-  password,
-  onUsernameChange,
-  onPasswordChange,
-  onLogin,
-  onLogout,
-  errorText,
-  noticeText,
-  isConnected,
-  walletDisplayName,
-  remainingPt
-}) {
-  if (!open) return null;
-
-  return (
-    <div className="wallet-modal-backdrop" onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="wallet-modal developer-modal">
-        <button className="wallet-modal-close" onClick={onClose} aria-label="Close developer mode">
-          X
-        </button>
-        <div className="wallet-modal-pane wallet-modal-sidebar">
-          <div className="wallet-modal-title">Developer Mode</div>
-          <div className="wallet-modal-subtitle">Replay controls</div>
-          <div className="wallet-install-copy">
-            Browser-local admin access for the replay lab. This uses the same demo credentials and local storage switch as the homepage so route gating stays consistent.
-          </div>
-          <button className="secondary-btn" onClick={onClose}>
-            Keep reviewing
-          </button>
-          {isAuthed ? (
-            <button className="ghost-btn compact" onClick={onLogout}>
-              Sign out of developer mode
-            </button>
-          ) : null}
-        </div>
-        <div className="wallet-modal-pane wallet-modal-main developer-modal-main">
-          {!isAuthed ? (
-            <div className="developer-auth-form">
-              <div className="wallet-modal-status">Developer sign in</div>
-              <div className="env-hint">
-                Demo-only admin access. Credentials are intentionally visible for local review: username <strong>{DEV_MODE_USERNAME}</strong>, password <strong>{DEV_MODE_PASSWORD}</strong>.
-              </div>
-              <label>
-                Username
-                <input value={username} onChange={(event) => onUsernameChange(event.target.value)} />
-              </label>
-              <label>
-                Password
-                <input type="password" value={password} onChange={(event) => onPasswordChange(event.target.value)} />
-              </label>
-              <button className="primary-btn" onClick={onLogin}>
-                Open admin controls
-              </button>
-              {errorText ? <div className="env-hint">{errorText}</div> : null}
-            </div>
-          ) : (
-            <div className="developer-analytics">
-              <div className="wallet-modal-status">Developer override active</div>
-              <div className="paper-balance-strip">
-                <div className="paper-balance-box">
-                  <div className="label">Browser override</div>
-                  <div className="value">On</div>
-                </div>
-                <div className="paper-balance-box">
-                  <div className="label">Wallet</div>
-                  <div className="value">{isConnected ? walletDisplayName : 'Not connected'}</div>
-                </div>
-                <div className="paper-balance-box">
-                  <div className="label">Remaining PT</div>
-                  <div className="value">{Number(remainingPt || 0).toLocaleString()} PT</div>
-                </div>
-              </div>
-              <div className="wealth-inline-note">
-                Replay routes, wallet-linked state, and local leaderboard storage now follow the same browser override as the homepage. This is the quick way to inspect advanced tutorial gates without losing the wallet context.
-              </div>
-              <div className="toolbar">
-                <button className="secondary-btn" onClick={onClose}>
-                  Close panel
-                </button>
-                <button className="ghost-btn compact" onClick={onLogout}>
-                  Turn off developer mode
-                </button>
-              </div>
-              {noticeText ? <div className="env-hint">{noticeText}</div> : null}
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -2143,25 +2045,6 @@ function readAllReplayScoreLogs() {
   return submissions;
 }
 
-function buildStoredReplayLeaderboardArchive() {
-  const normalizedArchive = normalizeReplayLeaderboardArchive(
-    readStorageJson(REPLAY_LEADERBOARD_ARCHIVE_KEY, defaultReplayLeaderboardArchive())
-  );
-
-  return {
-    entries: mergeReplayLeaderboardSubmissions(
-      normalizedArchive.entries,
-      readAllReplayScoreLogs()
-        .filter((submission) => submission.status === 'confirmed')
-        .map((submission) => ({
-          ...submission,
-          hallOfFame: true,
-          status: 'confirmed'
-        }))
-    )
-  };
-}
-
 function buildReplayTradeSummary(trade) {
   if (!trade) {
     return {
@@ -2514,10 +2397,7 @@ function readStoredPaperState(address) {
 }
 
 function readStoredTradeOutcomeHistory(address) {
-  const stored = normalizeTradeOutcomeHistory(readStorageJson(getTradeOutcomeHistoryKey(address), defaultTradeOutcomeHistory()));
-  if (stored.entries.length || !address) return stored;
-
-  return normalizeTradeOutcomeHistory(readWalletProfile(address)?.paper?.tradeOutcomeHistory || defaultTradeOutcomeHistory());
+  return normalizeTradeOutcomeHistory(readStorageJson(getTradeOutcomeHistoryKey(address), defaultTradeOutcomeHistory()));
 }
 
 function readStoredReplaySession(address) {
@@ -4548,7 +4428,7 @@ function buildHedgeRouteProfile(product, insight, guide) {
       statCards: [
         { label: 'Hedgeability', value: `${hedgeabilityScore}/100`, copy: 'Direct hedge tools are available because price discovery is relatively continuous here.' },
         { label: 'Exit liquidity', value: `${exitLiquidityScore}/100`, copy: 'The user can usually hedge faster here than on private or redemption-only sleeves.' },
-        { label: 'Expected haircut', value: '0.4% to 1.8%', copy: 'Most pain comes from spread and wrapper drag, not a forced private-market discount.' },
+        { label: 'Expected haircut', value: '0.5% to 2.0%', copy: 'Most pain comes from spread and wrapper drag, not a forced private-market discount.' },
         { label: 'Protection after drag', value: `${protectionScore}/100`, copy: 'Funding and close drag still matter if the hedge stays on longer than the event window.' }
       ],
       diligence: {
@@ -4570,7 +4450,7 @@ function buildHedgeRouteProfile(product, insight, guide) {
     const hedgeabilityScore = clampNumber(diligenceBase - 30, 24, 58);
     const exitLiquidityScore = clampNumber(28 + holdingsCount * 3, 22, 48);
     const protectionScore = clampNumber(36 + holdingsCount * 2, 28, 54);
-    const haircutBand = Number(guide?.lockupDays || 0) >= 180 ? '8% to 18%' : '5% to 10%';
+    const haircutBand = Number(guide?.lockupDays || 0) >= 180 ? '10% to 20%' : '6% to 12%';
 
     return {
       mode,
@@ -4632,12 +4512,7 @@ function buildHedgeRouteProfile(product, insight, guide) {
     const hedgeabilityScore = clampNumber(diligenceBase - 18, 34, 72);
     const exitLiquidityScore = clampNumber(54 + holdingsCount * 4, 48, 84);
     const protectionScore = clampNumber(48 + holdingsCount * 3, 42, 76);
-    const haircutBand =
-      lane === 'funding'
-        ? /ib01/i.test(product.id) || /etf tracker/i.test(String(product.productType || '').toLowerCase())
-          ? '0.4% to 1.8%'
-          : '0.2% to 1.2%'
-        : '0.8% to 3.2%';
+    const haircutBand = lane === 'funding' ? '0.2% to 1.5%' : '1.0% to 4.0%';
 
     return {
       mode,
@@ -4723,7 +4598,7 @@ function buildHedgeRouteProfile(product, insight, guide) {
     statCards: [
       { label: 'Hedgeability', value: `${hedgeabilityScore}/100`, copy: 'Basket hedges work best at the exposure layer, not as a perfect name-by-name offset.' },
       { label: 'Exit liquidity', value: `${exitLiquidityScore}/100`, copy: 'The hedge can usually be exited faster than the underlying basket can be rebalanced.' },
-      { label: 'Expected haircut', value: '0.8% to 4.0%', copy: 'Drag shows up through rebalance, spread, and route complexity rather than only one ticket fee.' },
+      { label: 'Expected haircut', value: '1.0% to 5.0%', copy: 'Drag shows up through rebalance, spread, and route complexity rather than only one ticket fee.' },
       { label: 'Protection after drag', value: `${protectionScore}/100`, copy: 'Judge this route by net exposure after drag, not by the biggest gross move.' }
     ],
     diligence: {
@@ -5212,12 +5087,6 @@ function PaperTradingInner() {
   const [walletNicknameDraft, setWalletNicknameDraft] = useState('');
   const [pendingWalletNickname, setPendingWalletNickname] = useState(null);
   const [walletNicknameFeedback, setWalletNicknameFeedback] = useState('');
-  const [devModeOpen, setDevModeOpen] = useState(false);
-  const [devModeAuthed, setDevModeAuthed] = useState(() => Boolean(readStorageJson(DEV_AUTH_STORAGE_KEY, false)));
-  const [devModeUsername, setDevModeUsername] = useState(DEV_MODE_USERNAME);
-  const [devModePassword, setDevModePassword] = useState(DEV_MODE_PASSWORD);
-  const [devModeError, setDevModeError] = useState('');
-  const [devModeNotice, setDevModeNotice] = useState('');
   const [hasMetaMaskInstalled, setHasMetaMaskInstalled] = useState(false);
   const [selectedAdvancedRoute, setSelectedAdvancedRoute] = useState('spot');
   const [selectedRouteFocusByRoute, setSelectedRouteFocusByRoute] = useState(() =>
@@ -5622,9 +5491,12 @@ function PaperTradingInner() {
 
   useEffect(() => {
     function refreshDeveloperOverride() {
-      const browserOverride = Boolean(readStorageJson(DEV_AUTH_STORAGE_KEY, false));
-      setDevModeAuthed(browserOverride);
-      setDeveloperOverride(browserOverride || Boolean(readStorageJson(getAdminUnlockStorageKey(address), false)));
+      setDeveloperOverride(
+        Boolean(
+          readStorageJson(DEV_AUTH_STORAGE_KEY, false) ||
+            readStorageJson(getAdminUnlockStorageKey(address), false)
+        )
+      );
     }
 
     refreshDeveloperOverride();
@@ -5665,36 +5537,24 @@ function PaperTradingInner() {
   }, [address, pendingWalletNickname]);
 
   useEffect(() => {
-    const mergedArchive = buildStoredReplayLeaderboardArchive();
+    const normalizedArchive = normalizeReplayLeaderboardArchive(
+      readStorageJson(REPLAY_LEADERBOARD_ARCHIVE_KEY, defaultReplayLeaderboardArchive())
+    );
+    const mergedArchive = {
+      entries: mergeReplayLeaderboardSubmissions(
+        normalizedArchive.entries,
+        readAllReplayScoreLogs()
+          .filter((submission) => submission.status === 'confirmed')
+          .map((submission) => ({
+            ...submission,
+            hallOfFame: true,
+            status: 'confirmed'
+          }))
+      )
+    };
     setReplayLeaderboardArchive(mergedArchive);
     writeStorageJson(REPLAY_LEADERBOARD_ARCHIVE_KEY, mergedArchive);
   }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-
-    function refreshReplayLeaderboardFromStorage(event) {
-      if (
-        event?.key &&
-        event.key !== REPLAY_LEADERBOARD_ARCHIVE_KEY &&
-        !event.key.startsWith('msx-paper-replay-score-log-')
-      ) {
-        return;
-      }
-
-      const mergedArchive = buildStoredReplayLeaderboardArchive();
-      setReplayLeaderboardArchive(mergedArchive);
-
-      const normalizedLog = normalizeReplayScoreLog(
-        readStorageJson(replayScoreLogKey, defaultReplayScoreLog()),
-        address ? address.toLowerCase() : 'guest'
-      );
-      setScoreSubmissionLog(normalizedLog);
-    }
-
-    window.addEventListener('storage', refreshReplayLeaderboardFromStorage);
-    return () => window.removeEventListener('storage', refreshReplayLeaderboardFromStorage);
-  }, [address, replayScoreLogKey]);
 
   useEffect(() => {
     const normalizedLog = normalizeReplayScoreLog(
@@ -5909,7 +5769,6 @@ function PaperTradingInner() {
       tradeOutcomeHistory
     }
   });
-  const remainingPaperTokens = walletProfileSummary.remainingPT;
   const simulationRiskPreference = productRiskFilter === 'all' ? 'balanced' : productRiskFilter;
   const allowLockup = productLockupFilter !== 'flex';
   const acceptPrincipalVolatility = productVolatilityFilter !== 'low';
@@ -8601,35 +8460,6 @@ function PaperTradingInner() {
     connect({ connector: metaMaskConnector });
   }
 
-  function openDeveloperMode() {
-    setDevModeAuthed(Boolean(readStorageJson(DEV_AUTH_STORAGE_KEY, false)));
-    setDevModeOpen(true);
-    setDevModeError('');
-    setDevModeNotice('');
-  }
-
-  function handleDeveloperLogin() {
-    if (devModeUsername.trim() === DEV_MODE_USERNAME && devModePassword.trim() === DEV_MODE_PASSWORD) {
-      writeStorageJson(DEV_AUTH_STORAGE_KEY, true);
-      setDevModeAuthed(true);
-      setDeveloperOverride(true);
-      setDevModeError('');
-      setDevModeNotice('Developer controls are open for this browser.');
-      return;
-    }
-
-    setDevModeError('Incorrect developer credentials.');
-    setDevModeNotice('');
-  }
-
-  function handleDeveloperLogout() {
-    writeStorageJson(DEV_AUTH_STORAGE_KEY, false);
-    setDevModeAuthed(false);
-    setDeveloperOverride(Boolean(readStorageJson(getAdminUnlockStorageKey(address), false)));
-    setDevModeError('');
-    setDevModeNotice('Developer controls are closed for this browser.');
-  }
-
   function handleSaveWalletNickname() {
     if (!address) {
       setWalletNicknameFeedback('Connect the wallet first, then save a nickname for it.');
@@ -11054,21 +10884,6 @@ function PaperTradingInner() {
         : accountValue,
     2
   );
-  useEffect(() => {
-    if (!address) return;
-
-    writeWalletProfilePatch(address, {
-      paper: {
-        summary: {
-          remainingPT: remainingPaperTokens,
-          accountValue: displayEstimatedAccountValue,
-          grossOpenPnl: displayGrossOpenPnl,
-          netOpenPnl: displayNetOpenPnl,
-          updatedAt: new Date().toISOString()
-        }
-      }
-    });
-  }, [address, displayEstimatedAccountValue, displayGrossOpenPnl, displayNetOpenPnl, remainingPaperTokens]);
   const timedExitCostParts =
     leverageRouteActive && timedExitLeveragedSnapshot
       ? [
@@ -12778,8 +12593,8 @@ function PaperTradingInner() {
         </div>
 
         {!compact ? (
-          <div className="paper-leaderboard-copy">
-            Ranked by total replay return. Each wallet appears once using its best recorded result, and every confirmed local submission is merged into a device-local archive so other wallets stay on this board.
+        <div className="paper-leaderboard-copy">
+            Ranked by total replay return. Each wallet appears once using its best recorded result, even if that wallet opens multiple replay accounts.
           </div>
         ) : null}
 
@@ -12884,7 +12699,7 @@ function PaperTradingInner() {
         </div>
 
         <div className="paper-floating-product-leaderboard-copy">
-          Current rank blends AI diligence with net earn after annual drag. Risk stays visible on every row.
+          Current rank blends AI diligence with earn potential after base annual drag.
         </div>
 
         <div className="paper-floating-product-leaderboard-body">
@@ -12906,9 +12721,9 @@ function PaperTradingInner() {
                     {row.product.productType} / {row.product.ticker}
                   </div>
                   <div className="paper-shelf-leaderboard-score-row">
-                    <span className="paper-shelf-score-chip">AI diligence {row.aiScore}</span>
-                    <span className="paper-shelf-score-chip">Net earn {row.earnScore}</span>
-                    <span className="paper-shelf-score-chip">Yield {formatPercent(row.earnRate, 1)}</span>
+                    <span className="paper-shelf-score-chip">AI {row.aiScore}</span>
+                    <span className="paper-shelf-score-chip">Earn {row.earnScore}</span>
+                    <span className="paper-shelf-score-chip">Target {formatPercent(row.earnRate, 1)}</span>
                   </div>
                 </div>
                 <div className="paper-shelf-leaderboard-total">
@@ -13097,18 +12912,15 @@ function PaperTradingInner() {
           </div>
         </div>
 
-        <div className="wealth-header-language-center">
+          <div className="header-actions" ref={walletAnchorRef}>
           <LanguageToggle uiLanguage={uiLanguage} setUiLanguage={setUiLanguage} compact />
-        </div>
-
-        <div className="header-actions" ref={walletAnchorRef}>
           <a className="ghost-btn compact" href="./index.html#paperTrading">
             {t('Back to welcome', '返回主页')}
           </a>
 
           <div className="paper-token-pill">
-            <div className="paper-token-label">{t('Remaining paper tokens', '剩余模拟代币')}</div>
-            <div className="paper-token-value">{formatNotional(remainingPaperTokens)} PT</div>
+            <div className="paper-token-label">{t('Available replay cash', '可用回放资金')}</div>
+            <div className="paper-token-value">{formatNotional(availableCash)} PT</div>
             <div className="paper-token-tooltip">
               <div className="paper-token-tooltip-title">{t('How buying power works', '购买力说明')}</div>
               <div>
@@ -13119,7 +12931,6 @@ function PaperTradingInner() {
               </div>
               <div>
                 Unified wallet memory: policy {walletProfileSummary.availablePT.toLocaleString()} PT,
-                remaining {walletProfileSummary.remainingPT.toLocaleString()} PT,
                 paper cash {walletProfileSummary.paperCash.toLocaleString()} PT,
                 wealth cash {walletProfileSummary.wealthCash.toLocaleString()} PT.
               </div>
@@ -13135,12 +12946,6 @@ function PaperTradingInner() {
               {isPending ? t('Connecting to MetaMask...', '正在连接 MetaMask...') : t('Connect MetaMask', '连接 MetaMask')}
             </button>
           )}
-
-          <div className="header-admin-row">
-            <button type="button" className="ghost-btn compact" onClick={openDeveloperMode}>
-              {t('Developer mode', '开发者模式')}
-            </button>
-          </div>
         </div>
       </header>
 
@@ -13176,12 +12981,6 @@ function PaperTradingInner() {
                 <div className="label">{t('Estimated account value', '预估账户价值')}</div>
                 <div className="wealth-summary-value">{formatNotional(displayEstimatedAccountValue)} PT</div>
                 <div className="muted">{t('Available cash plus estimated net exit value after carry drag, fees, and tax holdback.', '可用现金加上扣除持有成本、手续费和预估税费后的净退出价值。')}</div>
-                <div className="muted">
-                  {t(
-                    `Wallet record keeps ${formatNotional(remainingPaperTokens)} PT remaining. Gross open PnL ${formatSigned(displayGrossOpenPnl)} PT. Net open PnL ${formatSigned(displayNetOpenPnl)} PT.`,
-                    `钱包记录当前剩余 ${formatNotional(remainingPaperTokens)} PT；未实现毛收益 ${formatSigned(displayGrossOpenPnl)} PT；未实现净收益 ${formatSigned(displayNetOpenPnl)} PT。`
-                  )}
-                </div>
                 {linkedWalletCash > 0 || useTimedExitSummary ? (
                   <div className="muted">
                     {[
@@ -13966,22 +13765,6 @@ function PaperTradingInner() {
         nicknameFeedback={walletNicknameFeedback}
         errorText={walletError}
         hasMetaMaskInstalled={hasMetaMaskInstalled}
-      />
-      <DeveloperModeModal
-        open={devModeOpen}
-        onClose={() => setDevModeOpen(false)}
-        isAuthed={devModeAuthed}
-        username={devModeUsername}
-        password={devModePassword}
-        onUsernameChange={setDevModeUsername}
-        onPasswordChange={setDevModePassword}
-        onLogin={handleDeveloperLogin}
-        onLogout={handleDeveloperLogout}
-        errorText={devModeError}
-        noticeText={devModeNotice}
-        isConnected={isConnected}
-        walletDisplayName={walletDisplayName}
-        remainingPt={remainingPaperTokens}
       />
     </div>
   );

@@ -544,7 +544,6 @@ select option {
   position: relative;
   width: min(1080px, 100%);
   min-height: 500px;
-  max-height: min(880px, calc(100vh - 40px));
   background:
     radial-gradient(circle at top left, rgba(34,109,64,0.08), transparent 28%),
     linear-gradient(180deg, rgba(17, 27, 36, 0.98), rgba(8, 14, 22, 0.98));
@@ -559,14 +558,11 @@ select option {
 
 .wallet-modal-pane {
   padding: 36px 28px;
-  min-height: 0;
 }
 
 .wallet-modal-sidebar {
   border-right: 1px solid rgba(255,255,255,0.07);
   background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
-  overflow-y: auto;
-  overflow-x: hidden;
 }
 
 .wallet-modal-main {
@@ -575,9 +571,6 @@ select option {
   justify-items: center;
   text-align: center;
   gap: 12px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 18px;
 }
 
 .wallet-modal-main-connected {
@@ -1336,8 +1329,6 @@ label {
   display: grid;
   gap: 18px;
   align-content: start;
-  justify-items: stretch;
-  text-align: left;
 }
 
 .developer-auth-form {
@@ -7888,13 +7879,10 @@ label {
 
 .paper-shelf-leaderboard-heading {
   display: flex;
-  position: relative;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px 12px;
   flex-wrap: wrap;
-  padding-right: 86px;
-  min-height: 24px;
 }
 
 .paper-shelf-leaderboard-name {
@@ -7963,7 +7951,6 @@ label {
   right: 0;
   justify-self: auto;
   align-self: auto;
-  white-space: nowrap;
 }
 
 .paper-lane-explainer {
