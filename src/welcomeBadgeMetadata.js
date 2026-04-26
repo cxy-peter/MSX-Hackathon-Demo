@@ -8,7 +8,7 @@ function encodeBase64(value) {
 
 const badgeThemes = {
   welcome: {
-    kicker: 'MSX Welcome Badge',
+    kicker: 'RiskLens Welcome Badge',
     title: ['WELCOME BADGE', 'MINTED'],
     subtitle: ['Sepolia collectible for the', 'guided onboarding flow'],
     accent: '#2F8F4E',
@@ -16,15 +16,15 @@ const badgeThemes = {
     glow: '#2F8F4E'
   },
   connect: {
-    kicker: 'MSX Connect Quest',
+    kicker: 'RiskLens Connect Quest',
     title: ['CONNECT', 'SUCCESS'],
-    subtitle: ['Wallet access approved for', 'the MSX welcome flow'],
+    subtitle: ['Wallet access approved for', 'the RiskLens welcome flow'],
     accent: '#2F8F4E',
     accent2: '#6FA5FF',
     glow: '#6FA5FF'
   },
   guide: {
-    kicker: 'MSX Starter Guide',
+    kicker: 'RiskLens Starter Guide',
     title: ['GUIDE PATH', 'CLEARED'],
     subtitle: ['Beginner route confirmed before', 'paper-mode unlock'],
     accent: '#FFD166',
@@ -32,7 +32,7 @@ const badgeThemes = {
     glow: '#FFD166'
   },
   quiz: {
-    kicker: 'MSX Product Quiz',
+    kicker: 'RiskLens Product Quiz',
     title: ['QUIZ TASK', 'PASSED'],
     subtitle: ['Ownership and downside framing', 'confirmed for this wallet'],
     accent: '#FF9F6E',
@@ -40,7 +40,7 @@ const badgeThemes = {
     glow: '#FF9F6E'
   },
   paper: {
-    kicker: 'MSX Simulation Access',
+    kicker: 'RiskLens Simulation Access',
     title: ['PAPER MODE', 'UNLOCKED'],
     subtitle: ['Practice flow opened after', '3 onboarding boxes'],
     accent: '#49D6C4',
@@ -139,7 +139,7 @@ function buildMetadataUri(themeKey, name, description) {
     image,
     external_url: 'https://github.com/',
     attributes: [
-      { trait_type: 'Campaign', value: 'MSX Guided Investing Hub' },
+      { trait_type: 'Campaign', value: 'RiskLens Guided Investing Hub' },
       { trait_type: 'Network', value: 'Sepolia' },
       { trait_type: 'Badge Type', value: themeKey },
       { trait_type: 'Status', value: 'Unlocked' }
@@ -170,28 +170,28 @@ export const taskBadgeAssets = {
 export const taskBadgeMetadataUris = {
   welcome: buildMetadataUri(
     'welcome',
-    'MSX Welcome Badge',
-    'A Sepolia welcome collectible for the MSX Guided Investing Hub onboarding flow.'
+    'RiskLens Welcome Badge',
+    'A Sepolia welcome collectible for the RiskLens Guided Investing Hub onboarding flow.'
   ),
   wallet: buildMetadataUri(
     'connect',
-    'MSX Wallet Task Badge',
-    'A wallet-connection task collectible for the MSX onboarding flow.'
+    'RiskLens Wallet Task Badge',
+    'A wallet-connection task collectible for the RiskLens onboarding flow.'
   ),
   risk: buildMetadataUri(
     'guide',
-    'MSX Risk Review Badge',
-    'A product-briefing review collectible for the MSX guided investing flow.'
+    'RiskLens Risk Review Badge',
+    'A product-briefing review collectible for the RiskLens guided investing flow.'
   ),
   quiz: buildMetadataUri(
     'quiz',
-    'MSX Product Quiz Badge',
-    'A product-quiz collectible for the MSX guided investing flow.'
+    'RiskLens Product Quiz Badge',
+    'A product-quiz collectible for the RiskLens guided investing flow.'
   ),
   paper: buildMetadataUri(
     'paper',
-    'MSX Paper Trading Badge',
-    'A paper-trading milestone collectible for the MSX guided investing flow.'
+    'RiskLens Paper Trading Badge',
+    'A paper-trading milestone collectible for the RiskLens guided investing flow.'
   )
 };
 

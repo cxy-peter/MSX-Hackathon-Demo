@@ -5,11 +5,11 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 
 contract MSXReplayAchievementBadge is ERC1155, Ownable {
-    uint256 public constant BASE_CHECK = 6;
-    uint256 public constant LEADERBOARD = 7;
-    uint256 public constant SPOT_LOOP = 8;
-    uint256 public constant PERP_LEVERAGE = 9;
-    uint256 public constant PROTECTIVE_HEDGE = 10;
+    uint256 public constant BASE_CHECK = 1;
+    uint256 public constant LEADERBOARD = 2;
+    uint256 public constant SPOT_LOOP = 3;
+    uint256 public constant PERP_LEVERAGE = 4;
+    uint256 public constant PROTECTIVE_HEDGE = 5;
     uint256 public constant MAX_SCORE_SUBMISSIONS_PER_DAY = 3;
 
     mapping(address => mapping(uint256 => bool)) public claimApproved;

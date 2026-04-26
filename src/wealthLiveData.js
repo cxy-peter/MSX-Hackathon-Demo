@@ -86,7 +86,7 @@ const LIVE_PRODUCT_CONFIG = {
   },
   'msx-quant-fund-1': {
     mode: 'blend',
-    sourceLabel: 'MSX public listing + blended public strategy proxy',
+    sourceLabel: 'RiskLens public listing + blended public strategy proxy',
     components: [
       { path: '/replay-data/USCC_1d.csv', weight: 0.7, interval: '1d' },
       { path: '/replay-data/BTCUSDT_1h.csv', weight: 0.3, interval: '1h' }
@@ -94,7 +94,7 @@ const LIVE_PRODUCT_CONFIG = {
   },
   'msx-quant-fund-2': {
     mode: 'blend',
-    sourceLabel: 'MSX public listing + blended public strategy proxy',
+    sourceLabel: 'RiskLens public listing + blended public strategy proxy',
     components: [
       { path: '/replay-data/USCC_1d.csv', weight: 0.45, interval: '1d' },
       { path: '/replay-data/BTCUSDT_1h.csv', weight: 0.35, interval: '1h' },

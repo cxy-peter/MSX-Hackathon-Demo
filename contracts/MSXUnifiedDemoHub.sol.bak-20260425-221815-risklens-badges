@@ -14,11 +14,11 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
     uint8 public constant WEALTH_BUY_RECEIPT = 1;
     uint8 public constant WEALTH_SETTLE_OR_PLEDGE = 2;
 
-    uint256 public constant PAPER_BASE_CHECK = 6;
-    uint256 public constant PAPER_LEADERBOARD = 7;
-    uint256 public constant PAPER_SPOT_LOOP = 8;
-    uint256 public constant PAPER_PERP_LEVERAGE = 9;
-    uint256 public constant PAPER_PROTECTIVE_HEDGE = 10;
+    uint256 public constant PAPER_BASE_CHECK = 1;
+    uint256 public constant PAPER_LEADERBOARD = 2;
+    uint256 public constant PAPER_SPOT_LOOP = 3;
+    uint256 public constant PAPER_BUY_ONE_RECEIPT = 4;
+    uint256 public constant PAPER_SETTLE_OR_PLEDGE = 5;
     uint256 public constant MAX_SCORE_SUBMISSIONS_PER_DAY = 3;
 
     uint256 public constant BPS = 10_000;
@@ -75,10 +75,10 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
     event Redeemed(address indexed investor, uint256 shareAmount, uint256 assetAmount);
 
     constructor(string memory baseUri) ERC1155(baseUri) Ownable() {
-        vaultLabel = "RiskLens Unified Demo Vault";
+        vaultLabel = "MSX Unified Demo Vault";
         assetSymbol = "PT";
         strategyStatus = "Demo ready";
-        latestAttestationRoot = keccak256("RiskLens unified demo hub attestation");
+        latestAttestationRoot = keccak256("MSX unified demo hub attestation");
         lastAttestedAt = block.timestamp;
     }
 
@@ -271,7 +271,7 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
     }
 
     function _isSupportedPaperAchievement(uint256 achievementId) internal pure returns (bool) {
-        return achievementId >= PAPER_BASE_CHECK && achievementId <= PAPER_PROTECTIVE_HEDGE;
+        return achievementId >= PAPER_BASE_CHECK && achievementId <= PAPER_SETTLE_OR_PLEDGE;
     }
 
     function _homeTokenTypeId(uint8 badgeType) internal pure returns (uint256) {

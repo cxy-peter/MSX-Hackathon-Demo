@@ -644,7 +644,7 @@ const welcomeBadgeAbi = [
 const painPointGuides = {
   newbie: {
     title: 'Start as a beginner, not as a trader',
-    copy: 'RiskLens should first explain what a product is for, show a simple 1,000 USDT example, and then route users into practice instead of forcing live complexity too early.',
+    copy: 'MSX should first explain what a product is for, show a simple 1,000 USDT example, and then route users into practice instead of forcing live complexity too early.',
     nextStep: 'Review the reserve and strategy product briefings first, then try one paper trade.',
     module: 'Discover -> Paper Trading'
   },
@@ -997,7 +997,7 @@ function WalletModal({
           X
         </button>
         <div className="wallet-modal-pane wallet-modal-sidebar">
-          <div className="wallet-modal-title">RiskLens Wallet Access</div>
+          <div className="wallet-modal-title">MSX Wallet Access</div>
           <div className="wallet-modal-subtitle">Welcome Layer</div>
           <button className={`wallet-option ${isPending || !hasMetaMaskInstalled ? 'disabled' : ''}`} onClick={onConnect} disabled={isPending || !hasMetaMaskInstalled}>
             <MetaMaskIcon className="wallet-option-icon" />
@@ -1049,7 +1049,7 @@ function WalletModal({
                 ? 'This browser has not exposed a MetaMask wallet yet. Open the official MetaMask website, install the browser extension, pin it in the browser toolbar, then reopen this wallet panel and connect again.'
                 : isPending
                 ? 'A real wallet connection request was sent. Approve it in the MetaMask extension popup, then this page will update automatically.'
-                : 'Select MetaMask to trigger a real wallet approval flow, like the live RiskLens platform experience.'}
+                : 'Select MetaMask to trigger a real wallet approval flow, like the live MSX platform experience.'}
           </div>
           {hasMetaMaskInstalled ? (
             <div className="wallet-nickname-panel">
@@ -1808,7 +1808,7 @@ export default function App() {
       label: quests[0].reward,
       hint: 'Start here for the real MetaMask flow.',
       coverAccent: 'green',
-      coverKicker: 'RiskLens Starter Task',
+      coverKicker: 'MSX Starter Task',
       coverTitle: walletTaskBadgeMinted ? 'Wallet task' : 'Connect wallet',
       coverSubtitle: 'Open the guided wallet path first so every later badge and PT reward stays tied to one account.'
     },
@@ -1840,7 +1840,7 @@ export default function App() {
           : 'Unlocks after wallet connection.'
         : 'Onchain badge minting is optional for this deployment; wallet connection carries the demo state.',
       coverAccent: 'teal',
-      coverKicker: 'RiskLens Collectible Gate',
+      coverKicker: 'MSX Collectible Gate',
       coverTitle: badgeContractConfigured ? 'Welcome badge' : 'Demo gate',
       coverSubtitle: badgeContractConfigured
         ? 'Mint one Sepolia welcome collectible so the first reward feels onchain instead of purely local.'
@@ -1854,7 +1854,7 @@ export default function App() {
       label: quests[2].reward,
       hint: `Review any ${RISK_REVIEW_REQUIRED} live product briefings from the current Wealth and Paper lanes.`,
       coverAccent: 'gold',
-      coverKicker: 'RiskLens Briefing Task',
+      coverKicker: 'MSX Briefing Task',
       coverTitle: 'Product briefings',
       coverSubtitle: 'Use four product lanes to explain ownership, return source, and first disclosure before any trade-style action.'
     },
@@ -1866,7 +1866,7 @@ export default function App() {
       label: quests[3].reward,
       hint: 'Check ownership, return source, and first disclosure for one real product lane.',
       coverAccent: 'teal',
-      coverKicker: 'RiskLens Quiz Task',
+      coverKicker: 'MSX Quiz Task',
       coverTitle: 'Question quiz',
       coverSubtitle: 'Turn one product briefing into a short ownership-and-risk check before the user opens any simulated route.'
     },
@@ -1878,7 +1878,7 @@ export default function App() {
       label: quests[4].reward,
       hint: 'Unlock depends on wallet, welcome mint, and product-briefing review.',
       coverAccent: 'green',
-      coverKicker: 'RiskLens Replay Task',
+      coverKicker: 'MSX Replay Task',
       coverTitle: 'Paper trading',
       coverSubtitle: 'Practice with replay mode only after the wallet, welcome badge, and product briefing path are in place.'
     }
@@ -2650,8 +2650,8 @@ export default function App() {
           <div className="brand-wrap">
             <div className="brand-dot"></div>
             <div>
-              <div className="eyebrow">RiskLens Guided Investing Hub</div>
-              <div className="brand-name">{t('RiskLens Guided Investing Hub', 'RiskLens 引导式投资中心')}</div>
+              <div className="eyebrow">MSX Hackathon Demo</div>
+              <div className="brand-name">{t('MSX Guided Investing Hub', 'MSX 引导式投资中心')}</div>
             </div>
           </div>
           <nav className="site-nav">
@@ -2664,43 +2664,38 @@ export default function App() {
           <div className="header-actions">
             <div className="header-status-row">
               <LanguageToggle uiLanguage={uiLanguage} setUiLanguage={setUiLanguage} compact />
-              <div className="header-wallet-stack">
-                <div className="paper-token-pill">
-                  <div className="paper-token-label">{t('Remaining paper tokens', '剩余模拟代币')}</div>
-                  <div className="paper-token-value">{paperTokenBalance.toLocaleString()} PT</div>
-                  <div className="paper-token-tooltip">
-                    <div className="paper-token-tooltip-title">{t('What is it?', '这是什么？')}</div>
-                    <div>
-                      {t(
-                        'Paper trading uses demo-only tokens so users can practice buying and selling without risking real money.',
-                        '模拟交易使用演示代币，用户可以在不承担真实资金风险的情况下练习买卖。'
-                      )}
-                    </div>
-                    <div>
-                      {t(
-                        `You start with ${STARTING_PAPER_TOKENS} PT, each completed badge adds ${BADGE_REWARD_TOKENS} PT, and no real funds are involved.`,
-                        `初始会发放 ${STARTING_PAPER_TOKENS} PT，每完成一个徽章再增加 ${BADGE_REWARD_TOKENS} PT，全程不涉及真实资金。`
-                      )}
-                    </div>
-                    <div>
-                      Wallet memory: {walletProfileSummary.availablePT.toLocaleString()} PT available policy,
-                      reserve {walletProfileSummary.reservePT.toLocaleString()} PT,
-                      paper cash {walletProfileSummary.paperCash.toLocaleString()} PT,
-                      wealth cash {walletProfileSummary.wealthCash.toLocaleString()} PT.
-                    </div>
+              <div className="paper-token-pill">
+                <div className="paper-token-label">{t('Remaining paper tokens', '剩余模拟代币')}</div>
+                <div className="paper-token-value">{paperTokenBalance.toLocaleString()} PT</div>
+                <div className="paper-token-tooltip">
+                  <div className="paper-token-tooltip-title">{t('What is it?', '这是什么？')}</div>
+                  <div>
+                    {t(
+                      'Paper trading uses demo-only tokens so users can practice buying and selling without risking real money.',
+                      '模拟交易使用演示代币，用户可以在不承担真实资金风险的情况下练习买卖。'
+                    )}
+                  </div>
+                  <div>
+                    {t(
+                      `You start with ${STARTING_PAPER_TOKENS} PT, each completed badge adds ${BADGE_REWARD_TOKENS} PT, and no real funds are involved.`,
+                      `初始会发放 ${STARTING_PAPER_TOKENS} PT，每完成一个徽章再增加 ${BADGE_REWARD_TOKENS} PT，全程不涉及真实资金。`
+                    )}
+                  </div>
+                  <div>
+                    Wallet memory: {walletProfileSummary.availablePT.toLocaleString()} PT available policy,
+                    reserve {walletProfileSummary.reservePT.toLocaleString()} PT,
+                    paper cash {walletProfileSummary.paperCash.toLocaleString()} PT,
+                    wealth cash {walletProfileSummary.wealthCash.toLocaleString()} PT.
                   </div>
                 </div>
-                <button className="ghost-btn compact wallet-nickname-top-btn" onClick={openWalletModal}>
-                  {t('Wallet nickname', '钱包昵称')}
-                </button>
-                <button className={`ghost-btn wallet-header-btn ${isConnected ? 'connected' : ''}`} onClick={openWalletModal} disabled={isPending}>
-                  {isConnected
-                    ? t(`Wallet connected ${walletDisplayName}`, `钱包已连接 ${walletDisplayName}`)
-                    : isPending
-                      ? t('Connecting to MetaMask...', '正在连接 MetaMask...')
-                      : t('Connect MetaMask', '连接 MetaMask')}
-                </button>
               </div>
+              <button className={`ghost-btn wallet-header-btn ${isConnected ? 'connected' : ''}`} onClick={openWalletModal} disabled={isPending}>
+                {isConnected
+                  ? t(`Wallet connected ${walletDisplayName}`, `钱包已连接 ${walletDisplayName}`)
+                  : isPending
+                    ? t('Connecting to MetaMask...', '正在连接 MetaMask...')
+                    : t('Connect MetaMask', '连接 MetaMask')}
+              </button>
             </div>
             <div className="header-admin-row">
               <button className="ghost-btn compact" onClick={openDeveloperMode}>
@@ -2717,12 +2712,12 @@ export default function App() {
         <main>
           <section className="hero card" id="welcome">
             <div className="hero-copy">
-              <div className="eyebrow">{t('RiskLens + AI-guided discovery + wallet-native onboarding', 'RiskLens + AI 引导发现 + 钱包原生 onboarding')}</div>
+              <div className="eyebrow">{t('MSX + AI-guided discovery + wallet-native onboarding', 'MSX + AI 引导发现 + 钱包原生 onboarding')}</div>
               <h1>{t('Make RWA investing understandable before it feels onchain.', '在用户真正接触链上之前，先把 RWA 投资讲明白。')}</h1>
               <p className="hero-text">
                 {t(
-                  'This version keeps the RiskLens welcome-page aesthetic, but upgrades the wallet entry into a real MetaMask connection flow that can be deployed to GitHub Pages and tested directly by judges.',
-                  '这个版本保留了 RiskLens 欢迎页的视觉风格，同时把钱包入口升级成真实的 MetaMask 连接流程，能直接部署到 GitHub Pages 并供评委现场测试。'
+                  'This version keeps the MSX welcome-page aesthetic, but upgrades the wallet entry into a real MetaMask connection flow that can be deployed to GitHub Pages and tested directly by judges.',
+                  '这个版本保留了 MSX 欢迎页的视觉风格，同时把钱包入口升级成真实的 MetaMask 连接流程，能直接部署到 GitHub Pages 并供评委现场测试。'
                 )}
               </p>
               <div className="hero-points">
@@ -2886,7 +2881,7 @@ export default function App() {
 
           <section className="insight-strip">
             <div className="insight-card">
-              <div className="label">{t('What RiskLens already has', 'RiskLens 已经具备')}</div>
+              <div className="label">{t('What MSX already has', 'MSX 已经具备')}</div>
               <div className="value" style={{ fontSize: 18, lineHeight: 1.45 }}>
                 {t('Tokenized stock story, stablecoin entry, and a finance-first brand shell.', '代币化股票叙事、稳定币入口，以及偏金融导向的品牌外壳。')}
               </div>
@@ -2906,7 +2901,7 @@ export default function App() {
             <div className="insight-card">
               <div className="label">{t('Current direction', '当前方向')}</div>
               <div className="value" style={{ fontSize: 18, lineHeight: 1.45 }}>
-                {t('RiskLens-style welcome page with real MetaMask connection, then guided product discovery.', 'RiskLens 风格欢迎页 + 真实 MetaMask 连接，再进入引导式产品发现。')}
+                {t('MSX-style welcome page with real MetaMask connection, then guided product discovery.', 'MSX 风格欢迎页 + 真实 MetaMask 连接，再进入引导式产品发现。')}
               </div>
             </div>
           </section>
@@ -3506,7 +3501,7 @@ export default function App() {
               </div>
             </div>
             <div className="home-surface-card-grid">
-              <div className="home-surface-card">
+              <div className="home-surface-card featured">
                 <div className="eyebrow">Routing</div>
                 <div className="entry-title">Goal-first product routing</div>
                 <div className="entry-copy">Start from the user goal like stable yield, steadier principal, or buy-lower exposure, then reveal the product structure only after the fit is clear.</div>
@@ -3550,7 +3545,7 @@ export default function App() {
                     {paperTradingUnlocked ? 'Unlocked' : 'Preview'}
                   </span>
                 </div>
-                <div className="paper-balance-strip home-paper-balance-strip">
+                <div className="paper-balance-strip">
                   <div className="paper-balance-box">
                     <div className="label">Remaining tokens</div>
                     <div className="value">{paperTokenBalance.toLocaleString()} PT</div>
@@ -3565,7 +3560,7 @@ export default function App() {
                   </div>
                 </div>
                 <div className="home-surface-card-grid home-surface-card-grid-paper">
-                  <div className="home-surface-card">
+                  <div className="home-surface-card featured">
                     <div className="eyebrow">Replay entry</div>
                     <div className="entry-title">Starter simulation</div>
                     <div className="entry-copy">Practice with treasury-style or managed products before using any live wallet flow. Badge rewards increase the available simulation budget.</div>
@@ -3642,7 +3637,7 @@ export default function App() {
                   />
                 </label>
                 <div className="wallet-nickname-help">
-                  This nickname is stored locally on this device and replaces the short wallet address across the RiskLens demo.
+                  This nickname is stored locally on this device and replaces the short wallet address across the MSX demo.
                 </div>
                 <div className="toolbar">
                   <button className="secondary-btn" onClick={handleSaveWalletNickname}>

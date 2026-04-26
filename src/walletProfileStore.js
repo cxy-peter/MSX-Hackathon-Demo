@@ -520,7 +520,7 @@ export async function buildProfileStorageRecord(address, profilePayload = {}, si
 export async function signAndStoreProfilePointer(address, profilePayload = {}, signMessageAsync) {
   const draft = await buildProfileStorageRecord(address, profilePayload);
   const message = [
-    'MSX wallet profile backup',
+    'RiskLens wallet profile backup',
     `Wallet: ${normalizeAddress(address)}`,
     `Content hash: ${draft.contentHash}`,
     `PT policy: ${UNIFIED_PT_STARTING_BALANCE} ${UNIFIED_PT_SYMBOL} base / ${UNIFIED_PT_MILESTONE_REWARD} ${UNIFIED_PT_SYMBOL} milestones`,

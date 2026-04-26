@@ -25,7 +25,7 @@ export const PAPER_PRODUCT_INSIGHTS = {
     cexMath: [
       'OKX Simple Earn Flexible says hourly return is lent amount x APR / 365 / 24 x 85%, meaning a 15% platform share is taken from return, not principal.',
       'Binance Earn groups flexible, locked, dual investment, and on-chain yield under one surface, but product terms and lockups differ by lane.',
-      'This MSX replay should therefore show gross yield, fee drag, and likely net-to-user value separately instead of one headline rate.'
+      'This RiskLens replay should therefore show gross yield, fee drag, and likely net-to-user value separately instead of one headline rate.'
     ],
     automation: [
       'Reserve monitor checks drift, buffer ratio, and attestation freshness every few hours.',
@@ -64,7 +64,7 @@ export const PAPER_PRODUCT_INSIGHTS = {
     cexMath: [
       'OKX Dual Investment terms define term rate as APY / 365 x term, then settle in different currencies depending on target price and expiry price.',
       'Structured or term products should therefore always show settlement path, currency path, and expiry formula before showing headline APR.',
-      'A term ladder on MSX should likewise separate hold-to-maturity value from early-exit value.'
+      'A term ladder on RiskLens should likewise separate hold-to-maturity value from early-exit value.'
     ],
     automation: [
       'Maturity engine can auto-roll or return cash depending on product policy.',
@@ -102,7 +102,7 @@ export const PAPER_PRODUCT_INSIGHTS = {
     ],
     cexMath: [
       'Coinbase states staking APY is shown after Coinbase commission and can still have extra fees like 1% instant unstake, which is a good reminder that display yield is often net of platform take.',
-      'For tokenized equities, MSX should show wrapper drag explicitly instead of pretending the token always tracks the stock one-for-one after costs.',
+      'For tokenized equities, RiskLens should show wrapper drag explicitly instead of pretending the token always tracks the stock one-for-one after costs.',
       'Users should see both gross stock move and estimated net wrapper outcome.'
     ],
     automation: [
@@ -142,7 +142,7 @@ export const PAPER_PRODUCT_INSIGHTS = {
     ],
     cexMath: [
       'Bybit Dual Asset and Binance Dual Investment both show why payoff conditions matter more than a single APR number.',
-      'A structured lane on MSX should therefore separate headline coupon, payoff path, and final settlement asset before talking about return.',
+      'A structured lane on RiskLens should therefore separate headline coupon, payoff path, and final settlement asset before talking about return.',
       'The user needs the term sheet logic, not just a price chart.'
     ],
     automation: [
@@ -181,7 +181,7 @@ export const PAPER_PRODUCT_INSIGHTS = {
     ],
     cexMath: [
       'Mainstream CEX futures surfaces separate margin, funding, liquidation, and insurance logic because the product is a risk engine, not a spot ticket.',
-      'MSX should keep leverage math visible so users see why notional, margin, and equity are different numbers.',
+      'RiskLens should keep leverage math visible so users see why notional, margin, and equity are different numbers.',
       'A good tutorial always shows liquidation marker, fee drag, and net exit value together.'
     ],
     automation: [
@@ -219,7 +219,7 @@ export const PAPER_PRODUCT_INSIGHTS = {
     ],
     cexMath: [
       'Private products should not inherit spot-market language because spread, mark, and liquidity are different in kind, not just in degree.',
-      'MSX should show valuation logic, transfer limits, and exit tree instead of pretending this behaves like a listed chart.',
+      'RiskLens should show valuation logic, transfer limits, and exit tree instead of pretending this behaves like a listed chart.',
       'The educational focus is on rights, liquidity, and event risk.'
     ],
     automation: [
@@ -259,7 +259,7 @@ export const PAPER_PRODUCT_INSIGHTS = {
     ],
     cexMath: [
       'Automation routes on major venues are usually sold as convenience layers, but the investor still owns the execution outcome and the slippage.',
-      'MSX should explain model scope, data freshness, and kill-switch behavior before showing any performance number.',
+      'RiskLens should explain model scope, data freshness, and kill-switch behavior before showing any performance number.',
       'A strategy product needs governance disclosure as much as it needs a chart.'
     ],
     automation: [
@@ -296,7 +296,7 @@ export const PAPER_PRODUCT_INSIGHTS = {
     ],
     cexMath: [
       'Coinbase explains staking APY as recent network payouts net of Coinbase commission, then converted from APR to APY using standard compounding.',
-      'That is a good model for MSX tutorials: show gross network or market return first, then show platform take and user net.',
+      'That is a good model for RiskLens tutorials: show gross network or market return first, then show platform take and user net.',
       'Do not collapse price return, wrapper return, and staking return into one unexplained number.'
     ],
     automation: [
@@ -306,7 +306,7 @@ export const PAPER_PRODUCT_INSIGHTS = {
     ],
     tokenRights: [
       'Spot ETH itself has no issuer rights, but staking wrappers create queue, commission, and withdrawal policy rights.',
-      'If MSX adds a wrapper, rights should disclose whether the user is exposed to staking queue risk or not.'
+      'If RiskLens adds a wrapper, rights should disclose whether the user is exposed to staking queue risk or not.'
     ]
   }
 };

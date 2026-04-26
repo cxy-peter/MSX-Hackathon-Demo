@@ -22,7 +22,7 @@ contract MSXQuestBadge is ERC721, Ownable {
 
     event TaskBadgeMinted(address indexed recipient, uint8 indexed badgeType, uint256 indexed tokenId);
 
-    constructor() ERC721("RiskLens Quest Badge", "RLQB") Ownable() {}
+    constructor() ERC721("MSX Quest Badge", "MSXQB") Ownable() {}
 
     function hasMinted(address holder) external view returns (bool) {
         return hasMintedBadge[holder][BADGE_WELCOME];
@@ -78,7 +78,7 @@ contract MSXQuestBadge is ERC721, Ownable {
             description,
             '","image":"',
             image,
-            '","attributes":[{"trait_type":"Campaign","value":"RiskLens Guided Investing Hub"},{"trait_type":"Network","value":"Sepolia"},{"trait_type":"Badge Type","value":"',
+            '","attributes":[{"trait_type":"Campaign","value":"MSX Guided Investing Hub"},{"trait_type":"Network","value":"Sepolia"},{"trait_type":"Badge Type","value":"',
             badgeTypeName,
             '"},{"trait_type":"Status","value":"Unlocked"},{"trait_type":"Token ID","value":"',
             tokenId.toString(),
@@ -97,27 +97,27 @@ contract MSXQuestBadge is ERC721, Ownable {
     }
 
     function _badgeTitle(uint8 badgeType) internal pure returns (string memory) {
-        if (badgeType == BADGE_WELCOME) return "RiskLens Welcome Badge";
-        if (badgeType == BADGE_WALLET) return "RiskLens Wallet Task Badge";
-        if (badgeType == BADGE_RISK) return "RiskLens Risk Review Badge";
-        if (badgeType == BADGE_QUIZ) return "RiskLens Product Quiz Badge";
-        return "RiskLens Paper Trading Badge";
+        if (badgeType == BADGE_WELCOME) return "MSX Welcome Badge";
+        if (badgeType == BADGE_WALLET) return "MSX Wallet Task Badge";
+        if (badgeType == BADGE_RISK) return "MSX Risk Review Badge";
+        if (badgeType == BADGE_QUIZ) return "MSX Product Quiz Badge";
+        return "MSX Paper Trading Badge";
     }
 
     function _badgeDescription(uint8 badgeType) internal pure returns (string memory) {
-        if (badgeType == BADGE_WELCOME) return "A Sepolia welcome collectible for the RiskLens Guided Investing Hub onboarding flow.";
-        if (badgeType == BADGE_WALLET) return "A wallet-connection collectible for the RiskLens onboarding flow.";
-        if (badgeType == BADGE_RISK) return "A risk-card review collectible for the RiskLens guided investing flow.";
-        if (badgeType == BADGE_QUIZ) return "A product-quiz collectible for the RiskLens guided investing flow.";
-        return "A paper-trading milestone collectible for the RiskLens guided investing flow.";
+        if (badgeType == BADGE_WELCOME) return "A Sepolia welcome collectible for the MSX Guided Investing Hub onboarding flow.";
+        if (badgeType == BADGE_WALLET) return "A wallet-connection collectible for the MSX onboarding flow.";
+        if (badgeType == BADGE_RISK) return "A risk-card review collectible for the MSX guided investing flow.";
+        if (badgeType == BADGE_QUIZ) return "A product-quiz collectible for the MSX guided investing flow.";
+        return "A paper-trading milestone collectible for the MSX guided investing flow.";
     }
 
     function _badgeKicker(uint8 badgeType) internal pure returns (string memory) {
-        if (badgeType == BADGE_WELCOME) return "RiskLens Welcome Badge";
-        if (badgeType == BADGE_WALLET) return "RiskLens Connect Quest";
-        if (badgeType == BADGE_RISK) return "RiskLens Starter Guide";
-        if (badgeType == BADGE_QUIZ) return "RiskLens Product Quiz";
-        return "RiskLens Simulation Access";
+        if (badgeType == BADGE_WELCOME) return "MSX Welcome Badge";
+        if (badgeType == BADGE_WALLET) return "MSX Connect Quest";
+        if (badgeType == BADGE_RISK) return "MSX Starter Guide";
+        if (badgeType == BADGE_QUIZ) return "MSX Product Quiz";
+        return "MSX Simulation Access";
     }
 
     function _badgeLineOne(uint8 badgeType) internal pure returns (string memory) {
@@ -146,7 +146,7 @@ contract MSXQuestBadge is ERC721, Ownable {
 
     function _badgeSubtitleTwo(uint8 badgeType) internal pure returns (string memory) {
         if (badgeType == BADGE_WELCOME) return "guided onboarding flow";
-        if (badgeType == BADGE_WALLET) return "the RiskLens welcome flow";
+        if (badgeType == BADGE_WALLET) return "the MSX welcome flow";
         if (badgeType == BADGE_RISK) return "the guided onboarding flow";
         if (badgeType == BADGE_QUIZ) return "framing confirmed";
         return "wallet tutorial completion";

@@ -331,7 +331,7 @@ export function canUseRemoteReplay(product) {
 
 export function getReplayFallbackLabel(product) {
   if (product.sourceType === 'local') {
-    return 'Local MSX replay series';
+    return 'Local RiskLens replay series';
   }
 
   if (product.sourceType === 'twelvedata') {

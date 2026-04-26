@@ -62,11 +62,11 @@ const REPLAY_BADGE_CONTRACT_ADDRESS = import.meta.env.VITE_REPLAY_BADGE_CONTRACT
 const badgeContractConfigured = isAddress(BADGE_CONTRACT_ADDRESS);
 const replayBadgeContractConfigured = isAddress(REPLAY_BADGE_CONTRACT_ADDRESS);
 const REPLAY_BADGE_TYPES = {
-  baseCheck: 6,
-  leaderboard: 7,
-  spotLoop: 8,
-  perpLeverage: 9,
-  protectiveHedge: 10
+  baseCheck: 1,
+  leaderboard: 2,
+  spotLoop: 3,
+  perpLeverage: 4,
+  protectiveHedge: 5
 };
 const REPLAY_ACHIEVEMENT_IDS = Object.values(REPLAY_BADGE_TYPES);
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -681,7 +681,7 @@ function WalletModal({
           X
         </button>
         <div className="wallet-modal-pane wallet-modal-sidebar">
-          <div className="wallet-modal-title">RiskLens Wallet Access</div>
+          <div className="wallet-modal-title">MSX Wallet Access</div>
           <div className="wallet-modal-subtitle">Replay Layer</div>
           <button className={`wallet-option ${isPending || !hasMetaMaskInstalled ? 'disabled' : ''}`} onClick={onConnect} disabled={isPending || !hasMetaMaskInstalled}>
             <MetaMaskIcon className="wallet-option-icon" />
@@ -733,7 +733,7 @@ function WalletModal({
                 ? 'This browser has not exposed a MetaMask wallet yet. Open the official MetaMask website, install the browser extension, pin it in the browser toolbar, then reopen this wallet panel and connect again.'
                 : isPending
                   ? 'A real wallet connection request was sent. Approve it in the MetaMask extension popup, then this page will update automatically.'
-                  : 'Select MetaMask to trigger a real wallet approval flow, like the live RiskLens platform experience.'}
+                  : 'Select MetaMask to trigger a real wallet approval flow, like the live MSX platform experience.'}
           </div>
           {hasMetaMaskInstalled ? (
             <div className="wallet-nickname-panel">
@@ -3372,7 +3372,7 @@ const REPLAY_ROUTE_FOCUS_OPTIONS = {
       lessons: [
         'Collateral quality decides borrowing power, but also determines how fragile the route becomes in stress.',
         'Borrow efficiency is not free income if the asset can gap or lose collateral status.',
-        'This is one of the most RiskLens-like yield paths because it connects RWA holdings to onchain liquidity.'
+        'This is one of the most MSX-like yield paths because it connects RWA holdings to onchain liquidity.'
       ]
     },
     {
@@ -4767,18 +4767,18 @@ function buildReplayAchievements({
   spotLoopUsed,
   leverageRouteUsed,
   hedgeRouteUsed,
-  spotBuySeen
+  spotBuySeen,
+  settleOrPledgeUsed
 }) {
   return [
     {
       id: REPLAY_BADGE_TYPES.baseCheck,
       taskNumber: 1,
       title: 'Base Check',
-      contractId: 'Replay badge #6',
+      contractId: 'Replay badge #1',
       activityLabel: 'Buy / sell usage',
       coverCopy: 'Paper usage verified',
-      requirement:
-        'Use the same wallet that already completed onboarding, then finish at least one buy or sell replay trade in Paper Trading.',
+      requirement: 'Carry over the same wallet that already finished the onboarding route.',
       reward: 'Confirms that the same wallet passed onboarding and actually used replay trading instead of only opening the page.',
       inherited: onboardingReady,
       unlocked: onboardingReady && replayTradeUsed,
@@ -4792,7 +4792,7 @@ function buildReplayAchievements({
       id: REPLAY_BADGE_TYPES.leaderboard,
       taskNumber: 2,
       title: 'Leaderboard',
-      contractId: 'Replay badge #7',
+      contractId: 'Replay badge #2',
       activityLabel: 'Leaderboard usage',
       coverCopy: 'Leaderboard route verified',
       requirement: 'Finish a positive closed loop and use the leaderboard submit action once.',
@@ -4808,7 +4808,7 @@ function buildReplayAchievements({
       id: REPLAY_BADGE_TYPES.spotLoop,
       taskNumber: 3,
       title: 'Spot Loop',
-      contractId: 'Replay badge #8',
+      contractId: 'Replay badge #3',
       activityLabel: 'Low-buy / high-sell',
       coverCopy: 'Spot path learned',
       requirement: 'Complete one spot buy and one spot sell so the user sees entry, exit, spread, and net take-home.',
@@ -4821,34 +4821,30 @@ function buildReplayAchievements({
     {
       id: REPLAY_BADGE_TYPES.perpLeverage,
       taskNumber: 4,
-      title: 'Perp Leverage',
-      contractId: 'Replay badge #9',
-      activityLabel: 'Directional perp leg',
-      coverCopy: 'Perp tutorial viewed',
-      requirement:
-        'Open one directional perp tutorial leg and review notional, margin, funding, and the liquidation marker.',
-      reward:
-        'Shows the user understands leveraged exposure as a separate risk structure with margin and liquidation math, not just a larger spot ticket.',
-      unlocked: onboardingReady && leverageRouteUsed,
-      detail: leverageRouteUsed
-        ? 'The wallet has opened the directional perp tutorial route and viewed the leverage math panel.'
-        : 'Open the Perp Leverage route from Tutorial path, choose a directional leg, and inspect notional, margin, funding, and liquidation marker before claiming.'
+      title: 'Buy one receipt',
+      contractId: 'Replay badge #4',
+      activityLabel: 'Receipt bought',
+      coverCopy: 'Receipt bought',
+      requirement: 'Open one replay position first: choose a product, buy one receipt, and see the wallet balance update.',
+      reward: 'Turns the replay desk into a product lifecycle demo: the user proves they can create receipt exposure before trying hedge, leverage, settle, or pledge.',
+      unlocked: onboardingReady && spotBuySeen,
+      detail: spotBuySeen
+        ? 'The wallet already bought at least one replay receipt. The earlier base, leaderboard, and spot checks are now shown as supporting checks inside this task instead of separate blockers.'
+        : 'Pick a product, use the simple Buy action, and create one receipt-style position before opening any hedge or lifecycle route.'
     },
     {
       id: REPLAY_BADGE_TYPES.protectiveHedge,
       taskNumber: 5,
-      title: 'Protective Hedge',
-      contractId: 'Replay badge #10',
-      activityLabel: 'Hedge workflow',
-      coverCopy: 'Hedge workflow learned',
-      requirement:
-        'Choose a protected sleeve, set hedge size, and use a short or perp hedge while recognizing that hedge lowers net exposure instead of creating a second speculative position.',
-      reward:
-        'Separates portfolio protection from speculation by making the user inspect protected notional, hedge size, hedge leg, and net exposure.',
-      unlocked: onboardingReady && hedgeRouteUsed,
-      detail: hedgeRouteUsed
-        ? 'The wallet has used the protective hedge tutorial flow and has seen how the hedge reduces net exposure.'
-        : 'Open the Protective Hedge route, choose the sleeve to protect, size the hedge, and inspect how the short or perp leg reduces net exposure.'
+      title: 'Settle or pledge',
+      contractId: 'Replay badge #5',
+      activityLabel: 'Lifecycle action',
+      coverCopy: 'Lifecycle action learned',
+      requirement: 'After buying a receipt, either settle/close it into cash or pledge a Wealth receipt as route support.',
+      reward: 'Shows that the user understands a receipt is not just a buy ticket: it eventually settles, rolls, redeems, or can be pledged to support another route before it is released.',
+      unlocked: onboardingReady && spotBuySeen && settleOrPledgeUsed,
+      detail: settleOrPledgeUsed
+        ? 'The wallet already completed a receipt lifecycle action: either the replay position was closed/settled or a Wealth receipt was pledged as route support.'
+        : 'Settle means finishing the receipt lifecycle: close, redeem, roll, or let maturity turn the receipt back into cash or the promised payoff. Pledge means locking the receipt as route support so Paper can read extra capacity without minting extra wallet cash.'
     }
   ];
 }
@@ -6021,7 +6017,6 @@ function PaperTradingInner() {
     Boolean(progressState.leverageLessonCompleted) ||
     Boolean(replayOnchainStateById[REPLAY_BADGE_TYPES.perpLeverage]?.onchainClaimed);
   const hedgeRouteUsed =
-    (Boolean(progressState.hedgeLessonCompleted) && Boolean(progressState.hedgeSizingCompleted)) ||
     Boolean(progressState.hedgePositiveCloseCompleted) ||
     positiveHedgeCloseSeen ||
     Boolean(replayOnchainStateById[REPLAY_BADGE_TYPES.protectiveHedge]?.onchainClaimed);
@@ -6251,7 +6246,7 @@ function PaperTradingInner() {
           achievement.id === REPLAY_BADGE_TYPES.baseCheck
             ? {
                 coverAccent: 'green',
-                coverKicker: 'RiskLens Replay Usage',
+                coverKicker: 'MSX Replay Usage',
                 coverTitle: effectiveUnlocked || onchainState.onchainClaimed ? 'PAPER USAGE VERIFIED' : 'HOME GATE INHERITED',
                 coverSubtitle: effectiveUnlocked || onchainState.onchainClaimed
                   ? baseTradeSummary.timestamp
@@ -6270,7 +6265,7 @@ function PaperTradingInner() {
             : achievement.id === REPLAY_BADGE_TYPES.leaderboard
               ? {
                   coverAccent: 'teal',
-                  coverKicker: 'RiskLens Leaderboard Score',
+                  coverKicker: 'MSX Leaderboard Score',
                   coverTitle: 'SCORE ROUTE VERIFIED',
                   coverSubtitle: leaderboardCoverSnapshot.submittedAt
                     ? `${formatReplayBadgeTimestamp(leaderboardCoverSnapshot.submittedAt)} / ${leaderboardWalletLabel}`
@@ -6293,7 +6288,7 @@ function PaperTradingInner() {
                       : achievement.id === REPLAY_BADGE_TYPES.perpLeverage
                         ? 'teal'
                         : 'gold',
-                  coverKicker: `RiskLens Tutorial Task ${achievement.taskNumber}`,
+                  coverKicker: `MSX Tutorial Task ${achievement.taskNumber}`,
                   coverTitle: achievement.coverCopy.toUpperCase(),
                   coverSubtitle: achievement.requirement,
                   coverFooterLines: [
@@ -6424,112 +6419,69 @@ function PaperTradingInner() {
           : selectedRewardTask.id === REPLAY_BADGE_TYPES.perpLeverage
             ? [
                 {
-                  id: 'perp-route-selected',
-                  title: 'Directional perp route opened',
-                  statusText:
-                    selectedAdvancedRoute === 'perp' || leverageRouteUsed || selectedRewardTask.onchainClaimed
-                      ? 'Completed'
-                      : 'To do',
-                  statusTone:
-                    selectedAdvancedRoute === 'perp' || leverageRouteUsed || selectedRewardTask.onchainClaimed
-                      ? 'done'
-                      : 'todo',
-                  indicator:
-                    selectedAdvancedRoute === 'perp' || leverageRouteUsed || selectedRewardTask.onchainClaimed
-                      ? 'PERP'
-                      : 'PERP',
+                  id: 'home-inherited',
+                  title: 'Wallet and onboarding inherited',
+                  statusText: walletIdentityInherited || selectedRewardTask.onchainClaimed ? 'Completed' : 'To do',
+                  statusTone: walletIdentityInherited || selectedRewardTask.onchainClaimed ? 'done' : 'todo',
+                  indicator: walletIdentityInherited || selectedRewardTask.onchainClaimed ? 'OK' : 'HOME',
                   interactive: true,
-                  onClick: () => handleSelectLearningRoute('perp:leverage'),
+                  onClick: openWalletModal,
                   copy:
-                    selectedAdvancedRoute === 'perp' || leverageRouteUsed || selectedRewardTask.onchainClaimed
-                      ? 'The tutorial path is already on the directional perp route.'
-                      : 'Open the Perp Leverage tutorial route before treating leverage as an available action.'
+                    walletIdentityInherited || selectedRewardTask.onchainClaimed
+                      ? 'The wallet task from Home is already satisfied, so Paper starts from a completed identity handoff.'
+                      : 'Use the same wallet as Home. As soon as the Home wallet task is done, this row flips to completed here.'
                 },
                 {
-                  id: 'directional-leg-opened',
-                  title: 'Directional perp leg opened',
-                  statusText: leverageRouteUsed || selectedRewardTask.onchainClaimed ? 'Completed' : 'To do',
-                  statusTone: leverageRouteUsed || selectedRewardTask.onchainClaimed ? 'done' : 'todo',
-                  indicator: leverageRouteUsed || selectedRewardTask.onchainClaimed ? 'LEG' : 'LONG',
+                  id: 'first-receipt-buy',
+                  title: 'Buy one receipt',
+                  statusText: spotBuySeen || selectedRewardTask.onchainClaimed ? 'Completed' : 'To do',
+                  statusTone: spotBuySeen || selectedRewardTask.onchainClaimed ? 'done' : 'todo',
+                  indicator: 'BUY',
                   interactive: true,
-                  onClick: () => handleSelectLearningRoute('perp:leverage'),
-                  copy:
-                    'Use the Long or Short action in the perp tutorial so the wallet records a directional leveraged leg.'
+                  onClick: () => scrollToRef(tradeDeskRef),
+                  copy: 'Choose a product and press Buy. The point is simple: the wallet now owns one receipt-style exposure.'
                 },
                 {
-                  id: 'perp-math-viewed',
-                  title: 'Notional, margin, funding, liquidation marker viewed',
-                  statusText: leverageRouteUsed || selectedRewardTask.onchainClaimed ? 'Completed' : 'To do',
-                  statusTone: leverageRouteUsed || selectedRewardTask.onchainClaimed ? 'done' : 'todo',
-                  indicator: 'MATH',
+                  id: 'supporting-replay',
+                  title: 'Replay usage recorded',
+                  statusText: replayTradeUsed || leaderboardUsed || selectedRewardTask.onchainClaimed ? 'Completed' : 'Optional',
+                  statusTone: replayTradeUsed || leaderboardUsed || selectedRewardTask.onchainClaimed ? 'done' : 'ready',
+                  indicator: 'LOG',
                   interactive: true,
-                  onClick: () => handleSelectLearningRoute('perp:leverage'),
-                  copy:
-                    'The perp panel must show why notional differs from margin, how funding drags the leg, and where liquidation sits.'
+                  onClick: () => scrollToRef(productLanesRef),
+                  copy: 'The old leaderboard and spot-loop checks now live here as evidence that the receipt buy created a real local ledger event.'
                 }
               ]
             : [
                 {
-                  id: 'protected-sleeve',
-                  title: 'Protected sleeve selected',
-                  statusText:
-                    hedgeRouteUsed ||
-                    progressState.hedgeLessonCompleted ||
-                    selectedRouteFocusConfig?.id === 'hedge' ||
-                    selectedRewardTask.onchainClaimed
-                      ? 'Completed'
-                      : 'To do',
-                  statusTone:
-                    hedgeRouteUsed ||
-                    progressState.hedgeLessonCompleted ||
-                    selectedRouteFocusConfig?.id === 'hedge' ||
-                    selectedRewardTask.onchainClaimed
-                      ? 'done'
-                      : 'todo',
-                  indicator: 'SLEEVE',
+                  id: 'receipt-exists',
+                  title: 'Receipt already exists',
+                  statusText: spotBuySeen || selectedRewardTask.onchainClaimed ? 'Completed' : 'To do',
+                  statusTone: spotBuySeen || selectedRewardTask.onchainClaimed ? 'done' : 'todo',
+                  indicator: 'BUY',
                   interactive: true,
-                  onClick: () => handleSelectLearningRoute('perp:hedge'),
-                  copy:
-                    'Start the hedge flow by choosing which sleeve is being protected before opening the hedge leg.'
+                  onClick: () => scrollToRef(tradeDeskRef),
+                  copy: 'Settle and pledge only make sense after there is a receipt or sleeve in the wallet.'
                 },
                 {
-                  id: 'hedge-size',
-                  title: 'Hedge size selected',
-                  statusText:
-                    hedgeRouteUsed || progressState.hedgeSizingCompleted || selectedRewardTask.onchainClaimed
-                      ? 'Completed'
-                      : 'To do',
-                  statusTone:
-                    hedgeRouteUsed || progressState.hedgeSizingCompleted || selectedRewardTask.onchainClaimed
-                      ? 'done'
-                      : 'todo',
-                  indicator: 'SIZE',
+                  id: 'settle-path',
+                  title: 'Settle or close',
+                  statusText: spotSellSeen || selectedRewardTask.onchainClaimed ? 'Completed' : 'To do',
+                  statusTone: spotSellSeen || selectedRewardTask.onchainClaimed ? 'done' : 'todo',
+                  indicator: 'SETTLE',
                   interactive: true,
-                  onClick: () => handleSelectLearningRoute('perp:hedge'),
-                  copy:
-                    'Set a hedge ratio or use the suggested ticket so the hedge is sized against the sleeve, not guessed as a second trade.'
+                  onClick: () => scrollToRef(tradeDeskRef),
+                  copy: 'Settle means finish the receipt lifecycle: close, redeem, roll, or wait for maturity so the receipt turns back into cash or the promised payoff.'
                 },
                 {
-                  id: 'short-or-perp-hedge',
-                  title: 'Short or perp hedge leg used',
-                  statusText: hedgeRouteUsed || selectedRewardTask.onchainClaimed ? 'Completed' : 'To do',
-                  statusTone: hedgeRouteUsed || selectedRewardTask.onchainClaimed ? 'done' : 'todo',
-                  indicator: 'SHORT',
+                  id: 'pledge-path',
+                  title: 'Pledge route',
+                  statusText: wealthReceiptPledged || hedgeRouteUsed || selectedRewardTask.onchainClaimed ? 'Completed' : 'Alternative',
+                  statusTone: wealthReceiptPledged || hedgeRouteUsed || selectedRewardTask.onchainClaimed ? 'done' : 'ready',
+                  indicator: 'PLEDGE',
                   interactive: true,
                   onClick: () => handleSelectLearningRoute('perp:hedge'),
-                  copy:
-                    'Open the protective short or perp leg only after the app has a sleeve and hedge size to protect.'
-                },
-                {
-                  id: 'net-exposure',
-                  title: 'Net exposure reduced, not doubled',
-                  statusText: hedgeRouteUsed || selectedRewardTask.onchainClaimed ? 'Completed' : 'To do',
-                  statusTone: hedgeRouteUsed || selectedRewardTask.onchainClaimed ? 'done' : 'todo',
-                  indicator: 'NET',
-                  interactive: true,
-                  onClick: () => handleSelectLearningRoute('perp:hedge'),
-                  copy:
-                    'The goal is lower residual exposure. If the hedge behaves like a second speculative position, the task is not complete.'
+                  copy: 'Pledge means lock a receipt as route support so Paper can read extra hedge capacity; it should not mint extra wallet cash before the receipt is released.'
                 }
               ]
     : [];
@@ -6564,7 +6516,7 @@ function PaperTradingInner() {
             : {
                 text: 'To do',
                 tone: 'todo',
-                copy: `This wallet has ${selectedRewardTaskCompletedChecklistCount}/${selectedRewardTaskChecklistTotal} core checks completed. Finish the required To do rows for this guided replay task.`
+                copy: `This wallet has ${selectedRewardTaskCompletedChecklistCount}/${selectedRewardTaskChecklistTotal} core checks completed. Finish the required To do rows; rows marked Alternative are one-of-two lifecycle routes.`
               };
   const unlockedReplayAchievementCount = replayAchievements.filter((achievement) => achievement.unlocked).length;
   const claimReadyReplayAchievementCount = replayAchievements.filter((achievement) => achievement.canClaimOnchain).length;
@@ -7738,7 +7690,7 @@ function PaperTradingInner() {
     try {
       const signature = await signMessageAsync({
         message: [
-          'RiskLens replay leverage risk acknowledgement',
+          'MSX replay leverage risk acknowledgement',
           `Wallet: ${address}`,
           `Product: ${selectedProduct.ticker}`,
           `Direction: ${direction}`,
@@ -7792,7 +7744,7 @@ function PaperTradingInner() {
     try {
       await signMessageAsync({
         message: [
-          'RiskLens replay trade confirmation',
+          'MSX replay trade confirmation',
           `Wallet: ${address}`,
           `Product: ${selectedProduct.ticker}`,
           `Side: ${side}`,
@@ -7830,7 +7782,7 @@ function PaperTradingInner() {
     try {
       await signMessageAsync({
         message: [
-          'RiskLens replay leverage trade confirmation',
+          'MSX replay leverage trade confirmation',
           `Wallet: ${address}`,
           `Product: ${selectedProduct.ticker}`,
           `Action: ${action} ${direction}`,
@@ -9469,7 +9421,7 @@ function PaperTradingInner() {
       setFeedback(
         replayDeveloperModeActive
           ? 'Developer mode is active, so this route should already be open.'
-          : 'Finish Base Check and open the guided tutorial route first. After the wallet has a real replay action, leverage and hedge become explained routes instead of separate mystery tasks.'
+          : 'Buy one replay receipt first. After the wallet has one receipt position, hedge, leverage, settle, and pledge routes unlock as lifecycle choices instead of separate mystery tasks.'
       );
       setSelectedRewardTaskId(REPLAY_BADGE_TYPES.perpLeverage);
       return;
@@ -12907,8 +12859,8 @@ function PaperTradingInner() {
         <div className="brand-wrap">
           <div className="brand-dot"></div>
           <div>
-            <div className="eyebrow">RiskLens Guided Investing Hub</div>
-            <div className="brand-name">{t('RiskLens Paper Trading Replay Lab', 'RiskLens 模拟交易回放实验室')}</div>
+            <div className="eyebrow">MSX Hackathon Demo</div>
+            <div className="brand-name">{t('MSX Paper Trading Replay Lab', 'MSX 模拟交易回放实验室')}</div>
           </div>
         </div>
 
@@ -12954,7 +12906,7 @@ function PaperTradingInner() {
           <div className="section-head">
             <div>
               <div className="eyebrow">{t('Replay-first paper trading', '回放优先的模拟交易')}</div>
-              <h1 style={{ maxWidth: 1020 }}>{t('Practice RiskLens-style product decisions against historical replay bars before any live action.', '在任何真实操作之前，先用历史回放练习 RiskLens 风格的产品决策。')}</h1>
+              <h1 style={{ maxWidth: 1020 }}>{t('Practice MSX-style product decisions against historical replay bars before any live action.', '在任何真实操作之前，先用历史回放练习 MSX 风格的产品决策。')}</h1>
             </div>
 
             <button className="ghost-btn compact" onClick={handleResetLab}>
@@ -12964,15 +12916,15 @@ function PaperTradingInner() {
 
           <p className="hero-text">
             {t(
-              'This version turns paper trading into an explainable replay lab. You can compare RiskLens starter RWAs, common crypto assets, and perp tutorials inside one wallet-linked simulation surface, then step through history bar by bar to see what your decision would have done next.',
-              '这个版本把模拟交易做成了一个可解释的回放实验室。你可以在同一个绑定钱包的模拟界面里，对比 RiskLens 入门 RWA、常见加密资产以及永续合约教学，然后逐根回放历史 K 线，看看你的决策接下来会发生什么。'
+              'This version turns paper trading into an explainable replay lab. You can compare MSX starter RWAs, tokenized stock wrappers, and common CEX assets inside one wallet-linked simulation surface, then step through history bar by bar to see what your decision would have done next.',
+              '这个版本把模拟交易做成了一个可解释的回放实验室。你可以在同一个绑定钱包的模拟界面里，对比 MSX 入门 RWA、代币化股票包装以及常见 CEX 资产，然后逐根回放历史 K 线，看看你的决策接下来会发生什么。'
             )}
           </p>
 
           <div className="hero-points">
             <span className="pill risk-low">{t('Historical replay', '历史回放')}</span>
             <span className="pill risk-low">{t('Wallet-linked ledger', '钱包绑定账本')}</span>
-            <span className="pill risk-medium">{t('RiskLens vs CEX comparison', 'RiskLens 与 CEX 对比')}</span>
+            <span className="pill risk-medium">{t('MSX vs CEX comparison', 'MSX 与 CEX 对比')}</span>
             <span className="pill risk-medium">{t('Human / protocol explainers', '人话 / 协议解释')}</span>
           </div>
 

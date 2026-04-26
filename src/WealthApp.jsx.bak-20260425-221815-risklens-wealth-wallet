@@ -17,13 +17,7 @@ import { GLOBAL_TOKEN_RIGHTS_NOTES, WEALTH_PRODUCT_INSIGHTS } from './productIns
 import { buildLiveWealthProducts } from './wealthLiveData';
 import { buildDiligenceModel, fetchDay1BriefSnapshot } from './day1BriefAdapter';
 import { LanguageToggle, useDomTranslation, useUiLanguage } from './uiLanguage';
-import {
-  getWalletDisplayName,
-  normalizeWalletNickname,
-  readWalletNickname,
-  WALLET_NICKNAME_MAX_LENGTH,
-  writeWalletNickname
-} from './walletNickname';
+import { getWalletDisplayName, readWalletNickname } from './walletNickname';
 import {
   getWealthSpendableCash,
   getWalletProfileSummary,
@@ -199,16 +193,16 @@ const WEALTH_OPPORTUNITY_TYPES = [
   },
   {
     id: 'private-credit',
-    label: 'Pre-IPO / Private Credit',
-    tradFi: 'Pre-IPO-style private allocation',
+    label: 'Private Credit Income Fund',
+    tradFi: 'Private Credit Interval Fund',
     lane: 'Wealth / Alternatives',
     priority: 'Careful',
     placement: 'wealth',
     filterCategory: 'privateCredit',
     goalId: 'private',
     productIds: ['hamilton-scope', 'apollo-acred'],
-    why: 'Keep it in Wealth as a private allocation: redemption gates, NAV cadence, borrower concentration, and valuation disclosure matter more than trade replay.',
-    userCopy: 'Show it like a pre-IPO/private-market allocation: documents, liquidity window, valuation logic, and downside disclosure before any yield number.'
+    why: 'Useful income sleeve, but only with redemption gates, NAV cadence, borrower concentration, and valuation disclosure.',
+    userCopy: 'Show why the yield is higher, what liquidity is limited, and how much credit loss the user is underwriting.'
   },
   {
     id: 'wallet-optimizer',
@@ -269,7 +263,7 @@ const WEALTH_OPPORTUNITY_CATEGORY_OPTIONS = [
   { id: 'premiumIncome', label: 'Premium Income' },
   { id: 'autoCall', label: 'Auto-Call' },
   { id: 'cashManagement', label: 'Cash Ladder' },
-  { id: 'privateCredit', label: 'Pre-IPO / Private Credit' },
+  { id: 'privateCredit', label: 'Private Credit' },
   { id: 'taxOptimizer', label: 'Tax / Wallet Optimizer' },
   { id: 'modelPortfolio', label: 'Model Portfolio' },
   { id: 'protectedIncome', label: 'Protected Income' },
@@ -290,7 +284,7 @@ const WEALTH_PRODUCT_TYPE_FILTERS = [
   { id: 'protectedGrowth', label: 'Protected Growth' },
   { id: 'premiumIncome', label: 'Premium Income' },
   { id: 'autoCall', label: 'Auto-Call' },
-  { id: 'privateCredit', label: 'Pre-IPO / Private Credit' },
+  { id: 'privateCredit', label: 'Private Credit' },
 ];
 
 const WEALTH_TASK_BADGES = { subscribe: 'W1', settlement: 'W2' };
@@ -711,132 +705,6 @@ function formatSignedValue(value, hidden, digits = 0, suffix = ' PT') {
   })}${suffix}`;
 }
 
-function MetaMaskIcon({ className = '' }) {
-  return (
-    <div className={`metamask-icon ${className}`.trim()} aria-hidden="true">
-      <svg viewBox="0 0 212 189" role="img">
-        <polygon points="50,10 106,52 80,112 38,100" fill="#e17726" />
-        <polygon points="162,10 106,52 132,112 174,100" fill="#e27625" />
-        <polygon points="68,118 96,142 72,166 48,136" fill="#e27625" />
-        <polygon points="144,118 116,142 140,166 164,136" fill="#e27625" />
-        <polygon points="82,118 106,96 130,118 106,136" fill="#d7c1b3" />
-        <polygon points="80,112 106,96 132,112 106,124" fill="#f6851b" />
-        <polygon points="58,64 80,112 106,96 86,82" fill="#763d16" />
-        <polygon points="154,64 132,112 106,96 126,82" fill="#763d16" />
-      </svg>
-    </div>
-  );
-}
-
-function WealthWalletModal({
-  open,
-  onClose,
-  onConnect,
-  onSaveNickname,
-  isPending,
-  isConnected,
-  walletDisplayName,
-  nicknameDraft,
-  onNicknameDraftChange,
-  nicknameFeedback,
-  errorText,
-  hasMetaMaskInstalled
-}) {
-  if (!open) return null;
-
-  return (
-    <div className="wallet-modal-backdrop" onClick={(event) => event.target === event.currentTarget && !isPending && onClose()}>
-      <div className="wallet-modal">
-        <button className="wallet-modal-close" onClick={onClose} disabled={isPending} aria-label="Close wallet modal">
-          X
-        </button>
-        <div className="wallet-modal-pane wallet-modal-sidebar">
-          <div className="wallet-modal-title">RiskLens Wallet</div>
-          <div className="wallet-modal-subtitle">Wealth nickname settings</div>
-          <button className={`wallet-option ${isPending || !hasMetaMaskInstalled ? 'disabled' : ''}`} onClick={onConnect} disabled={isPending || !hasMetaMaskInstalled}>
-            <MetaMaskIcon className="wallet-option-icon" />
-            <div>
-              <div className="wallet-option-title">MetaMask</div>
-              <div className="wallet-option-copy">
-                {isConnected
-                  ? `Wallet connected ${walletDisplayName}`
-                  : !hasMetaMaskInstalled
-                    ? 'Install browser extension first'
-                    : isPending
-                      ? 'Waiting for wallet approval'
-                      : 'Connect browser wallet'}
-              </div>
-            </div>
-          </button>
-          {!hasMetaMaskInstalled ? (
-            <div className="wallet-install-card">
-              <div className="wallet-install-title">MetaMask not detected</div>
-              <div className="wallet-install-copy">
-                Install and pin the official MetaMask browser extension, then reopen this wallet panel before connecting.
-              </div>
-              <a
-                className="secondary-btn wallet-install-btn"
-                href="https://metamask.io/download/"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open MetaMask official site
-              </a>
-            </div>
-          ) : null}
-        </div>
-        <div className="wallet-modal-pane wallet-modal-main">
-          <MetaMaskIcon className="wallet-modal-hero wallet-modal-hero-metamask" />
-          <div className="wallet-modal-status">
-            {isConnected
-              ? 'Wallet nickname'
-              : !hasMetaMaskInstalled
-                ? 'Install MetaMask first'
-                : isPending
-                  ? 'Confirm connection in MetaMask'
-                  : 'Set nickname, then connect'}
-          </div>
-          <div className="wallet-modal-copy">
-            {isConnected
-              ? `This Wealth page is using wallet ${walletDisplayName}. Update the local nickname here when you want the header to show a readable wallet name.`
-              : 'Optional: set a nickname before connecting. On first wallet connection, RiskLens saves it locally and uses it across the demo instead of the short address.'}
-          </div>
-          {hasMetaMaskInstalled ? (
-            <div className="wallet-nickname-panel">
-              <label className="wallet-nickname-label">
-                Wallet nickname
-                <input
-                  value={nicknameDraft}
-                  onChange={(event) => onNicknameDraftChange(event.target.value)}
-                  placeholder={isConnected ? 'Rename this wallet' : 'Set a nickname before connect'}
-                  maxLength={WALLET_NICKNAME_MAX_LENGTH}
-                />
-              </label>
-              <div className="wallet-nickname-help">
-                {isConnected
-                  ? 'Saved locally on this device and reused anywhere this wallet is recognized.'
-                  : 'This is the first-connect nickname flow: type a name, then connect MetaMask from this panel.'}
-              </div>
-              {isConnected ? (
-                <button className="ghost-btn compact" onClick={onSaveNickname} disabled={isPending}>
-                  Save nickname
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-          {!isConnected && hasMetaMaskInstalled ? (
-            <button className="primary-btn" onClick={onConnect} disabled={isPending}>
-              {isPending ? 'Connecting...' : 'Connect MetaMask'}
-            </button>
-          ) : null}
-          {nicknameFeedback ? <div className="env-hint" style={{ maxWidth: 360 }}>{nicknameFeedback}</div> : null}
-          {errorText ? <div className="env-hint" style={{ maxWidth: 360 }}>{errorText}</div> : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function formatShareBalance(value, hidden) {
   if (hidden) return '---';
   return Number(value || 0).toLocaleString(undefined, {
@@ -875,7 +743,7 @@ function getAnnualYieldBasis(product) {
 }
 
 function getAnnualYieldSource(product) {
-  return product?.annualYieldSource || 'RiskLens tutorial annualized carry assumption.';
+  return product?.annualYieldSource || 'MSX tutorial annualized carry assumption.';
 }
 
 function getReturnMetricLabels(product = {}) {
@@ -1401,7 +1269,7 @@ function getPreInvestChecks(product, context) {
       title: vaultSnapshot?.configured ? 'Live receipt vault is connected' : 'Receipt vault pattern is modeled but not wired',
       detail: vaultSnapshot?.configured
         ? `Reading ${shortAddress(vaultSnapshot.address)} on Sepolia. Strategy status is ${vaultSnapshot.strategyStatus}.`
-        : 'Modeled on RiskLensWealthReceiptVault: owner can pause subscriptions, update NAV, record attestation roots, and map investor eligibility before a live rollout.'
+        : 'Modeled on MSXWealthReceiptVault: owner can pause subscriptions, update NAV, record attestation roots, and map investor eligibility before a live rollout.'
     },
     {
       label: 'Approval scope',
@@ -2353,12 +2221,6 @@ function WealthInner() {
   const { connect, connectors, isPending } = useConnect();
   const { signMessageAsync, isPending: isWealthSigning } = useSignMessage();
   const [walletNickname, setWalletNickname] = useState('');
-  const [walletModalOpen, setWalletModalOpen] = useState(false);
-  const [walletError, setWalletError] = useState('');
-  const [walletNicknameDraft, setWalletNicknameDraft] = useState('');
-  const [pendingWalletNickname, setPendingWalletNickname] = useState(null);
-  const [walletNicknameFeedback, setWalletNicknameFeedback] = useState('');
-  const [hasMetaMaskInstalled, setHasMetaMaskInstalled] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState('parkCash');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedProductId, setSelectedProductId] = useState(WEALTH_PRODUCTS[0].id);
@@ -2416,38 +2278,8 @@ function WealthInner() {
   const productMap = useMemo(() => Object.fromEntries(liveProducts.map((product) => [product.id, product])), [liveProducts]);
 
   useEffect(() => {
-    const savedNickname = readWalletNickname(address);
-    setWalletNickname(savedNickname);
-    setWalletNicknameDraft(savedNickname);
-    setWalletNicknameFeedback('');
+    setWalletNickname(readWalletNickname(address));
   }, [address]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-
-    function refreshMetaMaskState() {
-      setHasMetaMaskInstalled(Boolean(window.ethereum?.isMetaMask || window.ethereum));
-    }
-
-    refreshMetaMaskState();
-    window.addEventListener('ethereum#initialized', refreshMetaMaskState, { once: true });
-    const timer = window.setTimeout(refreshMetaMaskState, 1000);
-
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener('ethereum#initialized', refreshMetaMaskState);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!address || pendingWalletNickname === null) return;
-
-    const savedNickname = writeWalletNickname(address, pendingWalletNickname);
-    setWalletNickname(savedNickname);
-    setWalletNicknameDraft(savedNickname);
-    setWalletNicknameFeedback(savedNickname ? `Nickname saved as ${savedNickname}.` : 'Nickname cleared.');
-    setPendingWalletNickname(null);
-  }, [address, pendingWalletNickname]);
 
   const { data: hasMintedBadgeOnchain } = useReadContract({
     address: badgeContractConfigured ? BADGE_CONTRACT_ADDRESS : undefined,
@@ -3225,7 +3057,7 @@ function WealthInner() {
     paperTaskDone
   });
   const lifecycleNotes = getLifecycleNotes(selectedProduct);
-  const selectedMarketSource = selectedProduct?.marketSource || 'RiskLens demo snapshot';
+  const selectedMarketSource = selectedProduct?.marketSource || 'MSX demo snapshot';
   const selectedAsOfLabel = selectedProduct?.asOfLabel || 'Static demo snapshot';
   const wealthVaultSnapshot = useMemo(() => {
     const attestedAtSeconds = Number(vaultLastAttestedAt || 0n);
@@ -3384,28 +3216,8 @@ function WealthInner() {
   }, [expandedProductId, pendingScrollProductId, shelfProducts]);
 
   function handleConnect() {
-    if (!metaMaskConnector) {
-      setWalletError('MetaMask connector is not available in this browser.');
-      return;
-    }
-    setWalletError('');
-    setWalletNicknameFeedback('');
-    setPendingWalletNickname(normalizeWalletNickname(walletNicknameDraft) || null);
+    if (!metaMaskConnector) return;
     connect({ connector: metaMaskConnector });
-  }
-
-  function handleSaveWalletNickname() {
-    if (!address) {
-      setWalletNicknameFeedback('Connect the wallet first, then save a nickname for it.');
-      return;
-    }
-
-    const savedNickname = writeWalletNickname(address, walletNicknameDraft);
-    setWalletNickname(savedNickname);
-    setWalletNicknameDraft(savedNickname);
-    setWalletNicknameFeedback(
-      savedNickname ? `Nickname saved as ${savedNickname}.` : 'Nickname cleared. The short wallet address will show again.'
-    );
   }
 
   function focusProduct(productId, options = {}) {
@@ -3458,10 +3270,6 @@ function WealthInner() {
 
   function toggleDetailTopic(topicId) {
     setSelectedDetailTopics((current) => (current[0] === topicId ? [] : [topicId]));
-  }
-
-  function handleDetailTopicChange(topicId) {
-    setSelectedDetailTopics(topicId ? [topicId] : []);
   }
 
   function handleProductNavPeriodChange(productId, periodId) {
@@ -3536,7 +3344,7 @@ function WealthInner() {
     try {
       await signMessageAsync({
         message: [
-          'RiskLens wealth receipt action',
+          'MSX wealth receipt action',
           `Wallet: ${address}`,
           `Action: ${action}`,
           `Product: ${product.name}`,
@@ -4729,66 +4537,38 @@ function WealthInner() {
           </div>
         </div>
 
-        <div className="wealth-detail-layout">
-          <aside className="wealth-detail-side-rail">
-            <div>
-              <div className="eyebrow">Selected product</div>
-              <div className="product-title">{selectedProduct.shortName || selectedProduct.name}</div>
-              <div className="muted">{selectedProduct.productType || getTermTypeLabel(selectedProduct)}</div>
-            </div>
-
-            <div className="wealth-detail-side-metrics">
-              <div>
-                <span>Latest NAV</span>
-                <strong>{selectedProduct.nav.toFixed(3)}</strong>
-              </div>
-              <div>
-                <span>{getReturnMetricLabels(selectedProduct).metric}</span>
-                <strong>{formatYieldPercent(getAnnualYieldRate(selectedProduct))}</strong>
-              </div>
-              <div>
-                <span>Min ticket</span>
-                <strong>{formatValue(selectedMinimumTicket, hideBalances)}</strong>
-              </div>
-              <div>
-                <span>Available</span>
-                <strong>{formatValue(availableCash, hideBalances)}</strong>
-              </div>
-            </div>
-
-            <label className="wealth-detail-select-label">
-              Detail focus
-              <select
-                className="wealth-detail-select"
-                value={activeDetailTopic}
-                onChange={(event) => handleDetailTopicChange(event.target.value)}
+        <div className="wealth-detail-topic-strip">
+          <div>
+            <div className="eyebrow">Detail focus</div>
+            <div className="muted">Pick one block at a time. Click the same block again to close it, or click the same product card again to hide the whole detail area.</div>
+          </div>
+          <div className="wealth-detail-topic-row">
+            {DETAIL_TOPIC_OPTIONS.map((topic) => (
+              <button
+                key={topic.id}
+                className={`wealth-detail-topic-chip ${selectedDetailTopics.includes(topic.id) ? 'active' : ''}`}
+                onClick={() => toggleDetailTopic(topic.id)}
               >
-                <option value="">Closed</option>
-                {DETAIL_TOPIC_OPTIONS.map((topic) => (
-                  <option key={topic.id} value={topic.id}>
-                    {topic.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                {topic.label}
+              </button>
+            ))}
+          </div>
+          <div className="wealth-detail-topic-helper">
+            {activeDetailTopicMeta ? (
+              <>
+                <strong>What to do here.</strong> {activeDetailTopicMeta.helper}
+              </>
+            ) : (
+              <>
+                <strong>All detail blocks are closed.</strong> Pick one focus chip above to open a single guided section.
+              </>
+            )}
+          </div>
+        </div>
 
-            <div className="wealth-detail-topic-helper compact">
-              {activeDetailTopicMeta ? (
-                <>
-                  <strong>What to do here.</strong> {activeDetailTopicMeta.helper}
-                </>
-              ) : (
-                <>
-                  <strong>Closed.</strong> Use the dropdown when you want one focused block.
-                </>
-              )}
-            </div>
-          </aside>
+        {selectedProductLocked ? <div className="wealth-inline-note">{selectedUnlockCopy}</div> : null}
 
-          <div className="wealth-detail-main-panel">
-            {selectedProductLocked ? <div className="wealth-inline-note">{selectedUnlockCopy}</div> : null}
-
-            <div className="wealth-detail-stack">
+        <div className="wealth-detail-stack">
           {selectedDetailTopics.includes('snapshot') ? (
             <div className="paper-mode-card wealth-detail-section">
               <div className="route-highlight wealth-detail-banner">
@@ -5631,9 +5411,7 @@ function WealthInner() {
           {selectedDetailTopics.length === 0 ? (
             <div className="wealth-inline-note">All detail blocks are closed. Pick one focus chip above when you want to reopen a guided section.</div>
           ) : null}
-            </div>
         </div>
-      </div>
       </div>
     );
   }
@@ -5645,16 +5423,13 @@ function WealthInner() {
         <div className="brand-wrap">
           <div className="brand-dot"></div>
           <div>
-            <div className="eyebrow">RiskLens Guided Investing Hub</div>
-            <div className="brand-name">{t('RiskLens Wealth Hub', 'RiskLens 理财中心')}</div>
+            <div className="eyebrow">MSX Hackathon Demo</div>
+            <div className="brand-name">{t('MSX Wealth Hub', 'MSX 理财中心')}</div>
           </div>
         </div>
 
-        <div className="wealth-header-language-center">
-          <LanguageToggle uiLanguage={uiLanguage} setUiLanguage={setUiLanguage} compact />
-        </div>
-
         <div className="header-actions">
+          <LanguageToggle uiLanguage={uiLanguage} setUiLanguage={setUiLanguage} compact />
           <a className="ghost-btn compact" href="./index.html#wealth">
             {t('Back to welcome', '返回主页')}
           </a>
@@ -5678,17 +5453,13 @@ function WealthInner() {
             </div>
           </div>
 
-          <button className="ghost-btn compact wallet-nickname-top-btn" onClick={() => setWalletModalOpen(true)}>
-            {t('Wallet nickname', '钱包昵称')}
-          </button>
-
-          <button className={`ghost-btn wallet-header-btn ${isConnected ? 'connected' : ''}`.trim()} onClick={() => setWalletModalOpen(true)} disabled={isPending}>
-            {isConnected
-              ? t(`Wallet connected ${walletDisplayName}`, `钱包已连接 ${walletDisplayName}`)
-              : isPending
-                ? t('Connecting to MetaMask...', '正在连接 MetaMask...')
-                : t('Connect MetaMask', '连接 MetaMask')}
-          </button>
+          {isConnected ? (
+            <div className="ghost-btn wallet-header-btn connected">{t(`Wallet connected ${walletDisplayName}`, `钱包已连接 ${walletDisplayName}`)}</div>
+          ) : (
+            <button className="ghost-btn wallet-header-btn" onClick={handleConnect} disabled={isPending}>
+              {isPending ? t('Connecting to MetaMask...', '正在连接 MetaMask...') : t('Connect MetaMask', '连接 MetaMask')}
+            </button>
+          )}
         </div>
       </header>
 
@@ -5711,8 +5482,8 @@ function WealthInner() {
 
           <p className="hero-text">
             {t(
-              'This wealth page borrows the shelf logic from large CEX earn products, but adapts it for RiskLens: explain the underlying, show the source of return, attach wallet-native share receipts, and gate advanced products with risk and quiz progress instead of hiding everything behind strategy jargon.',
-              '这个理财页借鉴了大型 CEX Earn 产品的货架逻辑，但针对 RiskLens 做了改造：解释底层资产、展示收益来源、附上钱包原生份额凭证，并用风险与测验进度来解锁高级产品，而不是把一切都藏在策略术语后面。'
+              'This wealth page borrows the shelf logic from large CEX earn products, but adapts it for MSX: explain the underlying, show the source of return, attach wallet-native share receipts, and gate advanced products with risk and quiz progress instead of hiding everything behind strategy jargon.',
+              '这个理财页借鉴了大型 CEX Earn 产品的货架逻辑，但针对 MSX 做了改造：解释底层资产、展示收益来源、附上钱包原生份额凭证，并用风险与测验进度来解锁高级产品，而不是把一切都藏在策略术语后面。'
             )}
           </p>
 
@@ -6045,7 +5816,7 @@ function WealthInner() {
                               {product.productType} / {getTermTypeLabel(product)} / {product.status}
                             </div>
                             <div className="wealth-market-caption">
-                              {product.asOfLabel || 'Static demo snapshot'} / {product.marketSource || 'RiskLens demo snapshot'}
+                              {product.asOfLabel || 'Static demo snapshot'} / {product.marketSource || 'MSX demo snapshot'}
                             </div>
                           </div>
                           <span className={`pill ${riskClass(product.risk)}`}>{product.risk}</span>
@@ -6959,24 +6730,6 @@ function WealthInner() {
         isSigning={isWealthSigning}
         onClose={() => setIsSubscribeModalOpen(false)}
         onConfirm={handleConfirmSubscribe}
-      />
-
-      <WealthWalletModal
-        open={walletModalOpen}
-        onClose={() => setWalletModalOpen(false)}
-        onConnect={handleConnect}
-        onSaveNickname={handleSaveWalletNickname}
-        isPending={isPending}
-        isConnected={isConnected}
-        walletDisplayName={walletDisplayName}
-        nicknameDraft={walletNicknameDraft}
-        onNicknameDraftChange={(value) => {
-          setWalletNicknameDraft(value.slice(0, WALLET_NICKNAME_MAX_LENGTH));
-          setWalletNicknameFeedback('');
-        }}
-        nicknameFeedback={walletNicknameFeedback}
-        errorText={walletError}
-        hasMetaMaskInstalled={hasMetaMaskInstalled}
       />
     </div>
   );

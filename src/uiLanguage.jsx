@@ -13,10 +13,10 @@ const EN_TO_ZH = {
   'What is it?': '这是什么？',
   'How this works': '说明',
   'How this works.': '说明。',
-  'MSX Guided Investing Hub': 'MSX 引导式投资中心',
-  'MSX Wealth Hub': 'MSX 财富中心',
-  'MSX Paper Trading Replay Lab': 'MSX 模拟交易回放实验室',
-  'MSX Hackathon Demo': 'MSX 黑客松演示',
+  'RiskLens Guided Investing Hub': 'RiskLens 引导式投资中心',
+  'RiskLens Wealth Hub': 'RiskLens 财富中心',
+  'RiskLens Paper Trading Replay Lab': 'RiskLens 模拟交易回放实验室',
+  'RiskLens Hackathon Demo': 'RiskLens 黑客松演示',
   Welcome: '欢迎',
   Discover: '发现',
   Learn: '学习',
@@ -30,16 +30,16 @@ const EN_TO_ZH = {
   'Best module to open': '最适合打开的模块',
   'Arrival routing': '进入路径',
   'Current route': '当前路径',
-  'What MSX already has': 'MSX 已经具备',
+  'What RiskLens already has': 'RiskLens 已经具备',
   'What we are fixing': '我们正在修正',
   'Why this matters': '为什么这很重要',
   'Current direction': '当前方向',
   'Learn & earn': '学习与奖励',
   'Wallet tutorial': '钱包教程',
-  'MSX + AI-guided discovery + wallet-native onboarding': 'MSX + AI 引导发现 + 钱包原生 onboarding',
+  'RiskLens + AI-guided discovery + wallet-native onboarding': 'RiskLens + AI 引导发现 + 钱包原生 onboarding',
   'Make RWA investing understandable before it feels onchain.': '在接触链上之前，先把 RWA 投资讲明白。',
-  'This version keeps the MSX welcome-page aesthetic, but upgrades the wallet entry into a real MetaMask connection flow that can be deployed to GitHub Pages and tested directly by judges.':
-    '这个版本保留了 MSX 欢迎页的视觉风格，同时把钱包入口升级为真实的 MetaMask 连接流程，可部署到 GitHub Pages 并供评委直接测试。',
+  'This version keeps the RiskLens welcome-page aesthetic, but upgrades the wallet entry into a real MetaMask connection flow that can be deployed to GitHub Pages and tested directly by judges.':
+    '这个版本保留了 RiskLens 欢迎页的视觉风格，同时把钱包入口升级为真实的 MetaMask 连接流程，可部署到 GitHub Pages 并供评委直接测试。',
   'First-time users see purpose, not jargon': '让第一次使用的用户先看到用途，而不是术语',
   'Wallet connection feels like a real product flow': '钱包连接更像真实产品流程',
   'Explore starter products': '查看入门产品',
@@ -84,12 +84,12 @@ const EN_TO_ZH = {
     '新手路径、更清晰的发现卡片，以及更像真实产品的钱包流程。',
   'Judges should be able to click one link and immediately feel the interaction model.':
     '评委应该点开一个链接，就能立刻感受到整体交互模型。',
-  'MSX-style welcome page with real MetaMask connection, then guided product discovery.':
-    'MSX 风格欢迎页 + 真实 MetaMask 连接，再进入引导式产品发现。',
+  'RiskLens-style welcome page with real MetaMask connection, then guided product discovery.':
+    'RiskLens 风格欢迎页 + 真实 MetaMask 连接，再进入引导式产品发现。',
   'Ask one question before showing the full product stack': '在展示完整产品堆栈前，先问一个问题',
   'Start as a beginner, not as a trader': '先像新手一样开始，而不是直接像交易员那样操作',
-  'MSX should first explain what a product is for, show a simple 1,000 USDT example, and then route users into practice instead of forcing live complexity too early.':
-    'MSX 应该先解释产品是做什么的，用一个简单的 1,000 USDT 例子讲清楚，再把用户引导进练习，而不是过早地强行进入真实复杂流程。',
+  'RiskLens should first explain what a product is for, show a simple 1,000 USDT example, and then route users into practice instead of forcing live complexity too early.':
+    'RiskLens 应该先解释产品是做什么的，用一个简单的 1,000 USDT 例子讲清楚，再把用户引导进练习，而不是过早地强行进入真实复杂流程。',
   'Review starter products first, then try one paper trade.': '先看入门产品，再尝试一笔模拟交易。',
   'Optional modules': '可选模块',
   'These can be opened in any order after the core wallet path starts.': '核心钱包路径启动后，这些模块可以按任意顺序打开。',
@@ -109,8 +109,8 @@ const EN_TO_ZH = {
   'AI diligence layer': 'AI 尽调层',
   'Tokenized share receipts': '代币化份额凭证',
   'Build a clearer RWA and wealth shelf before asking users to trade.': '在要求用户交易之前，先把 RWA 与理财货架讲清楚。',
-  'This wealth page borrows the shelf logic from large CEX earn products, but adapts it for MSX: explain the underlying, show the source of return, attach wallet-native share receipts, and gate advanced products with risk and quiz progress instead of hiding everything behind strategy jargon.':
-    '这个理财页借鉴了大型 CEX Earn 产品的货架逻辑，但针对 MSX 做了调整：解释底层、展示收益来源、附上钱包原生份额凭证，并通过风险与测验进度来解锁高级产品，而不是把一切都藏在策略术语后面。',
+  'This wealth page borrows the shelf logic from large CEX earn products, but adapts it for RiskLens: explain the underlying, show the source of return, attach wallet-native share receipts, and gate advanced products with risk and quiz progress instead of hiding everything behind strategy jargon.':
+    '这个理财页借鉴了大型 CEX Earn 产品的货架逻辑，但针对 RiskLens 做了调整：解释底层、展示收益来源、附上钱包原生份额凭证，并通过风险与测验进度来解锁高级产品，而不是把一切都藏在策略术语后面。',
   'Total invested': '总投入',
   'Total return': '总收益',
   'Portfolio annual yield': '组合年化收益',
@@ -192,13 +192,13 @@ const EN_TO_ZH = {
     '先输入金额，查看买入预览，再按照这个产品允许的退出路径操作。开放式仓位可以之后赎回；封闭式仓位则需要等待到期。',
   'Replay-first paper trading': '回放优先的模拟交易',
   'Reset replay lab': '重置回放实验室',
-  'Practice MSX-style product decisions against historical replay bars before any live action.':
-    '在任何真实操作之前，先用历史回放练习 MSX 风格的产品决策。',
-  'This version turns paper trading into an explainable replay lab. You can compare MSX starter RWAs, tokenized stock wrappers, and common CEX assets inside one wallet-linked simulation surface, then step through history bar by bar to see what your decision would have done next.':
-    '这个版本把模拟交易做成了一个可解释的回放实验室。你可以在同一个绑定钱包的模拟界面里，对比 MSX 入门 RWA、代币化股票包装以及常见 CEX 资产，然后逐根回放历史 K 线，看看你的决策接下来会发生什么。',
+  'Practice RiskLens-style product decisions against historical replay bars before any live action.':
+    '在任何真实操作之前，先用历史回放练习 RiskLens 风格的产品决策。',
+  'This version turns paper trading into an explainable replay lab. You can compare RiskLens starter RWAs, tokenized stock wrappers, and common CEX assets inside one wallet-linked simulation surface, then step through history bar by bar to see what your decision would have done next.':
+    '这个版本把模拟交易做成了一个可解释的回放实验室。你可以在同一个绑定钱包的模拟界面里，对比 RiskLens 入门 RWA、代币化股票包装以及常见 CEX 资产，然后逐根回放历史 K 线，看看你的决策接下来会发生什么。',
   'Historical replay': '历史回放',
   'Wallet-linked ledger': '钱包绑定账本',
-  'MSX vs CEX comparison': 'MSX 与 CEX 对比',
+  'RiskLens vs CEX comparison': 'RiskLens 与 CEX 对比',
   'Human / protocol explainers': '人话 / 协议解释',
   'Estimated account value': '预估账户价值',
   'Gross open PnL': '未实现毛收益',
