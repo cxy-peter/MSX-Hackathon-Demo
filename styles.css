@@ -5198,6 +5198,15 @@ label {
   justify-content: space-between;
   gap: 12px 18px;
   margin: 10px 0 12px;
+  position: sticky;
+  top: 14px;
+  z-index: 12;
+  padding: 10px 12px;
+  border: 1px solid rgba(151, 169, 191, 0.14);
+  border-radius: 8px;
+  background: rgba(8, 14, 24, 0.92);
+  box-shadow: 0 12px 24px rgba(0,0,0,0.22);
+  backdrop-filter: blur(14px);
 }
 
 .paper-chart-timescale-group {
@@ -8337,6 +8346,40 @@ label {
 
 .paper-strategy-parameter-field input[type='range'] {
   width: 100%;
+}
+
+.paper-strategy-node-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+  gap: 8px;
+}
+
+.paper-strategy-node-card {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(151, 169, 191, 0.12);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.035);
+}
+
+.paper-strategy-node-card span {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.paper-strategy-node-card strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.paper-strategy-node-card small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .paper-inline-hedge-formula-strip,

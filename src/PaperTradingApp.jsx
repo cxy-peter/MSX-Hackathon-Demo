@@ -126,7 +126,7 @@ const PAPER_VOL_FILTERS = [
 ];
 const HIDDEN_REPLAY_PRODUCT_LANES = new Set(['yield', 'strategy', 'ai']);
 const HIDDEN_REPLAY_LANE_TAB_IDS = new Set([]);
-const HIDDEN_LEARNING_ROUTE_IDS = new Set(['routing', 'lending']);
+const HIDDEN_LEARNING_ROUTE_IDS = new Set(['perp', 'routing', 'lending']);
 const HIDDEN_PERP_FOCUS_IDS = new Set(['combo']);
 const HEDGE_PROTECTION_EFFECTIVENESS = {
   direct: 1,
@@ -186,33 +186,78 @@ const OPTION_STRATEGY_DEFAULTS = {
     premiumPct: 1.2,
     strikePct: 10
   },
+  'bear-collar': {
+    downsidePct: 8,
+    profitHarvestPct: 20,
+    upsideCapPct: 6,
+    premiumPct: 1.6,
+    strikePct: 5
+  },
   covered: {
-    downsidePct: 100,
+    downsidePct: 50,
     profitHarvestPct: 70,
     upsideCapPct: 12,
     premiumPct: 2.4,
     strikePct: 12
   },
+  'short-put': {
+    downsidePct: 16,
+    profitHarvestPct: 65,
+    upsideCapPct: 60,
+    premiumPct: 2.8,
+    strikePct: 8
+  },
   'protective-put': {
     downsidePct: 10,
     profitHarvestPct: 0,
-    upsideCapPct: 100,
+    upsideCapPct: 60,
     premiumPct: 2.1,
     strikePct: 10
-  },
-  'long-call': {
-    downsidePct: 100,
-    profitHarvestPct: 0,
-    upsideCapPct: 100,
-    premiumPct: 3,
-    strikePct: 8
   }
 };
 const OPTION_STRATEGY_LABELS = {
   collar: 'Protected Growth',
+  'bear-collar': 'Bear Collar',
   covered: 'Premium Income',
-  'protective-put': 'Auto Hedge / Downside Floor',
-  'long-call': 'Long Call'
+  'short-put': 'Short Put',
+  'protective-put': 'Auto Hedge / Downside Floor'
+};
+const OPTION_STRATEGY_PARAMETER_LABELS = {
+  default: {
+    downside: 'Downside floor',
+    harvest: 'Profit harvest',
+    cap: 'Upside cap',
+    premium: 'Option premium',
+    strike: 'Strike OTM'
+  },
+  'bear-collar': {
+    downside: 'Put floor',
+    harvest: 'Call credit',
+    cap: 'Call cap',
+    premium: 'Net premium',
+    strike: 'Call distance'
+  },
+  covered: {
+    downside: 'Stress floor',
+    harvest: 'Premium kept',
+    cap: 'Call cap',
+    premium: 'Call premium',
+    strike: 'Call OTM'
+  },
+  'short-put': {
+    downside: 'Stress floor',
+    harvest: 'Premium kept',
+    cap: 'Payoff cap',
+    premium: 'Put premium',
+    strike: 'Put OTM'
+  },
+  'protective-put': {
+    downside: 'Put floor',
+    harvest: 'Profit harvest',
+    cap: 'Upside kept',
+    premium: 'Put premium',
+    strike: 'Put OTM'
+  }
 };
 const WEALTH_SURFACE_REPLAY_PRODUCT_IDS = new Set(['msx-income-ladder']);
 const REPLAY_PRODUCTS = PAPER_PRODUCTS.filter(
@@ -221,6 +266,7 @@ const REPLAY_PRODUCTS = PAPER_PRODUCTS.filter(
 const REPLAY_LANE_OPTIONS = PAPER_LANE_OPTIONS.filter(
   (lane) => !HIDDEN_REPLAY_LANE_TAB_IDS.has(lane.id) && (lane.id === 'all' || REPLAY_PRODUCTS.some((product) => product.lane === lane.id))
 );
+const DEFAULT_REPLAY_PRODUCT = REPLAY_PRODUCTS.find((product) => product.lane === 'spot') || REPLAY_PRODUCTS[0] || null;
 const SEC_SECTION31_DOLLARS_PER_MILLION = 20.6;
 const FINRA_TAF_EQUITY_PER_SHARE = 0.000195;
 const FINRA_TAF_EQUITY_MAX_PER_TRADE = 9.79;
@@ -1709,6 +1755,7 @@ function riskClass(risk) {
 }
 
 function getPaperAssetLayer(product = {}) {
+  if (product.lane === 'spot') return 'spot';
   if (product.lane === 'funding') return 'cash';
   if (product.lane === 'private') return 'private';
   return 'listed';
@@ -1716,6 +1763,7 @@ function getPaperAssetLayer(product = {}) {
 
 function getPaperAssetLayerLabel(product = {}) {
   const layer = getPaperAssetLayer(product);
+  if (layer === 'spot') return 'Spot';
   if (layer === 'cash') return 'Cash & Treasury';
   if (layer === 'private') return 'Private';
   return product.productType === 'Commodity wrapper' ? 'Public wrapper' : 'Listed / xStocks';
@@ -1742,13 +1790,16 @@ function getPaperProductDisclosureRows(product = {}, guide = {}, routeId = 'spot
   const isPerpRoute = routeId === 'perp';
   const isPrivate = assetLayer === 'private';
   const isCash = assetLayer === 'cash';
+  const isSpot = assetLayer === 'spot';
   const isCommodity = product.productType === 'Commodity wrapper';
 
   return [
     {
       label: 'Asset layer',
       value: getPaperAssetLayerLabel(product),
-      copy: assetLayer === 'listed'
+      copy: isSpot
+        ? 'Plain spot replay: no separate leverage route is attached to the product tab.'
+        : assetLayer === 'listed'
         ? isCommodity
           ? 'Public wrapper, not an xStocks equity claim.'
           : 'Only listed equities and ETF-style beta belong in xStocks.'
@@ -1758,16 +1809,18 @@ function getPaperProductDisclosureRows(product = {}, guide = {}, routeId = 'spot
     },
     {
       label: 'Own vs Synthetic',
-      value: isPerpRoute ? 'Synthetic contract' : isPrivate ? 'Allocation / wrapper claim' : 'Wrapper exposure',
+      value: isPerpRoute ? 'Synthetic contract' : isPrivate ? 'Allocation / wrapper claim' : isSpot ? 'Direct spot exposure' : 'Wrapper exposure',
       copy: isPerpRoute
         ? 'Margin creates long / short exposure; it does not transfer the underlying asset.'
         : isPrivate
           ? 'You hold a transfer-limited claim, not exchange-style common shares.'
-          : 'Spot buys the wrapper or receipt exposure, then exits through the wrapper route.'
+          : isSpot
+            ? 'Spot buys and exits the underlying market exposure directly in the replay.'
+            : 'Spot buys the wrapper or receipt exposure, then exits through the wrapper route.'
     },
     {
       label: 'Rights',
-      value: isPerpRoute ? 'No voting / dividends' : isCash ? 'NAV / redemption terms' : isPrivate ? 'Transfer + event rights' : 'Tracker / wrapper rights',
+      value: isPerpRoute ? 'No voting / dividends' : isCash ? 'NAV / redemption terms' : isPrivate ? 'Transfer + event rights' : isSpot ? 'Market exposure' : 'Tracker / wrapper rights',
       copy: isPerpRoute
         ? 'Funding and liquidation replace shareholder-style rights.'
         : guide.tokenRights || (isPrivate ? 'Rights depend on SPV and transfer documents.' : 'Economic exposure can differ from full shareholder rights.')
@@ -3410,7 +3463,7 @@ const REPLAY_ROUTE_UI = {
     walkthrough: [
       {
         label: '1. Choose payoff template',
-        detail: 'Start from Protected Growth, Premium Income, or Auto Hedge / Downside Floor before touching advanced legs.'
+        detail: 'Start from Protected Growth, Bear Collar, Premium Income, Short Put, or Auto Hedge / Downside Floor before touching advanced legs.'
       },
       {
         label: '2. Read payoff preview',
@@ -3578,6 +3631,28 @@ const REPLAY_ROUTE_FOCUS_OPTIONS = {
       ]
     },
     {
+      id: 'bear-collar',
+      label: 'Bear Collar',
+      panelTitle: 'Bear Collar route',
+      summary: 'Hold a defensive collar, sell a closer call, and keep a tighter downside floor when the user expects sideways-to-down movement.',
+      lessons: [
+        'Bear collars are not bullish tickets; they trade upside away to make the downside boundary more visible.',
+        'The call cap, put floor, and net premium must be read together.',
+        'Good for teaching how a cautious holder can define a range instead of guessing the exact bottom.'
+      ]
+    },
+    {
+      id: 'short-put',
+      label: 'Short Put',
+      panelTitle: 'Short Put route',
+      summary: 'Sell downside insurance for premium and accept assignment risk if the replay settles below the selected strike.',
+      lessons: [
+        'Short-put income is compensation for taking downside exposure.',
+        'The strike sets when assignment starts to matter; premium only softens the loss.',
+        'This is useful when the user would be willing to buy the asset lower, not when they want unlimited protection.'
+      ]
+    },
+    {
       id: 'protective-put',
       label: 'Auto Hedge / Downside Floor',
       panelTitle: 'Auto Hedge / Downside Floor route',
@@ -3586,17 +3661,6 @@ const REPLAY_ROUTE_FOCUS_OPTIONS = {
         'A protective put is the cleanest option version of insurance.',
         'Premium drag is the price paid for a more visible downside floor.',
         'The preview should show how much protection remains after cost.'
-      ]
-    },
-    {
-      id: 'long-call',
-      label: 'Long Call',
-      panelTitle: 'Long Call route',
-      summary: 'Buy upside convexity with a fixed option premium instead of holding the full underlying sleeve.',
-      lessons: [
-        'A long call is a directional upside ticket with limited loss.',
-        'The strike and premium decide how far the underlying must move before payoff starts.',
-        'This is useful for teaching convexity without pretending the user has unlimited downside.'
       ]
     }
   ],
@@ -3706,6 +3770,28 @@ function getBarCloseValue(bar) {
   return Number(bar?.close ?? bar?.closeValue ?? 0);
 }
 
+function getHedgePracticeTriggerBar(caseBars = [], startBar, endBar) {
+  const safeCaseBars = Array.isArray(caseBars) ? caseBars.filter(Boolean) : [];
+  const startClose = getBarCloseValue(startBar || safeCaseBars[0]);
+
+  if (safeCaseBars.length <= 2) {
+    return safeCaseBars[1] || endBar || startBar || null;
+  }
+
+  const stressTrigger = safeCaseBars.find((bar, index) => {
+    if (index <= 0 || index >= safeCaseBars.length - 1 || startClose <= 0) return false;
+    return getBarCloseValue(bar) / startClose - 1 <= -0.025;
+  });
+
+  if (stressTrigger) return stressTrigger;
+
+  return safeCaseBars[Math.min(safeCaseBars.length - 2, Math.max(1, Math.floor(safeCaseBars.length / 2)))] || endBar || null;
+}
+
+function getHedgeSettlementModeLabel(mode) {
+  return mode === 'hedge-plus-sleeve' ? 'close hedge + sleeve' : 'close hedge only';
+}
+
 function estimateSpotPracticeOutcome({ product, startBar, endBar, notional = MIN_PAPER_TRADE }) {
   const startPrice = getBarCloseValue(startBar);
   const endPrice = getBarCloseValue(endBar);
@@ -3793,6 +3879,7 @@ function estimateLeveragePracticeOutcome({
 function estimateHedgePracticeOutcome({
   product,
   startBar,
+  hedgeStartBar,
   endBar,
   sleeveNotional = MIN_PAPER_TRADE,
   hedgeTicketNotional = 0,
@@ -3808,10 +3895,11 @@ function estimateHedgePracticeOutcome({
     notional: sleeveNotional
   });
   const safeHedgeTicketNotional = Math.max(0, Number(hedgeTicketNotional || 0));
+  const hedgeEntryBar = hedgeStartBar || startBar;
   const hedgeOutcome =
     safeHedgeTicketNotional > 0
       ? estimateLeveragePracticeOutcome({
-          startBar,
+          startBar: hedgeEntryBar,
           endBar,
           direction: 'short',
           marginCapital: hedgeMarginCapital,
@@ -3823,7 +3911,10 @@ function estimateHedgePracticeOutcome({
       : null;
   const sleevePnl = Number(sleeveOutcome?.netPnl || 0);
   const hedgePnl = Number(hedgeOutcome?.netPnl || 0);
-  const netPnl = roundNumber(sleevePnl + hedgePnl, 2);
+  const hedgeOnlyPnl = roundNumber(hedgePnl, 2);
+  const hedgePlusSleevePnl = roundNumber(sleevePnl + hedgePnl, 2);
+  const netPnl = Math.max(hedgeOnlyPnl, hedgePlusSleevePnl);
+  const settlementMode = hedgePlusSleevePnl >= hedgeOnlyPnl ? 'hedge-plus-sleeve' : 'hedge-only';
   const returnBase = Math.max(1, Number(sleeveOutcome?.principal || sleeveNotional || 0));
 
   return {
@@ -3833,6 +3924,10 @@ function estimateHedgePracticeOutcome({
     netReturnRate: roundNumber(netPnl / returnBase, 4),
     sleevePnl,
     hedgePnl,
+    hedgeOnlyPnl,
+    hedgePlusSleevePnl,
+    settlementMode,
+    hedgeStartBar: hedgeEntryBar,
     hedgeTicketNotional: safeHedgeTicketNotional
   };
 }
@@ -3876,6 +3971,10 @@ function estimateOptionStrategyPracticeOutcome({ startBar, endBar, notional = MI
   let breakevenRate = 0;
   let copy = 'Historical replay applies the selected payoff template to the same start and settlement bars.';
   let legs = ['Hold underlying sleeve'];
+  let nodes = [
+    { label: 'Entry', value: formatPrice(startPrice), copy: 'Open the template on the selected replay bar.' },
+    { label: 'Settlement', value: formatPrice(endPrice), copy: 'Close the template on the holding-period bar.' }
+  ];
 
   if (templateId === 'covered') {
     const cappedMoveRate = Math.min(grossMoveRate, capRate);
@@ -3887,6 +3986,37 @@ function estimateOptionStrategyPracticeOutcome({ startBar, endBar, notional = MI
     breakevenRate = -harvestedPremiumRate;
     copy = 'Covered-call replay keeps the sleeve, harvests option premium, and caps gains above the selected upside level.';
     legs = ['Hold underlying sleeve', `Sell call near +${normalizedControls.upsideCapPct.toFixed(0)}%`, 'Keep premium if settlement stays below strike'];
+    nodes = [
+      { label: 'Entry', value: formatPrice(startPrice), copy: 'Hold the underlying sleeve before selling upside.' },
+      { label: 'Call cap', value: `+${normalizedControls.upsideCapPct.toFixed(0)}% / ${formatPrice(startPrice * (1 + capRate))}`, copy: 'Upside above this node is exchanged for option income.' },
+      { label: 'Settlement', value: formatPrice(endPrice), copy: 'Replay close combines capped move plus harvested premium.' }
+    ];
+  } else if (templateId === 'bear-collar') {
+    const bearCapRate = Math.min(capRate, Math.max(0.02, strikeRate + 0.015));
+    const protectedMoveRate = clamp(grossMoveRate, floorRate, bearCapRate);
+    const callCreditRate = premiumRate * Math.max(0.2, harvestRate) * 0.45;
+    const putDebitRate = premiumRate * 0.35;
+    const netPremiumRate = putDebitRate - callCreditRate;
+    netReturnRate = protectedMoveRate - netPremiumRate;
+    maxUpsideLabel = `Tight cap near ${formatSignedPercent((bearCapRate - netPremiumRate) * 100, 1)}`;
+    maxDownsideLabel = `Floor near ${formatSignedPercent((floorRate - netPremiumRate) * 100, 1)}`;
+    premiumLabel =
+      netPremiumRate > 0
+        ? `-${formatNotional(safeNotional * netPremiumRate)} PT net cost`
+        : `+${formatNotional(safeNotional * Math.abs(netPremiumRate))} PT net credit`;
+    breakevenRate = netPremiumRate;
+    copy = 'Bear-collar replay uses a tighter call cap and a visible put floor for sideways-to-down scenarios.';
+    legs = [
+      'Hold or trim underlying sleeve',
+      `Buy put floor at -${normalizedControls.downsidePct.toFixed(0)}%`,
+      `Sell call cap near +${(bearCapRate * 100).toFixed(0)}%`
+    ];
+    nodes = [
+      { label: 'Entry', value: formatPrice(startPrice), copy: 'Start from the current sleeve instead of opening leverage.' },
+      { label: 'Floor', value: `-${normalizedControls.downsidePct.toFixed(0)}% / ${formatPrice(startPrice * (1 + floorRate))}`, copy: 'Downside is modeled to stop around this protection node.' },
+      { label: 'Cap', value: `+${(bearCapRate * 100).toFixed(0)}% / ${formatPrice(startPrice * (1 + bearCapRate))}`, copy: 'A closer short call funds the defensive put.' },
+      { label: 'Settlement', value: formatPrice(endPrice), copy: 'Replay close applies the floor, cap, and net premium.' }
+    ];
   } else if (templateId === 'protective-put') {
     const protectedMoveRate = Math.max(grossMoveRate, floorRate);
     netReturnRate = protectedMoveRate - premiumRate;
@@ -3896,16 +4026,31 @@ function estimateOptionStrategyPracticeOutcome({ startBar, endBar, notional = MI
     breakevenRate = premiumRate;
     copy = 'Protective-put replay pays premium up front so settlement cannot fall past the selected downside floor.';
     legs = ['Hold underlying sleeve', `Buy put floor at -${normalizedControls.downsidePct.toFixed(0)}%`, 'Keep upside after premium drag'];
-  } else if (templateId === 'long-call') {
-    const intrinsicRate = Math.max(0, grossMoveRate - strikeRate);
-    const participation = 1 + harvestRate;
-    netReturnRate = intrinsicRate * participation - premiumRate;
-    maxUpsideLabel = `Open above +${normalizedControls.strikePct.toFixed(0)}% strike`;
-    maxDownsideLabel = `Limited to -${normalizedControls.premiumPct.toFixed(1)}% premium`;
-    premiumLabel = `-${formatNotional(safeNotional * premiumRate)} PT option cost`;
-    breakevenRate = strikeRate + premiumRate / Math.max(1, participation);
-    copy = 'Long-call replay buys upside convexity: loss is limited to premium, while payoff starts after the selected strike.';
-    legs = [`Buy call strike +${normalizedControls.strikePct.toFixed(0)}%`, `${participation.toFixed(1)}x upside participation above strike`, 'No underlying sleeve required for payoff math'];
+    nodes = [
+      { label: 'Entry', value: formatPrice(startPrice), copy: 'Open the protective overlay from the selected bar.' },
+      { label: 'Put floor', value: `-${normalizedControls.downsidePct.toFixed(0)}% / ${formatPrice(startPrice * (1 + floorRate))}`, copy: 'Loss is modeled to stop near this floor after premium.' },
+      { label: 'Settlement', value: formatPrice(endPrice), copy: 'Replay close keeps upside but subtracts insurance cost.' }
+    ];
+  } else if (templateId === 'short-put') {
+    const harvestedPremiumRate = premiumRate * Math.max(0.25, harvestRate);
+    const assignmentLossRate = grossMoveRate < -strikeRate ? Math.max(floorRate, grossMoveRate + strikeRate) : 0;
+    netReturnRate = harvestedPremiumRate + assignmentLossRate;
+    maxUpsideLabel = `Premium only ${formatSignedPercent(harvestedPremiumRate * 100, 1)}`;
+    maxDownsideLabel = `Assigned below -${normalizedControls.strikePct.toFixed(0)}%, stress floor ${formatSignedPercent(floorRate * 100, 1)}`;
+    premiumLabel = `+${formatNotional(safeNotional * harvestedPremiumRate)} PT premium`;
+    breakevenRate = -strikeRate - harvestedPremiumRate;
+    copy = 'Short-put replay sells downside insurance: premium is earned first, then assignment loss appears if settlement drops below strike.';
+    legs = [
+      `Sell put strike -${normalizedControls.strikePct.toFixed(0)}%`,
+      `Collect ${normalizedControls.premiumPct.toFixed(1)}% gross premium`,
+      'Accept assignment risk below strike'
+    ];
+    nodes = [
+      { label: 'Entry', value: formatPrice(startPrice), copy: 'Sell the put from the selected replay bar.' },
+      { label: 'Strike', value: `-${normalizedControls.strikePct.toFixed(0)}% / ${formatPrice(startPrice * (1 - strikeRate))}`, copy: 'Below this node, the replay models assignment-style loss.' },
+      { label: 'Stress floor', value: `-${normalizedControls.downsidePct.toFixed(0)}% / ${formatPrice(startPrice * (1 + floorRate))}`, copy: 'Slider-defined stress boundary for the paper exercise.' },
+      { label: 'Settlement', value: formatPrice(endPrice), copy: 'Replay close keeps premium if price stays above strike.' }
+    ];
   } else {
     const protectedMoveRate = clamp(grossMoveRate, floorRate, capRate);
     const harvestCreditRate = Math.max(0, Math.min(grossMoveRate, capRate)) * harvestRate * 0.15;
@@ -3923,6 +4068,12 @@ function estimateOptionStrategyPracticeOutcome({ startBar, endBar, notional = MI
       'Hold underlying sleeve',
       `Buy put floor at -${normalizedControls.downsidePct.toFixed(0)}%`,
       `Sell call cap near +${normalizedControls.upsideCapPct.toFixed(0)}%`
+    ];
+    nodes = [
+      { label: 'Entry', value: formatPrice(startPrice), copy: 'Open the protected-growth sleeve.' },
+      { label: 'Floor', value: `-${normalizedControls.downsidePct.toFixed(0)}% / ${formatPrice(startPrice * (1 + floorRate))}`, copy: 'Downside protection begins around this node.' },
+      { label: 'Cap', value: `+${normalizedControls.upsideCapPct.toFixed(0)}% / ${formatPrice(startPrice * (1 + capRate))}`, copy: 'Upside above this node helps pay for protection.' },
+      { label: 'Settlement', value: formatPrice(endPrice), copy: 'Replay close applies the selected floor, cap, and harvest rate.' }
     ];
   }
 
@@ -3948,6 +4099,7 @@ function estimateOptionStrategyPracticeOutcome({ startBar, endBar, notional = MI
       { label: 'Premium', value: premiumLabel },
       { label: 'Breakeven', value: formatSignedPercent(breakevenRate * 100, 1) }
     ],
+    nodes,
     legs
   };
 }
@@ -4032,6 +4184,8 @@ function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}
       const returnRate = endBar.closeValue / startBar.closeValue - 1;
       const absoluteMove = Math.abs(returnRate);
       const spanBonus = ((endSafeIndex - startSafeIndex) / maxLookahead) * 0.01;
+      const hedgeCaseBars = mode === 'hedge' ? safeBars.slice(startSafeIndex, endSafeIndex + 1) : [];
+      const hedgeStartBar = mode === 'hedge' ? getHedgePracticeTriggerBar(hedgeCaseBars, startBar, endBar) : null;
       const spotOutcome =
         mode === 'spot'
           ? estimateSpotPracticeOutcome({
@@ -4059,6 +4213,7 @@ function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}
           ? estimateHedgePracticeOutcome({
               product,
               startBar,
+              hedgeStartBar,
               endBar,
               sleeveNotional: hedgeSleeveNotional,
               hedgeTicketNotional,
@@ -4171,13 +4326,8 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
   const startBar = bars[candidate.startIndex] || safeBars[candidate.startSafeIndex];
   const endBar = bars[candidate.endIndex] || safeBars[candidate.endSafeIndex];
   const caseBars = safeBars.slice(candidate.startSafeIndex, candidate.endSafeIndex + 1);
-  const startClose = Number(caseBars[0]?.closeValue || 0);
-  const triggerCandidate =
-    mode === 'hedge'
-      ? caseBars.find((bar, index) => index > 0 && startClose > 0 && bar.closeValue / startClose - 1 <= -0.025)
-      : null;
-  const halfwayCaseBar = caseBars[Math.max(1, Math.floor(caseBars.length / 2))] || caseBars[caseBars.length - 1];
-  const triggerBar = triggerCandidate || halfwayCaseBar || endBar;
+  const fallbackTriggerBar = caseBars[Math.max(1, Math.floor(caseBars.length / 2))] || caseBars[caseBars.length - 1] || endBar;
+  const triggerBar = mode === 'hedge' ? getHedgePracticeTriggerBar(caseBars, startBar, endBar) : fallbackTriggerBar;
   const triggerIndex = Math.min(Math.max(triggerBar.index, candidate.startIndex + 1), candidate.endIndex);
   const holdingDays = getReplayCaseHoldingDays(startBar, endBar);
   const triggerDays = getReplayCaseHoldingDays(startBar, bars[triggerIndex]);
@@ -4212,6 +4362,7 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
         estimateHedgePracticeOutcome({
           product,
           startBar,
+          hedgeStartBar: triggerBar,
           endBar,
           sleeveNotional: hedgeSleeveNotional,
           hedgeTicketNotional,
@@ -4289,6 +4440,8 @@ function buildReplayPracticeCases(bars = [], mode = 'spot', options = {}) {
     candidate?.modeOutcomePnl !== null && candidate?.modeOutcomePnl !== undefined && Number.isFinite(Number(candidate.modeOutcomePnl))
       ? Number(candidate.modeOutcomePnl)
       : candidate?.score ?? candidate?.returnRate ?? 0;
+  const isPositiveOutcome = (candidate) => getModeOutcomeScore(candidate) > 0;
+  const isNegativeOutcome = (candidate) => getModeOutcomeScore(candidate) < 0;
 
   if (mode === 'strategy') {
     const rankedStrategyCandidates = [...candidates].sort(
@@ -4314,13 +4467,13 @@ function buildReplayPracticeCases(bars = [], mode = 'spot', options = {}) {
   }
 
   const upsideCandidates = candidates
-    .filter((candidate) => candidate.returnRate > 0)
+    .filter(isPositiveOutcome)
     .sort((left, right) => getModeOutcomeScore(right) - getModeOutcomeScore(left) || right.returnRate - left.returnRate);
   addCandidate(upsideCandidates[0], 'up-most', 'Up most #1', 1);
   addCandidate(upsideCandidates[1], 'up-most', 'Up most #2', 2);
 
   const smallLossCandidate = candidates
-    .filter((candidate) => candidate.returnRate < 0)
+    .filter(isNegativeOutcome)
     .sort(
       (left, right) =>
         Math.abs(getModeOutcomeScore(left)) - Math.abs(getModeOutcomeScore(right)) || Math.abs(left.returnRate) - Math.abs(right.returnRate)
@@ -4332,8 +4485,8 @@ function buildReplayPracticeCases(bars = [], mode = 'spot', options = {}) {
     const nextRank = selected.length + 1;
     addCandidate(
       candidate,
-      candidate.returnRate < 0 ? 'small-loss' : 'up-most',
-      candidate.returnRate < 0 ? 'Small loss' : `Up most #${nextRank}`,
+      isNegativeOutcome(candidate) ? 'small-loss' : 'up-most',
+      isNegativeOutcome(candidate) ? 'Small loss' : `Up most #${nextRank}`,
       nextRank
     );
   });
@@ -4358,6 +4511,11 @@ function formatHoldingPresetLabel(days) {
 }
 
 const PRODUCT_ROUTE_PLAYBOOKS = {
+  spot: {
+    defaultRoute: 'spot',
+    routes: ['spot', 'borrow'],
+    summary: 'Spot products keep the first action simple: buy, sell, replay settlement, then add options-style payoff templates only when the user wants structure.'
+  },
   funding: {
     defaultRoute: 'spot',
     routes: ['spot', 'perp', 'borrow', 'routing', 'lending'],
@@ -4365,9 +4523,9 @@ const PRODUCT_ROUTE_PLAYBOOKS = {
   },
   public: {
     defaultRoute: 'spot',
-    routes: ['spot', 'perp', 'borrow', 'lending', 'routing'],
+    routes: ['spot', 'borrow'],
     summary:
-      'Public markets are where listed tokenized stocks, ETF-like exposure, and gold-linked wrappers should live. Route choices such as leverage, yield overlays, and automation sit on top of that asset layer.'
+      'xStock and listed wrappers should start with spot-style replay, then move into options templates such as collars and short puts when the user wants a payoff shape.'
   },
   private: {
     defaultRoute: 'spot',
@@ -4397,6 +4555,7 @@ const PRODUCT_ROUTE_PLAYBOOKS = {
 };
 
 const REPLAY_ROUTE_TOOL_BY_LANE = {
+  spot: ['single'],
   funding: ['single', 'combo', 'collateral'],
   yield: ['single', 'combo', 'collateral'],
   public: ['single', 'combo', 'flash'],
@@ -4411,6 +4570,37 @@ function getDefaultPerpFocusForLane(laneId) {
 }
 
 const REPLAY_LANE_GUIDES = {
+  spot: {
+    structureLabel: 'Direct market replay',
+    targetYieldRate: 0,
+    settlementLagDays: 0,
+    redemptionWindow: 'T+0',
+    liquidityLabel: 'Spot market liquidity',
+    exitChannel: 'Replay buy / sell through the spot desk',
+    allowEarlyRedeem: true,
+    earlyRedemptionFeeBps: 0,
+    lockupDays: 0,
+    principalProtected: 'No',
+    underlyingAssetType: 'Crypto spot benchmark',
+    currencyOptions: ['PT', 'USDC', 'USDT'],
+    marketCapValue: '$1T+ spot market',
+    fundingLine: 'Best for learning price path, entry timing, exit timing, and route drag before adding structured payoff logic.',
+    yieldSources: [
+      { label: 'Underlying price move', rate: 0 },
+      { label: 'No embedded yield', rate: 0 }
+    ],
+    feeBlueprint: [
+      { label: 'Trading spread / slippage', rate: 0.0012, type: 'entry' },
+      { label: 'Venue fee', rate: 0.0015, type: 'entry' },
+      { label: 'Gas / channel cost', rate: 0.00025, type: 'entry' }
+    ],
+    stressScenarios: [
+      { label: 'Underlying drawdown', impact: '-20%' },
+      { label: 'Liquidity gap', impact: 'Spread widens' },
+      { label: 'Stablecoin funding slip', impact: '3% slip' },
+      { label: 'Price update delay', impact: '24h stale mark' }
+    ]
+  },
   funding: {
     structureLabel: 'Open-ended income sleeve',
     targetYieldRate: 0.054,
@@ -5341,8 +5531,8 @@ function PaperTradingInner() {
   const { connect, connectors, isPending, error, pendingConnector } = useConnect();
   const { disconnect } = useDisconnect();
   const { signMessageAsync, isPending: isRiskSigning } = useSignMessage();
-  const [selectedLane, setSelectedLane] = useState('all');
-  const [selectedProductId, setSelectedProductId] = useState(REPLAY_PRODUCTS[0].id);
+  const [selectedLane, setSelectedLane] = useState(DEFAULT_REPLAY_PRODUCT?.lane || REPLAY_LANE_OPTIONS[0]?.id || 'spot');
+  const [selectedProductId, setSelectedProductId] = useState(DEFAULT_REPLAY_PRODUCT?.id || REPLAY_PRODUCTS[0]?.id);
   const [selectedPracticeCaseIndex, setSelectedPracticeCaseIndex] = useState(0);
   const [paperShelfPage, setPaperShelfPage] = useState(1);
   const [replayFillsPage, setReplayFillsPage] = useState(1);
@@ -6119,7 +6309,7 @@ function PaperTradingInner() {
   const filteredProducts = useMemo(
     () =>
       REPLAY_PRODUCTS.filter((product) => {
-        if (selectedLane !== 'all' && product.lane !== selectedLane) return false;
+        if (product.lane !== selectedLane) return false;
         const guide = getReplayProductGuide(product);
         if (productRiskFilter !== 'all' && getReplayRiskFit(product) !== productRiskFilter) return false;
         if (productLockupFilter !== 'all' && getReplayLockupFit(guide) !== productLockupFilter) return false;
@@ -6128,7 +6318,7 @@ function PaperTradingInner() {
       }),
     [productLockupFilter, productRiskFilter, productVolatilityFilter, selectedLane]
   );
-  const selectedLaneLabel = REPLAY_LANE_OPTIONS.find((lane) => lane.id === selectedLane)?.label || 'All products';
+  const selectedLaneLabel = REPLAY_LANE_OPTIONS.find((lane) => lane.id === selectedLane)?.label || 'Products';
   const paperShelfPageCount = Math.max(1, Math.ceil(filteredProducts.length / PAPER_SHELF_PAGE_SIZE));
   const paperShelfHasMultiplePages = paperShelfPageCount >= 2;
   const paperShelfPageEnd = Math.min(filteredProducts.length, paperShelfPage * PAPER_SHELF_PAGE_SIZE);
@@ -6442,6 +6632,8 @@ function PaperTradingInner() {
       ),
     [selectedStrategyTemplateId, strategyDownsidePct, strategyPremiumPct, strategyProfitHarvestPct, strategyStrikePct, strategyUpsideCapPct]
   );
+  const strategyParameterLabels =
+    OPTION_STRATEGY_PARAMETER_LABELS[selectedStrategyTemplateId] || OPTION_STRATEGY_PARAMETER_LABELS.default;
   const selectedRouteLessonLines = activeRouteFocusConfig?.lessons?.length
     ? activeRouteFocusConfig.lessons
     : selectedAdvancedRouteConfig.lessons;
@@ -8322,7 +8514,7 @@ function PaperTradingInner() {
 
   useEffect(() => {
     if (REPLAY_LANE_OPTIONS.some((lane) => lane.id === selectedLane)) return;
-    setSelectedLane('all');
+    setSelectedLane(REPLAY_LANE_OPTIONS[0]?.id || 'spot');
   }, [selectedLane]);
 
   useEffect(() => {
@@ -9861,6 +10053,13 @@ function PaperTradingInner() {
 
   function handleLaneChange(nextLane) {
     setSelectedLane(nextLane);
+    const nextProduct = REPLAY_PRODUCTS.find((product) => product.lane === nextLane);
+    if (nextProduct) {
+      setSelectedProductId(nextProduct.id);
+      setIsPlaying(false);
+      setHoveredReplayIndex(null);
+      setSelectedReplayPanel('desk');
+    }
   }
 
   function handleShelfPageChange(nextPage) {
@@ -11064,6 +11263,14 @@ function PaperTradingInner() {
   const routePracticeOutcomeRate = getPracticeCaseOutcomeRate(routePracticeCase);
   const routePracticeOutcomeToneValue = routePracticeOutcomePnl !== null ? routePracticeOutcomePnl : routePracticeOutcomeRate;
   const routePracticeOutcomeLabel = routePracticeCase ? formatPracticeCaseOutcome(routePracticeCase) : '';
+  const routePracticeHedgeOutcome = routePracticeCase?.hedgeOutcome || null;
+  const routePracticeHedgeSettlementCopy = routePracticeHedgeOutcome
+    ? `Best final settlement is ${routePracticeOutcomeLabel} via ${getHedgeSettlementModeLabel(
+        routePracticeHedgeOutcome.settlementMode
+      )}. Hedge-only ${formatSigned(routePracticeHedgeOutcome.hedgeOnlyPnl)} PT; hedge + sleeve ${formatSigned(
+        routePracticeHedgeOutcome.hedgePlusSleevePnl
+      )} PT.`
+    : `Current sleeve plus hedge ticket models ${routePracticeOutcomeLabel}.`;
   const routePracticeBadgeCopy = routePracticeCase
     ? routePracticeCase.mode === 'spot'
       ? `net ${formatPracticeCaseOutcome(routePracticeCase)}`
@@ -11078,7 +11285,7 @@ function PaperTradingInner() {
       ? `Guided ${routePracticeTicker} sleeve drill: click "Start case", buy the sleeve, then click "Hedge day" at ${formatReplayDate(
           routePracticeCase.triggerBar?.ts,
           selectedView?.interval
-        )} and press "Open hedge". Current sleeve plus hedge ticket models ${routePracticeOutcomeLabel}. Finish with "Stop day" at ${formatReplayDate(routePracticeCase.endBar?.ts, selectedView?.interval)}.`
+        )} and press "Open hedge". ${routePracticeHedgeSettlementCopy} Finish with "Stop day" at ${formatReplayDate(routePracticeCase.endBar?.ts, selectedView?.interval)}.`
       : routePracticeCase.mode === 'leverage'
         ? `Guided ${routePracticeTicker} leverage drill: click "Start case", press "Open ${routePracticeCase.direction}", then click "Stop day" at ${formatReplayDate(
             routePracticeCase.endBar?.ts,
@@ -12506,7 +12713,7 @@ function PaperTradingInner() {
                     </div>
                     <div className="paper-strategy-parameter-grid">
                       <label className="paper-strategy-parameter-field">
-                        <span>Downside floor</span>
+                        <span>{strategyParameterLabels.downside}</span>
                         <strong>-{strategyControlValues.downsidePct.toFixed(0)}%</strong>
                         <input
                           type="range"
@@ -12518,7 +12725,7 @@ function PaperTradingInner() {
                         />
                       </label>
                       <label className="paper-strategy-parameter-field">
-                        <span>Profit harvest</span>
+                        <span>{strategyParameterLabels.harvest}</span>
                         <strong>{strategyControlValues.profitHarvestPct.toFixed(0)}%</strong>
                         <input
                           type="range"
@@ -12530,7 +12737,7 @@ function PaperTradingInner() {
                         />
                       </label>
                       <label className="paper-strategy-parameter-field">
-                        <span>Upside cap</span>
+                        <span>{strategyParameterLabels.cap}</span>
                         <strong>+{strategyControlValues.upsideCapPct.toFixed(0)}%</strong>
                         <input
                           type="range"
@@ -12542,7 +12749,7 @@ function PaperTradingInner() {
                         />
                       </label>
                       <label className="paper-strategy-parameter-field">
-                        <span>Option premium</span>
+                        <span>{strategyParameterLabels.premium}</span>
                         <strong>{strategyControlValues.premiumPct.toFixed(1)}%</strong>
                         <input
                           type="range"
@@ -12554,7 +12761,7 @@ function PaperTradingInner() {
                         />
                       </label>
                       <label className="paper-strategy-parameter-field">
-                        <span>Strike OTM</span>
+                        <span>{strategyParameterLabels.strike}</span>
                         <strong>+{strategyControlValues.strikePct.toFixed(0)}%</strong>
                         <input
                           type="range"
@@ -12800,6 +13007,17 @@ function PaperTradingInner() {
                     <div className="muted">{optionStrategyPreview.copy}</div>
                   </div>
                 </div>
+                {optionStrategyPreview.nodes?.length ? (
+                  <div className="paper-strategy-node-grid">
+                    {optionStrategyPreview.nodes.map((node) => (
+                      <div key={`${node.label}-${node.value}`} className="paper-strategy-node-card">
+                        <span>{node.label}</span>
+                        <strong>{node.value}</strong>
+                        <small>{node.copy}</small>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="paper-inline-hedge-summary-strip">
                   {optionStrategyPreview.rows.map((row) => (
                     <div key={row.label} className="paper-inline-hedge-summary-cell">
@@ -13895,7 +14113,7 @@ function PaperTradingInner() {
               <div className="section-head">
                 <div>
                   <div className="eyebrow">Replay shelf</div>
-                  <h2>{selectedLane === 'all' ? 'All paper products' : selectedLaneLabel}</h2>
+                  <h2>{selectedLaneLabel}</h2>
                 </div>
                 <span className="pill risk-low">{filteredProducts.length} products</span>
               </div>

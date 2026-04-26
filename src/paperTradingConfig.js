@@ -6,10 +6,8 @@ export const BADGE_REWARD_TOKENS = 5000;
 export const MIN_PAPER_TRADE = 100;
 
 export const PAPER_LANE_OPTIONS = [
-  { id: 'all', label: 'All assets' },
-  { id: 'funding', label: 'Cash & Treasury' },
-  { id: 'public', label: 'Spot & xStocks' },
-  { id: 'leverage', label: 'Leveraged routes' }
+  { id: 'spot', label: 'Spot' },
+  { id: 'public', label: 'xStock' }
 ];
 
 export const PAPER_INTERVALS = {
@@ -1912,11 +1910,16 @@ const ALL_PAPER_PRODUCTS = [...CORE_PAPER_PRODUCTS, ...ADDITIONAL_PAPER_PRODUCTS
 
 const CURATED_PAPER_PRODUCT_IDS = [
   'eth-usd',
+  'btc-usd',
   'aaplx',
   'tslax-public',
-  'tsll-leverage',
+  'nvdax',
+  'msftx',
+  'googlx',
   'spyx',
-  'jepi-income'
+  'qqqx',
+  'gldx',
+  'tsll-leverage'
 ];
 
 const CURATED_PAPER_PRODUCT_OVERRIDES = {
@@ -1953,6 +1956,7 @@ const CURATED_PAPER_PRODUCT_OVERRIDES = {
       'The replay uses bundled USTB NAV history so the chart teaches treasury-style carry, cash routing, and redemption terms rather than stock beta.'
   },
   'eth-usd': {
+    lane: 'spot',
     ticker: 'ETH-USD',
     name: 'Ethereum Spot Replay',
     productType: 'Crypto spot',
@@ -1963,14 +1967,17 @@ const CURATED_PAPER_PRODUCT_OVERRIDES = {
       'ETH is the clean spot route for teaching entry, exit, spread, and take-home without hiding the lesson behind leverage first.'
   },
   'btc-usd': {
-    ticker: 'BTC-PERP',
-    name: 'Bitcoin Perp Tutorial',
-    productType: 'Perpetual futures tutorial',
-    structureTags: ['Crypto', 'Perp', 'Leverage'],
+    lane: 'spot',
+    ticker: 'BTC-USD',
+    name: 'Bitcoin Spot Replay',
+    productType: 'Crypto spot',
+    structureTags: ['Crypto', 'Spot', '24/7 market'],
     defaultInterval: '1D',
     defaultRange: '1Y',
     humanSummary:
-      'BTC stays on the shelf as the guided perp case so margin, notional, funding, and liquidation markers all live on a liquid benchmark.'
+      'BTC is now a plain spot replay so users can compare Bitcoin direction, volatility, and settlement without opening a separate leveraged route.',
+    technicalSummary:
+      'Replay bars use bundled BTCUSDT history as a spot-like Bitcoin market path. The route layer can still teach payoff strategies, but this product is not labeled as a perp tutorial.'
   },
   aaplx: {
     ticker: 'AAPL.M',
@@ -1995,6 +2002,18 @@ const CURATED_PAPER_PRODUCT_OVERRIDES = {
   'tslax-public': {
     ticker: 'TSLA.M',
     name: 'Tesla',
+    productType: 'Listed / xStocks',
+    structureTags: ['Tokenized', 'RWA', 'Permissioned']
+  },
+  msftx: {
+    ticker: 'MSFT.M',
+    name: 'Microsoft',
+    productType: 'Listed / xStocks',
+    structureTags: ['Tokenized', 'RWA', 'Permissioned']
+  },
+  googlx: {
+    ticker: 'GOOGL.M',
+    name: 'Alphabet',
     productType: 'Listed / xStocks',
     structureTags: ['Tokenized', 'RWA', 'Permissioned']
   },
@@ -2112,8 +2131,16 @@ const CURATED_PAPER_PRODUCT_OVERRIDES = {
     structureTags: ['Collateral-eligible', 'Listed proxy']
   },
   'tsll-leverage': {
-    productType: 'Listed leveraged wrapper',
-    structureTags: ['Collateral-eligible', 'Listed proxy']
+    lane: 'public',
+    name: 'TSLL Tesla ETF Replay',
+    productType: 'Listed ETF / xStock-style wrapper',
+    structureTags: ['Listed ETF', 'High beta', 'Tesla-linked'],
+    defaultInterval: '1D',
+    defaultRange: '1Y',
+    humanSummary:
+      'TSLL stays available as the high-beta Tesla-linked daily replay, but it lives inside the xStock/listed shelf instead of a separate route category.',
+    technicalSummary:
+      'Replay bars use bundled TSLL daily history. The UI treats it as a listed wrapper with higher beta and daily-reset drag, not as a standalone leverage route.'
   },
   'nvdl-leverage': {
     productType: 'Listed leveraged wrapper',
