@@ -555,6 +555,11 @@ select option {
   gap: 12px;
 }
 
+.wallet-modal-main-connected {
+  align-content: flex-start;
+  padding-top: 72px;
+}
+
 .wallet-modal-close {
   position: absolute;
   top: 22px;
@@ -656,6 +661,23 @@ select option {
   max-width: 320px;
   color: var(--muted);
   line-height: 1.6;
+}
+
+.wallet-modal-backup-card {
+  width: min(460px, 100%);
+  text-align: left;
+}
+
+.wallet-modal-backup-note {
+  margin-top: 12px;
+}
+
+.wallet-modal-backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  align-items: center;
 }
 
 .wallet-nickname-panel,
@@ -2126,6 +2148,10 @@ label {
   background: rgba(255, 209, 102, 0.08);
   color: #f5d887;
   line-height: 1.6;
+}
+
+.learn-quest-completion-note {
+  margin-top: 16px;
 }
 
 .wealth-mode-switch {

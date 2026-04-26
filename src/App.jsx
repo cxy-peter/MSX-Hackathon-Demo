@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   useAccount,
   useBalance,
@@ -25,6 +25,7 @@ import {
   UNIFIED_PT_MILESTONE_REWARD,
   UNIFIED_PT_STARTING_BALANCE,
   getWalletProfileSummary,
+  getWalletProfilePointerKey,
   readRecoveredHomePaperBalance,
   readWalletProfile,
   signAndStoreProfilePointer,
@@ -357,6 +358,8 @@ function WalletModal({
   onConnect,
   onDisconnect,
   onSaveNickname,
+  onSignProfileBackup,
+  onRecoverProfileBackup,
   isPending,
   isConnected,
   address,
@@ -365,7 +368,12 @@ function WalletModal({
   onNicknameDraftChange,
   nicknameFeedback,
   errorText,
-  hasMetaMaskInstalled
+  hasMetaMaskInstalled,
+  isProfileSigning,
+  profileBackupConfigured,
+  profileBackupRecoverable,
+  profileBackupSummaryText,
+  walletProfileSummary
 }) {
   if (!open) return null;
 
@@ -410,7 +418,7 @@ function WalletModal({
             </div>
           ) : null}
         </div>
-        <div className="wallet-modal-pane wallet-modal-main">
+        <div className={`wallet-modal-pane wallet-modal-main ${isConnected ? 'wallet-modal-main-connected' : ''}`}>
           <MetaMaskIcon className="wallet-modal-hero wallet-modal-hero-metamask" />
           <div className="wallet-modal-status">
             {isConnected
@@ -451,6 +459,36 @@ function WalletModal({
                   Save nickname
                 </button>
               ) : null}
+            </div>
+          ) : null}
+          {isConnected ? (
+            <div className="wealth-profile-storage-card wallet-modal-backup-card">
+              <div>
+                <div className="eyebrow">Wallet backup + recovery</div>
+                <div className="wealth-profile-storage-title">Keep this wallet&apos;s PT progress recoverable</div>
+                <div className="muted">
+                  Sign one snapshot for this account so the demo can recover PT balance, replay progress, and wealth context later. This does not recover MetaMask, private keys, or seed phrases.
+                </div>
+                <div className="wealth-profile-storage-grid">
+                  <span>Account {shortAddress(address)}</span>
+                  <span>Policy {walletProfileSummary.availablePT.toLocaleString()} PT</span>
+                  <span>Paper cash {walletProfileSummary.paperCash.toLocaleString()} PT</span>
+                  <span>Wealth cash {walletProfileSummary.wealthCash.toLocaleString()} PT</span>
+                  <span>{profileBackupConfigured ? 'Signed backup ready' : 'Backup not signed yet'}</span>
+                </div>
+                <div className="muted">
+                  The signed pointer can later be pinned to IPFS, Filecoin, Ceramic, or Arweave. Recovery here restores the saved demo state for this wallet address on this device.
+                </div>
+                {profileBackupSummaryText ? <div className="wealth-inline-note wallet-modal-backup-note">{profileBackupSummaryText}</div> : null}
+              </div>
+              <div className="wallet-modal-backup-actions">
+                <button type="button" className="ghost-btn compact" onClick={onSignProfileBackup} disabled={isProfileSigning || isPending}>
+                  {isProfileSigning ? 'Await wallet' : profileBackupConfigured ? 'Update signed backup' : 'Sign backup now'}
+                </button>
+                <button type="button" className="secondary-btn compact" onClick={onRecoverProfileBackup} disabled={!profileBackupRecoverable || isPending}>
+                  Recover saved demo state
+                </button>
+              </div>
             </div>
           ) : null}
           {!hasMetaMaskInstalled ? (
@@ -510,6 +548,7 @@ export default function App() {
   const [activeCoreQuest, setActiveCoreQuest] = useState('wallet');
   const [activeOptionalQuest, setActiveOptionalQuest] = useState('risk');
   const [optionalQuestNotice, setOptionalQuestNotice] = useState('');
+  const [taskCompletionNotice, setTaskCompletionNotice] = useState('');
   const [visibleCoreQuest, setVisibleCoreQuest] = useState('wallet');
   const [visibleOptionalQuest, setVisibleOptionalQuest] = useState('risk');
   const [paperTradesCompleted, setPaperTradesCompleted] = useState(0);
@@ -524,6 +563,14 @@ export default function App() {
   const [devModePtAmount, setDevModePtAmount] = useState(String(DEFAULT_ADMIN_PT_AMOUNT));
   const [analyticsSnapshot, setAnalyticsSnapshot] = useState({ total: 0, events: {} });
   const [profileBackupStatus, setProfileBackupStatus] = useState('');
+  const previousConnectionRef = useRef(false);
+  const previousTaskCompletionRef = useRef({
+    addressKey: '',
+    welcome: false,
+    risk: false,
+    quiz: false,
+    paper: false
+  });
 
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -643,7 +690,6 @@ export default function App() {
 
   useEffect(() => {
     if (isConnected) {
-      setWalletModalOpen(false);
       setWalletError('');
     }
   }, [isConnected]);
@@ -661,8 +707,13 @@ export default function App() {
       setPaperTradesCompleted(0);
       setProgressAccountKey('');
       setMintTaskKey('welcome');
+      setTaskCompletionNotice('');
     }
   }, [isConnected]);
+
+  useEffect(() => {
+    setProfileBackupStatus('');
+  }, [connectedAddressKey]);
 
   useEffect(() => {
     setMintRecipient('');
@@ -944,8 +995,18 @@ export default function App() {
   ].filter(Boolean).length * BADGE_REWARD_TOKENS;
   const paperBalanceForCurrentAccount = localProgressReady ? paperBalanceSnapshot : STARTING_PAPER_TOKENS;
   const paperTokenBalance = paperBalanceForCurrentAccount + badgeRewardsEarned;
+  const walletProfileSnapshot = readWalletProfile(address);
+  const profileBackupRecord = address ? readStorageJson(getWalletProfilePointerKey(address), null) : null;
+  const profileBackupConfigured = Boolean(profileBackupRecord?.contentHash || walletProfileSnapshot.storage?.contentHash);
+  const profileBackupRecoverable = Boolean(profileBackupRecord?.profile);
+  const profileBackupTimestamp = profileBackupRecord?.createdAt || walletProfileSnapshot.storage?.signedAt || '';
+  const profileBackupSignedLabel =
+    profileBackupTimestamp && !Number.isNaN(new Date(profileBackupTimestamp).getTime())
+      ? new Date(profileBackupTimestamp).toLocaleString()
+      : '';
+  const profileBackupHashPreview = String(profileBackupRecord?.contentHash || walletProfileSnapshot.storage?.contentHash || '').slice(0, 12);
   const walletProfileSummary = getWalletProfileSummary({
-    ...readWalletProfile(address),
+    ...walletProfileSnapshot,
     progress: {
       viewedRiskCards: localProgressReady ? viewedRiskCards : [],
       guideCompleted: localProgressReady && guideCompleted,
@@ -962,6 +1023,13 @@ export default function App() {
       web3Intent
     }
   });
+  const profileBackupSummaryText = profileBackupStatus || (
+    isConnected
+      ? profileBackupConfigured
+        ? `Signed backup ready for ${shortAddress(address)}${profileBackupSignedLabel ? `, saved ${profileBackupSignedLabel}` : ''}${profileBackupHashPreview ? `. Hash ${profileBackupHashPreview}...` : '.'}`
+        : `No signed backup yet for ${shortAddress(address)}. Sign one here so this wallet can recover PT progress, replay history, and wealth context later.`
+      : 'Connect a wallet to create or recover a signed demo-state backup for this address.'
+  );
   const completedBoxes = [walletQuestDone, welcomeGateCompleted, riskTaskDone].filter(Boolean).length;
   const paperTradingUnlocked = completedBoxes >= 3 || fastTrackPaper;
   const paperTradingLockedByTutorial = !paperTradingUnlocked;
@@ -1195,6 +1263,24 @@ export default function App() {
     }
   }, [activeOptionalQuest]);
 
+  function scrollQuestDetailIntoView(detailId) {
+    if (typeof window === 'undefined') return;
+    window.setTimeout(() => {
+      document.getElementById(detailId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 90);
+  }
+
+  function focusLearnQuest(questId) {
+    if (questId === 'wallet' || questId === 'mint') {
+      setActiveCoreQuest(questId);
+      scrollQuestDetailIntoView('learnQuestDetail');
+      return;
+    }
+
+    setActiveOptionalQuest(questId);
+    scrollQuestDetailIntoView('learnOptionalQuestDetail');
+  }
+
   const mintStatusText = !isConnected
     ? 'Connect MetaMask first'
       : !onSepolia
@@ -1259,6 +1345,72 @@ export default function App() {
     setPendingWalletNickname(normalizeWalletNickname(walletNicknameDraft) || null);
     connect({ connector: metaMaskConnector });
   }
+
+  useEffect(() => {
+    if (!isConnected) {
+      previousConnectionRef.current = false;
+      return;
+    }
+
+    if (!previousConnectionRef.current) {
+      setTaskCompletionNotice('Congrats - wallet connected. We opened the wallet task so you can keep moving toward the claim step.');
+      focusLearnQuest('wallet');
+    }
+
+    previousConnectionRef.current = true;
+  }, [isConnected, connectedAddressKey]);
+
+  useEffect(() => {
+    if (!isConnected) {
+      previousTaskCompletionRef.current = {
+        addressKey: '',
+        welcome: false,
+        risk: false,
+        quiz: false,
+        paper: false
+      };
+      return;
+    }
+
+    const currentStates = {
+      addressKey: connectedAddressKey,
+      welcome: badgeContractConfigured ? welcomeGateCompleted : false,
+      risk: riskTaskDone,
+      quiz: quizTaskDone,
+      paper: paperTradingUnlocked || paperTaskDone
+    };
+    const previousStates = previousTaskCompletionRef.current;
+
+    if (previousStates.addressKey === connectedAddressKey) {
+      if (!previousStates.welcome && currentStates.welcome) {
+        setTaskCompletionNotice('Congrats - welcome badge finished. The wallet task claim is open now.');
+        focusLearnQuest('wallet');
+      } else if (!previousStates.risk && currentStates.risk) {
+        setTaskCompletionNotice(
+          currentStates.paper && !previousStates.paper
+            ? 'Congrats - risk review completed. The risk badge is ready to claim, and paper trading just unlocked below.'
+            : 'Congrats - risk review completed. The risk badge claim is open now.'
+        );
+        focusLearnQuest('risk');
+      } else if (!previousStates.quiz && currentStates.quiz) {
+        setTaskCompletionNotice('Congrats - quiz completed. The quiz badge claim is open now.');
+        focusLearnQuest('quiz');
+      } else if (!previousStates.paper && currentStates.paper) {
+        setTaskCompletionNotice('Congrats - paper trading is unlocked. We opened the task so you can claim it and jump into replay.');
+        focusLearnQuest('paper');
+      }
+    }
+
+    previousTaskCompletionRef.current = currentStates;
+  }, [
+    isConnected,
+    connectedAddressKey,
+    welcomeGateCompleted,
+    riskTaskDone,
+    quizTaskDone,
+    paperTradingUnlocked,
+    paperTaskDone
+  ]);
 
   function handleSaveWalletNickname() {
     if (!address) {
@@ -1547,7 +1699,7 @@ export default function App() {
       const record = await signAndStoreProfilePointer(
         address,
         {
-          ...readWalletProfile(address),
+          ...walletProfileSnapshot,
           progress: {
             viewedRiskCards: localProgressReady ? viewedRiskCards : [],
             guideCompleted: localProgressReady && guideCompleted,
@@ -1570,6 +1722,95 @@ export default function App() {
     } catch (error) {
       setProfileBackupStatus(String(error?.message || 'Profile backup signature was cancelled.'));
     }
+  }
+
+  function handleRecoverProfileBackup() {
+    if (!isConnected || !address) {
+      setProfileBackupStatus('Connect a wallet first so recovery can target the current account.');
+      return;
+    }
+
+    const pointerRecord = readStorageJson(getWalletProfilePointerKey(address), null);
+    if (!pointerRecord?.profile) {
+      setProfileBackupStatus(`No signed backup was found for ${shortAddress(address)} on this device yet.`);
+      return;
+    }
+
+    const recoveredProfile = pointerRecord.profile;
+    const recoveredSummary = getWalletProfileSummary(recoveredProfile);
+    const nextViewedRiskCards =
+      Array.isArray(recoveredProfile.progress?.viewedRiskCards) && recoveredProfile.progress.viewedRiskCards.length
+        ? recoveredProfile.progress.viewedRiskCards
+        : selectedRiskProduct
+          ? [selectedRiskProduct]
+          : [];
+    const nextGuideCompleted = Boolean(recoveredProfile.progress?.guideCompleted || nextViewedRiskCards.length >= 3);
+    const nextQuizCompleted = Boolean(recoveredProfile.progress?.quizCompleted);
+    const nextPaperTradesCompleted = Math.max(0, Number(recoveredProfile.progress?.paperTradesCompleted || 0));
+    const nextUserOrigin = recoveredProfile.home?.userOrigin || recoveredProfile.progress?.userOrigin || userOrigin || 'web2';
+    const nextWeb2Intent = recoveredProfile.home?.web2Intent || recoveredProfile.progress?.web2Intent || web2Intent || 'trading';
+    const nextWeb3Intent = recoveredProfile.home?.web3Intent || recoveredProfile.progress?.web3Intent || web3Intent || 'learn';
+    const nextPaperBalance = Math.max(
+      Number(recoveredProfile.home?.paperBalanceSnapshot || 0),
+      Number(recoveredSummary.availablePT || 0),
+      STARTING_PAPER_TOKENS
+    );
+    const nextProgress = {
+      viewedRiskCards: nextViewedRiskCards,
+      guideCompleted: nextGuideCompleted,
+      quizCompleted: nextQuizCompleted,
+      paperTradesCompleted: nextPaperTradesCompleted,
+      homeOnboardingCompleted: Boolean(recoveredProfile.progress?.homeOnboardingCompleted || recoveredProfile.progress?.paperUnlocked),
+      paperUnlocked: Boolean(recoveredProfile.progress?.paperUnlocked),
+      adminUnlocked: Boolean(recoveredProfile.progress?.adminUnlocked),
+      spotLessonCompleted: Boolean(recoveredProfile.progress?.spotLessonCompleted),
+      leverageLessonCompleted: Boolean(recoveredProfile.progress?.leverageLessonCompleted),
+      hedgeLessonCompleted: Boolean(recoveredProfile.progress?.hedgeLessonCompleted),
+      hedgeSizingCompleted: Boolean(recoveredProfile.progress?.hedgeSizingCompleted),
+      hedgePositiveCloseCompleted: Boolean(recoveredProfile.progress?.hedgePositiveCloseCompleted),
+      userOrigin: nextUserOrigin,
+      web2Intent: nextWeb2Intent,
+      web3Intent: nextWeb3Intent
+    };
+
+    writeStorageJson(progressStorageKey, nextProgress);
+    writeWalletProfilePatch(address, {
+      progress: nextProgress,
+      home: {
+        ...(recoveredProfile.home || {}),
+        paperBalanceSnapshot: nextPaperBalance,
+        userOrigin: nextUserOrigin,
+        web2Intent: nextWeb2Intent,
+        web3Intent: nextWeb3Intent
+      },
+      paper: recoveredProfile.paper || {},
+      wealth: recoveredProfile.wealth || {},
+      storage: {
+        ...(recoveredProfile.storage || {}),
+        mode: pointerRecord.remote?.ok || pointerRecord.remote?.cid || pointerRecord.remote?.url ? 'signed-remote-pointer' : 'signed-content-addressed-local',
+        contentHash: pointerRecord.contentHash || recoveredProfile.storage?.contentHash || '',
+        cidReadyPointer: pointerRecord.cidReadyPointer || recoveredProfile.storage?.cidReadyPointer || '',
+        remote: pointerRecord.remote || recoveredProfile.storage?.remote || null,
+        signedAt: pointerRecord.createdAt || recoveredProfile.storage?.signedAt || '',
+        hasSignature: Boolean(pointerRecord.signature || recoveredProfile.storage?.hasSignature),
+        lastRecoveredAt: new Date().toISOString()
+      }
+    });
+
+    if (nextProgress.adminUnlocked) {
+      writeStorageJson(getAdminUnlockStorageKey(address), true);
+    }
+
+    setViewedRiskCards(nextViewedRiskCards);
+    setGuideCompleted(nextGuideCompleted);
+    setQuizCompleted(nextQuizCompleted);
+    setPaperTradesCompleted(nextPaperTradesCompleted);
+    setPaperBalanceSnapshot(readRecoveredHomePaperBalance(address, nextPaperBalance));
+    setProgressAccountKey(address.toLowerCase());
+    setUserOrigin(nextUserOrigin);
+    setWeb2Intent(nextWeb2Intent);
+    setWeb3Intent(nextWeb3Intent);
+    setProfileBackupStatus(`Saved demo state restored for ${shortAddress(address)}. PT balance, task progress, and wallet-linked history are back on this device.`);
   }
 
   return (
@@ -1863,6 +2104,8 @@ export default function App() {
               </div>
             </div>
 
+            {taskCompletionNotice ? <div className="wealth-inline-note learn-quest-completion-note">{taskCompletionNotice}</div> : null}
+
             <div className={`learn-quest-detail-shell ${activeCoreQuest ? 'open' : 'closed'}`}>
               <div className="learn-quest-detail card" id="learnQuestDetail">
                 <div className="learn-quest-detail-top">
@@ -2003,10 +2246,10 @@ export default function App() {
                         <div className="muted">
                           Decentralized storage here means a signed, content-hashed snapshot that can later be pinned to IPFS/Filecoin, Ceramic, or Arweave by the project owner.
                         </div>
-                        {profileBackupStatus ? <div className="wealth-inline-note paper-inline-note">{profileBackupStatus}</div> : null}
+                        <div className="wealth-inline-note paper-inline-note">{profileBackupSummaryText}</div>
                       </div>
                       <button type="button" className="ghost-btn compact" onClick={handleSignProfileBackup} disabled={isProfileSigning}>
-                        {isProfileSigning ? 'Await wallet' : 'Sign optional backup'}
+                        {isProfileSigning ? 'Await wallet' : profileBackupConfigured ? 'Update signed backup' : 'Sign optional backup'}
                       </button>
                     </div>
 
@@ -2077,7 +2320,7 @@ export default function App() {
             {optionalQuestNotice ? <div className="env-hint" style={{ marginTop: 14 }}>{optionalQuestNotice}</div> : null}
 
             <div className={`learn-quest-detail-shell ${activeOptionalQuest ? 'open' : 'closed'}`}>
-              <div className="learn-quest-detail card learn-quest-optional-detail">
+              <div className="learn-quest-detail card learn-quest-optional-detail" id="learnOptionalQuestDetail">
                 <div className="learn-quest-detail-top">
                   <div>
                     <div className="eyebrow">Optional Detail</div>
@@ -2553,6 +2796,8 @@ export default function App() {
         onConnect={handleConnect}
         onDisconnect={() => disconnect()}
         onSaveNickname={handleSaveWalletNickname}
+        onSignProfileBackup={handleSignProfileBackup}
+        onRecoverProfileBackup={handleRecoverProfileBackup}
         isPending={isPending && pendingConnector?.name?.toLowerCase().includes('metamask')}
         isConnected={isConnected}
         address={address}
@@ -2565,6 +2810,11 @@ export default function App() {
         nicknameFeedback={walletNicknameFeedback}
         errorText={walletError}
         hasMetaMaskInstalled={hasMetaMaskInstalled}
+        isProfileSigning={isProfileSigning}
+        profileBackupConfigured={profileBackupConfigured}
+        profileBackupRecoverable={profileBackupRecoverable}
+        profileBackupSummaryText={profileBackupSummaryText}
+        walletProfileSummary={walletProfileSummary}
       />
 
       {devModeOpen ? (
