@@ -106,10 +106,7 @@ const DETAIL_TOPIC_OPTIONS = [
   { id: 'flow', label: 'Buy / settle / pledge', helper: 'Use this after reading the overview and AI diligence. Buy, settlement, rollover, transfer, and pledge all live in the same lifecycle desk.' },
   { id: 'snapshot', label: 'Overview', helper: 'Read the compact one-screen summary: what the product is, what it earns from, and how difficult it is.' },
   { id: 'nav', label: 'Timeline', helper: 'Check the NAV path and time-window result without duplicating the order controls.' },
-  { id: 'receipt', label: 'Receipt', helper: 'Open the wallet-facing receipt view: what the user owns, how it exits, and what pledge means.' },
-  { id: 'diligence', label: 'AI Diligence', helper: 'Use this before buying: compact fit, key evidence, and the AI memo without opening a long checklist.' },
-  { id: 'onchain', label: 'Onchain', helper: 'Show allowance, vault, and wallet-signing mechanics as a detail page rather than inline clutter.' },
-  { id: 'automation', label: 'Monitor', helper: 'Show alert, rebalance, and follow-up controls after the product fit is clear.' }
+  { id: 'diligence', label: 'AI Diligence', helper: 'Use this before buying: compact fit, key evidence, and the AI memo without opening a long checklist.' }
 ];
 
 const WEALTH_HOME_SURFACE_NOTES = {
@@ -991,7 +988,7 @@ function DeveloperModeModal({
           <div className="wallet-modal-title">Developer Mode</div>
           <div className="wallet-modal-subtitle">Wealth controls</div>
           <div className="wallet-install-copy">
-            Browser-local admin access for the Wealth page. Sign in for the current use; the panel does not reuse a saved developer login.
+            Browser-local admin access for the Wealth page. This uses the same demo credentials and storage key as the homepage so overrides stay consistent.
           </div>
           <button className="secondary-btn" onClick={onClose}>
             Keep reviewing
@@ -1007,7 +1004,7 @@ function DeveloperModeModal({
             <div className="developer-auth-form">
               <div className="wallet-modal-status">Developer sign in</div>
               <div className="env-hint">
-                Demo-only admin access. Use <strong>{DEV_MODE_USERNAME}</strong> / <strong>{DEV_MODE_PASSWORD}</strong>; no saved login is reused.
+                Demo-only admin access. Credentials are intentionally visible for local review: username <strong>{DEV_MODE_USERNAME}</strong>, password <strong>{DEV_MODE_PASSWORD}</strong>.
               </div>
               <label>
                 Username
@@ -1040,7 +1037,7 @@ function DeveloperModeModal({
                 </div>
               </div>
               <div className="wealth-inline-note">
-                Wealth developer review is open for this signed-in use, so you can inspect wallet-linked cash, holdings, and routing behavior without making the page default to admin mode.
+                Wealth uses the same developer-access switch as the homepage. When this browser override is on, demo-only admin review can stay open while you inspect wallet-linked cash, holdings, and routing behavior.
               </div>
               <div className="toolbar">
                 <button className="secondary-btn" onClick={onClose}>
@@ -1104,7 +1101,7 @@ function getReturnMetricLabels(product = {}) {
   const text = `${product.productType || ''} ${product.name || ''}`.toLowerCase();
 
   if (/dual investment|dual currency/.test(text)) {
-    return { metric: 'Payoff range', basis: 'Range basis', subtext: 'no floor / capped premium' };
+    return { metric: 'Modeled premium', basis: 'Premium basis', subtext: 'premium' };
   }
   if (/protected growth|defined outcome|buffer/.test(text)) {
     return { metric: 'Outcome cap', basis: 'Outcome basis', subtext: 'cap' };
@@ -1117,61 +1114,6 @@ function getReturnMetricLabels(product = {}) {
   }
 
   return { metric: 'Annual yield', basis: 'Yield basis', subtext: 'annual' };
-}
-
-function parsePercentRange(text = '') {
-  return [...`${text}`.matchAll(/(\d+(?:\.\d+)?)%/g)]
-    .map((match) => Number(match[1]) / 100)
-    .filter((value) => Number.isFinite(value) && value >= 0);
-}
-
-function getDualInvestmentTermDays(product = {}) {
-  const text = `${product.redemption || ''} ${product.annualYieldSource || ''} ${product.fees?.lockup || ''}`;
-  const match = text.match(/(\d+)\s*(?:-|\s)?\s*(?:day|days|d)\b/i);
-  const days = Number(match?.[1] || 7);
-  return Number.isFinite(days) && days > 0 ? days : 7;
-}
-
-function getDualInvestmentPayoffRange(product = {}, hidden = false) {
-  const days = getDualInvestmentTermDays(product);
-  const aprRange = parsePercentRange(product.apyRange || product.annualYieldBasis || product.annualYieldSource);
-  const modeledApr = Math.max(0, Number(product.annualYieldRate || 0));
-  const lowerApr = aprRange[0] ?? modeledApr * 0.6;
-  const upperApr = aprRange[1] ?? Math.max(modeledApr, lowerApr) * 1.35;
-  const lowerPremium = lowerApr * (days / 365);
-  const upperPremium = Math.max(lowerPremium, upperApr * (days / 365));
-  const premiumRange = hidden
-    ? '---% to ---%'
-    : `+${(lowerPremium * 100).toFixed(2)}% to +${(upperPremium * 100).toFixed(2)}%`;
-
-  return {
-    metric: 'Payoff range',
-    value: hidden ? '---' : `No fixed floor -> +${(upperPremium * 100).toFixed(2)}% cap`,
-    basis: `${days}D premium quote ${premiumRange}; not annual yield`,
-    cap: hidden ? 'Upper cap hidden' : `Upper cap +${(upperPremium * 100).toFixed(2)}% term premium`,
-    floor: 'Lower bound: no fixed floor because settlement can convert into the less desired asset.',
-    subtext: 'no floor / capped premium',
-    tone: 'risk-medium',
-    sortRate: upperApr
-  };
-}
-
-function getProductReturnMetricDisplay(product = {}, hidden = false) {
-  if (isDualInvestmentProduct(product)) {
-    return getDualInvestmentPayoffRange(product, hidden);
-  }
-
-  const labels = getReturnMetricLabels(product);
-  const annualYieldRate = getAnnualYieldRate(product);
-
-  return {
-    metric: labels.metric,
-    value: formatYieldPercent(annualYieldRate, hidden),
-    basis: getAnnualYieldBasis(product),
-    subtext: labels.subtext,
-    tone: annualYieldRate >= 0 ? 'risk-low' : 'risk-high',
-    sortRate: annualYieldRate
-  };
 }
 
 function isClosedEndProduct(product) {
@@ -1363,35 +1305,6 @@ function isDualInvestmentProduct(product = {}) {
   return /dual investment|dual currency|dual-btc|buy-the-dip|reverse convertible/.test(text);
 }
 
-function walletLearningProfileCopy({
-  walletProfileLevel = 'starter',
-  isConnected = false,
-  guideTaskDone = false,
-  quizTaskDone = false,
-  paperTaskDone = false,
-  paperFlashSignal = false
-} = {}) {
-  if (!isConnected) {
-    return 'No wallet is connected yet, so Wealth should keep the first click focused on wallet connection and simple cash-style product education.';
-  }
-
-  if (walletProfileLevel === 'advanced') {
-    return paperFlashSignal
-      ? 'This wallet has paper-trading and leverage or flash-loan signals, so AI can surface structured or strategy products as long as diligence and monitor controls stay visible.'
-      : 'This wallet has enough receipt, paper, collateral, or settlement history to handle more complex wealth products with a full detail review first.';
-  }
-
-  if (walletProfileLevel === 'intermediate') {
-    return 'This wallet has learning or quiz progress, so AI can recommend a yield or structured-next-step product while keeping NAV, lockup, and exit terms explicit.';
-  }
-
-  if (guideTaskDone || quizTaskDone || paperTaskDone) {
-    return 'This wallet has started the guided path but still needs simple ownership, return-source, and exit framing before a complex product is pushed.';
-  }
-
-  return 'This wallet is still a starter profile; recommend a clear receipt and a low-complexity product before asking for any subscription action.';
-}
-
 function getWealthProductTypeTooltip(category = {}) {
   if (category.id === 'all') return 'Show every productized wealth receipt in the current shelf.';
   if (category.id === 'dual') {
@@ -1414,7 +1327,6 @@ function getWealthProductTypeTooltip(category = {}) {
 function getWealthProductFactRows(product = {}) {
   const surface = getWealthProductSurface(product);
   const settlementPolicy = getSettlementPolicy(product);
-  const returnDisplay = getProductReturnMetricDisplay(product);
   const surfaceNote =
     surface === 'cash'
       ? 'Cash & Treasury'
@@ -1427,7 +1339,7 @@ function getWealthProductFactRows(product = {}) {
             : 'Earn / Yield';
   const productTypeText = `${product.productType || ''}`.toLowerCase();
   const earnLabel = productTypeText.includes('dual')
-    ? returnDisplay.value
+    ? 'Target premium'
     : productTypeText.includes('protected growth')
       ? 'Capped upside'
       : productTypeText.includes('premium income')
@@ -1438,7 +1350,7 @@ function getWealthProductFactRows(product = {}) {
 
   return [
     { label: 'What you own', value: `${surfaceNote} receipt`, copy: product.baseAsset || product.shareToken || 'Product wrapper exposure' },
-    { label: 'Return source', value: earnLabel, copy: isDualInvestmentProduct(product) ? `${returnDisplay.basis}. ${returnDisplay.floor}` : product.yieldSource || 'Return source must be disclosed before subscription.' },
+    { label: 'Return source', value: earnLabel, copy: product.yieldSource || 'Return source must be disclosed before subscription.' },
     { label: 'Liquidity', value: settlementPolicy.label, copy: settlementPolicy.detail || product.redemption || 'Liquidity depends on the product route.' },
     { label: 'Main risk', value: product.risk || 'Review', copy: product.worstCase || product.riskNote || 'Downside and execution risk must remain visible.' },
     { label: 'Rights', value: product.shareToken || 'Receipt', copy: product.shareRights?.[0] || 'Rights depend on wrapper, token, and issuer terms.' }
@@ -2915,9 +2827,9 @@ function WealthInner() {
   const [pendingWalletNickname, setPendingWalletNickname] = useState(null);
   const [walletNicknameFeedback, setWalletNicknameFeedback] = useState('');
   const [devModeOpen, setDevModeOpen] = useState(false);
-  const [devModeAuthed, setDevModeAuthed] = useState(false);
-  const [devModeUsername, setDevModeUsername] = useState('');
-  const [devModePassword, setDevModePassword] = useState('');
+  const [devModeAuthed, setDevModeAuthed] = useState(() => Boolean(readStorageJson(DEV_AUTH_STORAGE_KEY, false)));
+  const [devModeUsername, setDevModeUsername] = useState(DEV_MODE_USERNAME);
+  const [devModePassword, setDevModePassword] = useState(DEV_MODE_PASSWORD);
   const [devModeError, setDevModeError] = useState('');
   const [devModeNotice, setDevModeNotice] = useState('');
   const [hasMetaMaskInstalled, setHasMetaMaskInstalled] = useState(false);
@@ -2939,9 +2851,9 @@ function WealthInner() {
   const [compareProductIds, setCompareProductIds] = useState(DEFAULT_COMPARE_PRODUCT_IDS_BY_CATEGORY.all.slice(0, MAX_COMPARE_PRODUCTS));
   const [comparePickerValue, setComparePickerValue] = useState('');
   const [selectedDetailTopics, setSelectedDetailTopics] = useState(['flow']);
-  const [activeWalletProfilePanel, setActiveWalletProfilePanel] = useState('profile');
   const [selectedWealthTaskId, setSelectedWealthTaskId] = useState('subscribe');
   const [wealthDiligencePageIndex, setWealthDiligencePageIndex] = useState(0);
+  const [aiRecommendationSeed] = useState(() => Math.random());
   const [fastForwardTarget, setFastForwardTarget] = useState('90d');
   const [settlementDays, setSettlementDays] = useState(180);
   const [settlementAction, setSettlementAction] = useState('roll');
@@ -3009,6 +2921,17 @@ function WealthInner() {
       window.clearTimeout(timer);
       window.removeEventListener('ethereum#initialized', refreshMetaMaskState);
     };
+  }, []);
+
+  useEffect(() => {
+    function refreshDeveloperMode() {
+      setDevModeAuthed(Boolean(readStorageJson(DEV_AUTH_STORAGE_KEY, false)));
+    }
+
+    refreshDeveloperMode();
+    if (typeof window === 'undefined') return undefined;
+    window.addEventListener('storage', refreshDeveloperMode);
+    return () => window.removeEventListener('storage', refreshDeveloperMode);
   }, []);
 
   useEffect(() => {
@@ -3482,7 +3405,6 @@ function WealthInner() {
       new Map(
         shelfProducts.map((product) => {
           const diligenceModel = buildDiligenceModel(product, day1BriefState.data);
-          const returnDisplay = getProductReturnMetricDisplay(product);
           return [
             product.id,
             {
@@ -3491,12 +3413,6 @@ function WealthInner() {
               signalAdjustment: diligenceModel.signalAdjustment,
               annualYieldRate: getAnnualYieldRate(product),
               annualYieldBasis: getAnnualYieldBasis(product),
-              returnMetric: returnDisplay.metric,
-              returnValue: returnDisplay.value,
-              returnBasis: returnDisplay.basis,
-              returnSubtext: returnDisplay.subtext,
-              returnTone: returnDisplay.tone,
-              returnSortRate: returnDisplay.sortRate,
               nav: product.nav,
               risk: product.risk
             }
@@ -3545,7 +3461,6 @@ function WealthInner() {
   }, [categoryCompareSeedIds, selectedCategory]);
 
   const selectedProduct = useMemo(() => getProductByIdFrom(liveProducts, selectedProductId), [liveProducts, selectedProductId]);
-  const selectedReturnMetricDisplay = getProductReturnMetricDisplay(selectedProduct, hideBalances);
   useEffect(() => {
     setWealthDiligencePageIndex(0);
   }, [selectedProduct.id]);
@@ -3783,8 +3698,7 @@ function WealthInner() {
   );
   const selectedDualCurrencyFit = getDualCurrencyFit(selectedProduct);
   const dualCurrencyExamplePrincipal = 1000;
-  const dualCurrencyTermPremiumRate = dualCurrencyApr * (Math.max(1, Number(settlementDays || 1)) / 365);
-  const dualCurrencyExampleReward = roundNumber(dualCurrencyExamplePrincipal * dualCurrencyTermPremiumRate, 2);
+  const dualCurrencyExampleReward = roundNumber(dualCurrencyExamplePrincipal * dualCurrencyApr * (Math.max(1, Number(settlementDays || 1)) / 365), 2);
   const dualCurrencyExampleBaseAmount = roundNumber((dualCurrencyExamplePrincipal + dualCurrencyExampleReward) / dualCurrencyTargetPrice, 6);
   const dualCurrencyTriggerCopy =
     dualCurrencyDirection === 'buy-low'
@@ -3887,7 +3801,7 @@ function WealthInner() {
   ]);
   const aiRecommendedRow =
     aiRecommendationTopRows.length > 0
-      ? aiRecommendationTopRows[0]
+      ? aiRecommendationTopRows[Math.floor(aiRecommendationSeed * aiRecommendationTopRows.length) % aiRecommendationTopRows.length]
       : null;
   const aiRecommendedProduct = aiRecommendedRow?.product || liveProducts[0] || WEALTH_PRODUCTS[0];
   const aiRecommendationReason =
@@ -3897,85 +3811,6 @@ function WealthInner() {
       : walletProfileLevel === 'intermediate'
         ? 'learning progress supports moving beyond simple cash parking without hiding NAV and redemption controls'
         : 'the first wealth action should favor a simple receipt, clear exit framing, and visible evidence');
-  const aiRecommendedSurface = getWealthProductSurface(aiRecommendedProduct);
-  const aiRecommendedPolicy = getSettlementPolicy(aiRecommendedProduct);
-  const aiRecommendationScript = [
-    `I would push ${aiRecommendedProduct.name} to this ${walletProfileLabel.toLowerCase()} because ${aiRecommendationReason}.`,
-    walletProfileLevel === 'advanced'
-      ? `This wallet has enough paper, pledge, or settlement history to inspect a ${aiRecommendedSurface} product, but the diligence and monitor pages should stay one click away.`
-      : walletProfileLevel === 'intermediate'
-        ? `Keep the recommendation as a guided next step: show ${aiRecommendedPolicy.label.toLowerCase()} terms, NAV movement, and the receipt lifecycle before subscribe.`
-        : `Keep the first push simple: explain what the receipt owns, why it earns, and how the user can exit before asking for a subscription signature.`,
-    `Next click should open ${aiRecommendedProduct.shortName || aiRecommendedProduct.name} detail, then use the action buttons below for lifecycle, AI diligence, receipt, or monitoring.`
-  ];
-  const walletProfileButtonRows = [
-    {
-      id: 'profile',
-      label: 'Profile',
-      value: walletProfileLabel,
-      title: 'Wallet profile',
-      copy: walletLearningProfileCopy({
-        walletProfileLevel,
-        isConnected,
-        guideTaskDone,
-        quizTaskDone,
-        paperTaskDone,
-        paperFlashSignal
-      }),
-      metrics: [
-        { label: 'Connection', value: isConnected ? 'Connected' : 'Not connected' },
-        { label: 'Learning', value: `${[guideTaskDone, quizTaskDone, paperTaskDone].filter(Boolean).length}/3 signals` },
-        { label: 'Flash / hedge signal', value: paperFlashSignal ? 'Seen' : 'Not seen' }
-      ]
-    },
-    {
-      id: 'portfolio',
-      label: 'Portfolio',
-      value: `${portfolioRows.length} positions`,
-      title: 'Wallet assets',
-      copy: 'This is the current wallet-linked wealth state that recommendations should read before picking another product.',
-      metrics: [
-        { label: 'Spendable PT', value: formatValue(availableCash, hideBalances) },
-        { label: 'Current value', value: formatValue(totalCurrentValue, hideBalances) },
-        { label: 'Open positions', value: `${portfolioRows.length}` },
-        { label: 'Pledged lines', value: `${Object.keys(displayWealthState.collateral || {}).length}` }
-      ]
-    },
-    {
-      id: 'activity',
-      label: 'Activity',
-      value: `${displayWealthState.activityLog?.length || 0} events`,
-      title: 'Wallet behavior',
-      copy: 'Activity pushes the user toward detail pages they have not practiced yet, instead of repeating the same buy card.',
-      metrics: [
-        { label: 'Receipt minted', value: portfolioRows.length ? 'Yes' : 'No' },
-        { label: 'Settlement practiced', value: wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') ? 'Yes' : 'No' },
-        { label: 'Pledge practiced', value: Object.keys(displayWealthState.collateral || {}).length ? 'Yes' : 'No' }
-      ]
-    },
-    {
-      id: 'ai',
-      label: 'AI pick',
-      value: aiRecommendedProduct.shortName || aiRecommendedProduct.name,
-      title: 'AI recommendation',
-      copy: 'The recommendation is ranked from wallet profile, holdings, activity, goal fit, evidence confidence, product quality, suitability, and current market context.',
-      metrics: [
-        { label: 'Product', value: aiRecommendedProduct.name },
-        { label: 'Fit score', value: `${Math.round(aiRecommendedRow?.score || 0)}` },
-        { label: 'Exit terms', value: aiRecommendedPolicy.label },
-        { label: 'Detail route', value: getCategoryIdForProduct(aiRecommendedProduct) }
-      ],
-      script: aiRecommendationScript
-    }
-  ];
-  const activeWalletProfileDetail =
-    walletProfileButtonRows.find((row) => row.id === activeWalletProfilePanel) || walletProfileButtonRows[0];
-  const aiRecommendationActionButtons = [
-    { id: 'flow', label: 'Lifecycle desk', topic: 'flow' },
-    { id: 'diligence', label: 'AI diligence', topic: 'diligence' },
-    { id: 'receipt', label: 'Receipt detail', topic: 'receipt' },
-    { id: 'automation', label: 'Monitor rules', topic: 'automation' }
-  ];
   const collectibleHelperCopy =
     'Beginner note: when a homepage badge is minted, look for it in the connected wallet collectibles / NFT view. Wealth keeps reading the same wallet-linked progress.';
   const wealthTaskDetailMap = {
@@ -4221,18 +4056,14 @@ function WealthInner() {
             signalAdjustment: metrics.signalAdjustment,
             annualYieldRate: metrics.annualYieldRate,
             annualYieldBasis: metrics.annualYieldBasis,
-            returnMetric: metrics.returnMetric,
-            returnValue: metrics.returnValue,
-            returnBasis: metrics.returnBasis,
-            returnSubtext: metrics.returnSubtext,
-            returnTone: metrics.returnTone,
-            returnSortRate: metrics.returnSortRate,
+            returnMetric: getReturnMetricLabels(product).metric,
+            returnSubtext: getReturnMetricLabels(product).subtext,
             nav: metrics.nav,
             risk: metrics.risk
           };
         })
         .filter(Boolean)
-        .sort((left, right) => right.returnSortRate - left.returnSortRate || right.score - left.score)
+        .sort((left, right) => right.annualYieldRate - left.annualYieldRate || right.score - left.score)
         .slice(0, LEADERBOARD_LIMIT),
     [shelfMetricsMap, shelfProducts]
   );
@@ -4258,9 +4089,7 @@ function WealthInner() {
   }
 
   function openDeveloperMode() {
-    setDevModeAuthed(false);
-    setDevModeUsername('');
-    setDevModePassword('');
+    setDevModeAuthed(Boolean(readStorageJson(DEV_AUTH_STORAGE_KEY, false)));
     setDevModeOpen(true);
     setDevModeError('');
     setDevModeNotice('');
@@ -4268,9 +4097,10 @@ function WealthInner() {
 
   function handleDeveloperLogin() {
     if (devModeUsername.trim() === DEV_MODE_USERNAME && devModePassword.trim() === DEV_MODE_PASSWORD) {
+      writeStorageJson(DEV_AUTH_STORAGE_KEY, true);
       setDevModeAuthed(true);
       setDevModeError('');
-      setDevModeNotice('Developer controls are open for this use. Reopening this panel asks for the account again.');
+      setDevModeNotice('Developer controls are open for this browser.');
       return;
     }
 
@@ -4279,9 +4109,8 @@ function WealthInner() {
   }
 
   function handleDeveloperLogout() {
+    writeStorageJson(DEV_AUTH_STORAGE_KEY, false);
     setDevModeAuthed(false);
-    setDevModeUsername('');
-    setDevModePassword('');
     setDevModeError('');
     setDevModeNotice('Developer controls are closed for this browser.');
   }
@@ -4393,15 +4222,6 @@ function WealthInner() {
     setExpandedProductId(productId);
     setSelectedDetailTopics(['flow']);
     setPendingScrollProductId(productId);
-  }
-
-  function handleTimelineProductOpen(productId) {
-    const product = getProductByIdFrom(liveProducts, productId);
-    handleExpandWealthTimeline();
-    focusProduct(productId, {
-      topic: 'flow',
-      categoryId: product ? getCategoryIdForProduct(product) : undefined
-    });
   }
 
   function toggleDetailTopic(topicId) {
@@ -4969,8 +4789,6 @@ function WealthInner() {
     const product = getProductByIdFrom(liveProducts, productId);
     if (!product) return;
 
-    handleExpandWealthTimeline();
-
     const nextSettlementAction =
       action === 'roll' ? 'roll' : action === 'transfer' ? 'transfer' : action === 'pledge' || action === 'preview' ? 'preview' : 'exit';
     const position = displayWealthState.positions?.[productId] || { shares: 0 };
@@ -5055,7 +4873,7 @@ function WealthInner() {
         <div className="section-head">
           <div>
             <div className="eyebrow">Structured wealth / Dual Investment</div>
-            <h2>See the payoff range before setting a buy-low or sell-high order</h2>
+            <h2>Earn yield while setting a future buy-low or sell-high order</h2>
           </div>
           <span className="pill risk-medium">Not a stable deposit</span>
         </div>
@@ -5133,8 +4951,8 @@ function WealthInner() {
             <div className="value">{dualCurrencyTargetPrice.toLocaleString()}</div>
           </div>
           <div>
-            <div className="label">Term reward cap</div>
-            <div className="value risk-medium">{formatYieldPercent(dualCurrencyTermPremiumRate)}</div>
+            <div className="label">Modeled APR</div>
+            <div className="value risk-low">{formatYieldPercent(dualCurrencyApr)}</div>
           </div>
         </div>
 
@@ -5224,22 +5042,18 @@ function WealthInner() {
         </div>
 
         <div className="wealth-recommended-strip wealth-dual-product-strip">
-          {dualProducts.map((product) => {
-            const returnDisplay = getProductReturnMetricDisplay(product);
-
-            return (
-              <button
-                key={product.id}
-                type="button"
-                className="wealth-recommended-chip"
-                onClick={() => focusProduct(product.id, { topic: 'flow', categoryId: 'dual' })}
-              >
-                <span>{returnDisplay.metric}</span>
-                <strong>{product.name}</strong>
-                <em>{returnDisplay.value}</em>
-              </button>
-            );
-          })}
+          {dualProducts.map((product) => (
+            <button
+              key={product.id}
+              type="button"
+              className="wealth-recommended-chip"
+              onClick={() => focusProduct(product.id, { topic: 'flow', categoryId: 'dual' })}
+            >
+              <span>{product.productType}</span>
+              <strong>{product.name}</strong>
+              <em>{getSettlementPolicy(product).timing}</em>
+            </button>
+          ))}
         </div>
       </section>
     );
@@ -5295,7 +5109,7 @@ function WealthInner() {
         </div>
 
         <div className="paper-floating-product-leaderboard-copy">
-          The slider is always visible. Product rows are single-click shortcuts into detail; buy, settle, transfer, and pledge stay inside the selected product flow.
+          The slider is always visible. Before the first buy it previews the selected product; after multiple buys it compares every wallet receipt on the same future window.
         </div>
 
         <div className="wealth-floating-timeline-body">
@@ -5335,14 +5149,14 @@ function WealthInner() {
             {timelinePreviewRows.map((row) => (
               <div
                 key={`${row.id}-${row.previewOnly ? 'preview' : 'owned'}`}
-                className={`wealth-floating-timeline-row ${row.lockStatus?.isLocked ? 'locked' : ''} ${row.lockStatus?.isMature ? 'mature' : ''}`.trim()}
+                className={`wealth-floating-timeline-row wealth-floating-timeline-row-actions ${row.lockStatus?.isLocked ? 'locked' : ''} ${row.lockStatus?.isMature ? 'mature' : ''}`.trim()}
                 role="button"
                 tabIndex={0}
-                onClick={() => handleTimelineProductOpen(row.id)}
+                onClick={() => focusProduct(row.id)}
                 onKeyDown={(event) => {
                   if (event.key !== 'Enter' && event.key !== ' ') return;
                   event.preventDefault();
-                  handleTimelineProductOpen(row.id);
+                  focusProduct(row.id);
                 }}
               >
                 <div>
@@ -5363,7 +5177,58 @@ function WealthInner() {
                   <div className={`wealth-leader-subtext ${row.projectedGain >= 0 ? 'risk-low' : 'risk-high'}`}>
                     {formatSignedValue(row.projectedGain, hideBalances)}
                   </div>
-                  <div className="wealth-leader-subtext">Open detail</div>
+                  {!row.previewOnly ? (
+                    <div className="wealth-timeline-action-strip">
+                      <button
+                        type="button"
+                        className="ghost-btn compact"
+                        disabled={row.lockStatus?.isLocked}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          handlePositionQuickAction(row.id, 'exit');
+                        }}
+                      >
+                        {row.lockStatus?.isLocked ? 'Locked' : 'Settle'}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-btn compact"
+                        disabled={row.lockStatus?.isLocked}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          handlePositionQuickAction(row.id, 'transfer');
+                        }}
+                      >
+                        Transfer
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-btn compact"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          handlePositionQuickAction(row.id, 'pledge');
+                        }}
+                      >
+                        Pledge
+                      </button>
+                    </div>
+                  ) : null}
+                  {row.lockStatus?.isMature && !row.previewOnly ? (
+                    <button
+                      type="button"
+                      className="secondary-btn compact wealth-wallet-reminder-btn"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setFeedback(`${row.shareToken} maturity reminder queued for wallet ${walletDisplayName}: choose settle, roll, transfer, or pledge release.`);
+                      }}
+                    >
+                      Wallet reminder
+                    </button>
+                  ) : null}
                 </div>
               </div>
             ))}
@@ -6130,8 +5995,8 @@ function WealthInner() {
                 <strong>{selectedProduct.nav.toFixed(3)}</strong>
               </div>
               <div>
-                <span>{selectedReturnMetricDisplay.metric}</span>
-                <strong>{selectedReturnMetricDisplay.value}</strong>
+                <span>{getReturnMetricLabels(selectedProduct).metric}</span>
+                <strong>{formatYieldPercent(getAnnualYieldRate(selectedProduct))}</strong>
               </div>
               <div>
                 <span>Min ticket</span>
@@ -6194,14 +6059,14 @@ function WealthInner() {
                   </div>
                 </div>
                 <div>
-                  <div className="label">{selectedReturnMetricDisplay.metric}</div>
-                  <div className={`value ${selectedReturnMetricDisplay.tone}`}>
-                    {selectedReturnMetricDisplay.value}
+                  <div className="label">{getReturnMetricLabels(selectedProduct).metric}</div>
+                  <div className={`value ${getAnnualYieldRate(selectedProduct) >= 0 ? 'risk-low' : 'risk-high'}`}>
+                    {formatYieldPercent(getAnnualYieldRate(selectedProduct))}
                   </div>
                 </div>
                 <div>
                   <div className="label">{getReturnMetricLabels(selectedProduct).basis}</div>
-                  <div className="value">{selectedReturnMetricDisplay.basis}</div>
+                  <div className="value">{getAnnualYieldBasis(selectedProduct)}</div>
                 </div>
                 <div>
                   <div className="label">Redeem timing</div>
@@ -6236,12 +6101,6 @@ function WealthInner() {
               <div className="wealth-inline-note paper-inline-note">
                 <strong>Yield data source.</strong> {getAnnualYieldSource(selectedProduct)}
               </div>
-
-              {isDualInvestmentProduct(selectedProduct) ? (
-                <div className="wealth-inline-note paper-inline-note">
-                  <strong>Dual payoff range.</strong> {selectedReturnMetricDisplay.cap}. {selectedReturnMetricDisplay.floor}
-                </div>
-              ) : null}
 
               <div className="wealth-chart-summary">
                 <div>
@@ -6313,9 +6172,7 @@ function WealthInner() {
                   <div className="paper-mode-card wealth-subpanel-card">
                     <div className="product-title">Fast-forward demo</div>
                     <div className="muted">
-                      {isDualInvestmentProduct(selectedProduct)
-                        ? 'Instead of waiting for observation, jump forward and inspect the capped premium plus the no-fixed-floor conversion risk.'
-                        : 'Instead of waiting days, jump forward and inspect what this receipt could look like if the displayed annual yield carries forward.'}
+                      Instead of waiting days, jump forward and inspect what this receipt could look like if the displayed annual yield carries forward.
                     </div>
 
                     <div className="wealth-nav-period-strip compact">
@@ -6350,10 +6207,7 @@ function WealthInner() {
                     </div>
 
                     <div className="wealth-inline-note paper-inline-note">
-                      <strong>{selectedFastForwardOption.label} preview.</strong> {selectedFastForwardOption.description}{' '}
-                      {isDualInvestmentProduct(selectedProduct)
-                        ? `Dual Investment should be read as ${selectedReturnMetricDisplay.basis}, with no fixed lower bound if settlement converts into the less desired asset.`
-                        : 'This uses the displayed annual yield for a fast demo path, so the point is to visualize carry without forcing the judge to wait.'}
+                      <strong>{selectedFastForwardOption.label} preview.</strong> {selectedFastForwardOption.description} This uses the displayed annual yield for a fast demo path, so the point is to visualize carry without forcing the judge to wait.
                     </div>
                   </div>
 
@@ -7261,58 +7115,6 @@ function WealthInner() {
             )}
           </div>
 
-          <div className="wealth-wallet-profile-router">
-            <div className="wealth-wallet-profile-head">
-              <div>
-                <div className="eyebrow">Wallet profile</div>
-                <h3>{walletProfileLabel}</h3>
-              </div>
-              <span className={`pill ${walletProfileLevel === 'advanced' ? 'risk-low' : walletProfileLevel === 'intermediate' ? 'risk-medium' : 'risk-high'}`}>
-                {isConnected ? 'Wallet-linked' : 'Connect wallet'}
-              </span>
-            </div>
-            <div className="wealth-wallet-profile-button-row" aria-label="Wallet profile detail buttons">
-              {walletProfileButtonRows.map((row) => (
-                <button
-                  key={row.id}
-                  type="button"
-                  className={`wealth-wallet-profile-button ${activeWalletProfilePanel === row.id ? 'active' : ''}`}
-                  onClick={() => setActiveWalletProfilePanel(row.id)}
-                >
-                  <span>{row.label}</span>
-                  <strong>{row.value}</strong>
-                </button>
-              ))}
-            </div>
-            <div className="wealth-wallet-profile-detail">
-              <div className="wealth-wallet-profile-detail-head">
-                <div>
-                  <div className="eyebrow">{activeWalletProfileDetail.label}</div>
-                  <h3>{activeWalletProfileDetail.title}</h3>
-                </div>
-                {activeWalletProfileDetail.id === 'ai' ? <span className="pill risk-low">Profile-ranked</span> : null}
-              </div>
-              <p className="muted">{activeWalletProfileDetail.copy}</p>
-              <div className="wealth-wallet-profile-metric-grid">
-                {activeWalletProfileDetail.metrics.map((metric) => (
-                  <div className="wealth-wallet-profile-metric" key={metric.label}>
-                    <span>{metric.label}</span>
-                    <strong>{metric.value}</strong>
-                  </div>
-                ))}
-              </div>
-              {activeWalletProfileDetail.script?.length ? (
-                <div className="wealth-ai-script">
-                  {activeWalletProfileDetail.script.map((line) => (
-                    <div className="wealth-ai-script-line" key={line}>
-                      {line}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </div>
-
           <button
             type="button"
             className="wealth-ai-recommend-card wealth-ai-recommend-button"
@@ -7327,19 +7129,6 @@ function WealthInner() {
             </div>
             <span className="pill risk-low">Open detail</span>
           </button>
-
-          <div className="wealth-ai-action-row" aria-label="AI recommendation detail actions">
-            {aiRecommendationActionButtons.map((action) => (
-              <button
-                key={action.id}
-                type="button"
-                className="ghost-btn compact"
-                onClick={() => focusProduct(aiRecommendedProduct.id, { topic: action.topic, categoryId: getCategoryIdForProduct(aiRecommendedProduct) })}
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
 
           {selectedCategory === 'dual' ? renderDualCurrencyGuideSection() : null}
         </section>
@@ -7386,7 +7175,7 @@ function WealthInner() {
                   const productWindowLabel = NAV_PERIOD_OPTIONS.find((period) => period.id === productNavPeriod)?.label || '30D';
                   const sparkSeries = normalizeNavSeries(product.navHistory?.[productNavPeriod] || [], productNavPeriod);
                   const sparkDeltaPercent = getNavDeltaPercent(sparkSeries);
-                  const productReturnDisplay = getProductReturnMetricDisplay(product, hideBalances);
+                  const productAnnualYield = getAnnualYieldRate(product);
                   const productFactRows = getWealthProductFactRows(product);
                   const isExpanded = expandedProductId === product.id;
                   const productPosition = displayWealthState.positions?.[product.id] || { shares: 0, principal: 0 };
@@ -7450,9 +7239,9 @@ function WealthInner() {
 
                         <div className="kv wealth-card-kv">
                           <div>
-                            <div className="k">{productReturnDisplay.metric}</div>
-                            <div className="v">{productReturnDisplay.value}</div>
-                            <div className="wealth-mini-note">{productReturnDisplay.basis}</div>
+                            <div className="k">{getReturnMetricLabels(product).metric}</div>
+                            <div className="v">{formatYieldPercent(productAnnualYield)}</div>
+                            <div className="wealth-mini-note">{getAnnualYieldBasis(product)}</div>
                           </div>
                           <div>
                             <div className="k">Base asset</div>
@@ -7477,9 +7266,9 @@ function WealthInner() {
 
                         <div className="wealth-card-period-row">
                           <div className="wealth-mini-stat">
-                            <span>{productReturnDisplay.metric}</span>
-                            <strong className={productReturnDisplay.tone}>
-                              {productReturnDisplay.value}
+                            <span>{getReturnMetricLabels(product).metric}</span>
+                            <strong className={productAnnualYield >= 0 ? 'risk-low' : 'risk-high'}>
+                              {formatYieldPercent(productAnnualYield)}
                             </strong>
                           </div>
                           <div className="wealth-mini-stat">
@@ -7928,7 +7717,7 @@ function WealthInner() {
                           <>
                             <div className="wealth-dual-flow-grid">
                               <div className="reason-card">
-                                <div className="entry-title">Watch the strike and payoff range</div>
+                                <div className="entry-title">Watch the strike, not just the APR</div>
                                 <div className="entry-copy">
                                   This sleeve is worth opening only if you actually want the target conversion price. The premium is the payment for accepting that settlement rule.
                                 </div>
@@ -8244,7 +8033,7 @@ function WealthInner() {
 
             <div className="muted">
               {selectedCategory === 'dual'
-                ? 'Dual receipts rank by capped term-premium payoff and diligence context. Treat the range as target-price settlement risk, not stable deposit yield.'
+                ? 'Dual receipts rank by modeled premium APR and diligence context. Treat the APR as a term premium for settlement risk, not as stable cash yield.'
                 : 'Top 10 shelves by displayed yield, premium, coupon, or outcome metric. AI score stays beside each row so return never appears without diligence context.'}
             </div>
 
@@ -8259,12 +8048,12 @@ function WealthInner() {
                   <div className="wealth-leader-main">
                     <div className="product-title">{row.name}</div>
                     <div className="muted">
-                      {row.returnBasis} / AI {row.score} / NAV {row.nav.toFixed(3)}
+                      {row.annualYieldBasis} / AI {row.score} / NAV {row.nav.toFixed(3)}
                     </div>
                   </div>
-                  <div className={`wealth-leader-move ${row.returnTone}`}>
+                  <div className={`wealth-leader-move ${row.annualYieldRate >= 0 ? 'risk-low' : 'risk-high'}`}>
                     <div className={`pill ${riskClass(row.risk)}`}>{row.risk}</div>
-                    <strong>{row.returnValue}</strong>
+                    <strong>{formatYieldPercent(row.annualYieldRate, false)}</strong>
                     <div className="wealth-leader-subtext">{row.returnSubtext}</div>
                   </div>
                 </button>

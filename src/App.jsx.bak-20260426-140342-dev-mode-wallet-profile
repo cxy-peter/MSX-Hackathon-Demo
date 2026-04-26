@@ -1155,12 +1155,11 @@ export default function App() {
   const [progressAccountKey, setProgressAccountKey] = useState('');
   const [devModeOpen, setDevModeOpen] = useState(false);
   const [devModeAuthed, setDevModeAuthed] = useState(false);
-  const [devModeUsername, setDevModeUsername] = useState('');
-  const [devModePassword, setDevModePassword] = useState('');
+  const [devModeUsername, setDevModeUsername] = useState(DEV_MODE_USERNAME);
+  const [devModePassword, setDevModePassword] = useState(DEV_MODE_PASSWORD);
   const [devModeError, setDevModeError] = useState('');
   const [devModeNotice, setDevModeNotice] = useState('');
   const [devModePtAmount, setDevModePtAmount] = useState(String(DEFAULT_ADMIN_PT_AMOUNT));
-  const [developerDetailTopic, setDeveloperDetailTopic] = useState('clicks');
   const [analyticsSnapshot, setAnalyticsSnapshot] = useState({ total: 0, events: {} });
   const [profileBackupStatus, setProfileBackupStatus] = useState('');
   const [developerExitPromptOpen, setDeveloperExitPromptOpen] = useState(false);
@@ -1463,8 +1462,7 @@ export default function App() {
   }, [address, paperStorageKey]);
 
   useEffect(() => {
-    deleteStorageKey(DEV_AUTH_STORAGE_KEY);
-    setDevModeAuthed(false);
+    setDevModeAuthed(Boolean(readStorageJson(DEV_AUTH_STORAGE_KEY, false)));
     setAnalyticsSnapshot(readStorageJson(ANALYTICS_STORAGE_KEY, { total: 0, events: {} }));
   }, []);
 
@@ -1710,86 +1708,6 @@ export default function App() {
     { label: 'PT available', value: `${walletProfileSummary.availablePT.toLocaleString()} PT` },
     { label: 'Backup', value: profileBackupConfigured ? 'Signed snapshot ready' : 'No signed snapshot' }
   ];
-  const getDeveloperEventCount = (eventName) => Number(analyticsSnapshot.events?.[eventName] || 0);
-  const developerClickthroughTiles = [
-    {
-      label: 'Hero CTAs',
-      value: getDeveloperEventCount('hero_discover_click') + getDeveloperEventCount('hero_route_help_click'),
-      copy: 'First-screen discovery and route-help clicks.'
-    },
-    {
-      label: 'Wallet opens',
-      value: getDeveloperEventCount('wallet_modal_open'),
-      copy: 'MetaMask entry-point opens from the homepage.'
-    },
-    {
-      label: 'Quest details',
-      value: developerAnalyticsRows.filter((row) => row.name.startsWith('module_')).reduce((sum, row) => sum + row.count, 0),
-      copy: 'Task tiles opened into their detail panels.'
-    },
-    {
-      label: 'Product briefings',
-      value: developerAnalyticsRows.filter((row) => row.name.startsWith('risk_card_')).reduce((sum, row) => sum + row.count, 0),
-      copy: 'Risk cards opened before paper or wealth routing.'
-    },
-    {
-      label: 'External modules',
-      value: getDeveloperEventCount('wealth_hub_open') + getDeveloperEventCount('paper_trading_page_open'),
-      copy: 'Click-through from Home into Wealth or Paper.'
-    },
-    {
-      label: 'Badges',
-      value: developerAnalyticsRows.filter((row) => row.name.startsWith('badge_mint_')).reduce((sum, row) => sum + row.count, 0),
-      copy: 'Task badge mint attempts captured locally.'
-    }
-  ];
-  const developerDetailPanels = [
-    {
-      id: 'clicks',
-      label: 'Click-through',
-      kicker: 'Analytics',
-      title: 'Module click-through map',
-      copy: analyticsSnapshot.total
-        ? `This browser has ${analyticsSnapshot.total} tracked clicks across ${developerTrackedSectionCount} section groups.`
-        : 'No click-through data is stored yet; start by opening wallet, quest, wealth, or paper flows.',
-      rows: developerClickthroughTiles
-    },
-    {
-      id: 'profile',
-      label: 'Wallet profile',
-      kicker: 'Current wallet',
-      title: walletLearningProfile.title,
-      copy: walletLearningProfile.copy,
-      rows: developerWalletSummaryRows
-    },
-    {
-      id: 'controls',
-      label: 'PT + gates',
-      kicker: 'Developer switch',
-      title: 'Unlimited PT edits and full local gate unlock',
-      copy: 'When the developer account is signed in, the admin controls below can write the same wallet-linked PT cash and feature override that the older developer panel exposed.',
-      rows: [
-        { label: 'Feature override', value: adminUnlockedForCurrentAccount ? 'Already on' : 'Ready', copy: 'Enable onboarding, quiz, paper unlock, and admin override for this wallet.' },
-        { label: 'PT amount box', value: `${Number(devModePtAmount || 0).toLocaleString()} PT`, copy: 'Add to or set the Home and Paper cash stores for the connected account.' },
-        { label: 'Exit policy', value: developerSessionDirty ? 'Review changes' : 'Snapshot ready', copy: 'Close can keep changes or roll back the pre-session wallet state.' }
-      ]
-    },
-    {
-      id: 'exchange',
-      label: 'Exchange pattern',
-      kicker: 'Design reference',
-      title: 'Exchange-style review buttons',
-      copy: 'Large exchange Earn and wallet pages usually split the experience into portfolio, product shelf, detail, and action confirmation. This panel mirrors that shape so judges can click into the actual module instead of reading a static admin dump.',
-      rows: [
-        { label: 'Portfolio', value: `${walletProfileSummary.remainingPT.toLocaleString()} PT`, copy: 'Show wallet-level balance, allocation, and progress first.' },
-        { label: 'Earn shelf', value: 'Product lanes', copy: 'Group products by simple earn, advanced earn, structured, and private-market lanes.' },
-        { label: 'Detail page', value: 'Before action', copy: 'Open terms, evidence, lockup, and lifecycle before subscribe or trade.' },
-        { label: 'Action controls', value: devModeAuthed ? 'Unlocked' : 'Login required', copy: 'Keep high-power controls behind a fresh developer-account sign-in.' }
-      ]
-    }
-  ];
-  const activeDeveloperDetailPanel =
-    developerDetailPanels.find((panel) => panel.id === developerDetailTopic) || developerDetailPanels[0];
   const effectiveChainId = chainId ?? liveChainId ?? null;
   const onSepolia = effectiveChainId === SEPOLIA_CHAIN_ID;
   const hasSepoliaGas = Boolean(sepoliaBalance?.value && sepoliaBalance.value > 0n);
@@ -2338,18 +2256,12 @@ export default function App() {
   }
 
   function openDeveloperMode() {
-    deleteStorageKey(DEV_AUTH_STORAGE_KEY);
     setAnalyticsSnapshot(readStorageJson(ANALYTICS_STORAGE_KEY, { total: 0, events: {} }));
     developerSessionSnapshotRef.current = captureDeveloperSessionSnapshot();
     setDeveloperSessionDirty(false);
     setDeveloperExitPromptOpen(false);
     setDevModeOpen(true);
-    setDevModeAuthed(false);
-    setDevModeUsername('');
-    setDevModePassword('');
     setDevModeError('');
-    setDevModeNotice('');
-    setDeveloperDetailTopic('clicks');
   }
 
   function handleDeveloperLogin() {
@@ -2357,10 +2269,10 @@ export default function App() {
     const normalizedPassword = devModePassword.trim();
 
     if (normalizedUsername === DEV_MODE_USERNAME && normalizedPassword === DEV_MODE_PASSWORD) {
-      deleteStorageKey(DEV_AUTH_STORAGE_KEY);
+      writeStorageJson(DEV_AUTH_STORAGE_KEY, true);
       setDevModeAuthed(true);
       setDevModeError('');
-      setDevModeNotice('Developer controls are open for this use. Close the panel and the next visit will ask for the developer account again.');
+      setDevModeNotice('Developer controls are open for this browser.');
       setAnalyticsSnapshot(readStorageJson(ANALYTICS_STORAGE_KEY, { total: 0, events: {} }));
       return;
     }
@@ -2496,11 +2408,7 @@ export default function App() {
   function finalizeDeveloperModeClose() {
     setDeveloperExitPromptOpen(false);
     setDevModeOpen(false);
-    setDevModeAuthed(false);
-    setDevModeUsername('');
-    setDevModePassword('');
     setDevModeError('');
-    deleteStorageKey(DEV_AUTH_STORAGE_KEY);
   }
 
   function handleDeveloperModeCloseRequest() {
@@ -3763,7 +3671,7 @@ export default function App() {
                 <div className="developer-auth-form">
                   <div className="wallet-modal-status">Developer sign in</div>
                   <div className="env-hint">
-                    Demo-only admin access. Use <strong>{DEV_MODE_USERNAME}</strong> / <strong>{DEV_MODE_PASSWORD}</strong>; the panel resets and asks again each time it is opened.
+                    Demo-only admin access. Credentials are shown here on purpose for local review: username <strong>{DEV_MODE_USERNAME}</strong>, password <strong>{DEV_MODE_PASSWORD}</strong>.
                   </div>
                   <label>
                     Username
@@ -3771,7 +3679,7 @@ export default function App() {
                   </label>
                   <label>
                     Password
-                    <input type="password" value={devModePassword} onChange={(event) => setDevModePassword(event.target.value)} />
+                    <input type="text" value={devModePassword} onChange={(event) => setDevModePassword(event.target.value)} />
                   </label>
                   <button className="primary-btn" onClick={handleDeveloperLogin}>
                     Open admin controls
@@ -3795,40 +3703,6 @@ export default function App() {
                       <div className="label">Sections touched</div>
                       <div className="value">{developerTrackedSectionCount}</div>
                       <div className="muted">{analyticsSnapshot.total ? `${(developerOnboardingShare * 100).toFixed(1)}% onboarding share` : 'No clicks tracked yet'}</div>
-                    </div>
-                  </div>
-                  <div className="developer-detail-tabs" aria-label="Developer detail views">
-                    {developerDetailPanels.map((panel) => (
-                      <button
-                        key={panel.id}
-                        type="button"
-                        className={`developer-detail-tab ${developerDetailTopic === panel.id ? 'active' : ''}`}
-                        onClick={() => setDeveloperDetailTopic(panel.id)}
-                      >
-                        <span>{panel.kicker}</span>
-                        <strong>{panel.label}</strong>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="developer-detail-panel">
-                    <div className="developer-detail-panel-head">
-                      <div>
-                        <div className="eyebrow">{activeDeveloperDetailPanel.kicker}</div>
-                        <h3>{activeDeveloperDetailPanel.title}</h3>
-                      </div>
-                      <span className={`pill ${devModeAuthed ? 'risk-low' : 'risk-medium'}`}>
-                        {devModeAuthed ? 'Signed in' : 'Login required'}
-                      </span>
-                    </div>
-                    <p className="muted">{activeDeveloperDetailPanel.copy}</p>
-                    <div className="developer-detail-grid">
-                      {activeDeveloperDetailPanel.rows.map((row) => (
-                        <div className="developer-detail-row" key={row.label}>
-                          <span>{row.label}</span>
-                          <strong>{row.value}</strong>
-                          {row.copy ? <em>{row.copy}</em> : null}
-                        </div>
-                      ))}
                     </div>
                   </div>
                   <div className="developer-admin-grid">
