@@ -3374,7 +3374,7 @@ const REPLAY_ROUTE_UI = {
     walkthrough: [
       {
         label: '1. Choose payoff template',
-        detail: 'Start from Collar, Covered Call, Protective Put, Spread, or Structured Note before touching advanced legs.'
+        detail: 'Start from Protected Growth, Premium Income, or Auto Hedge / Downside Floor before touching advanced legs.'
       },
       {
         label: '2. Read payoff preview',
@@ -3521,8 +3521,8 @@ const REPLAY_ROUTE_FOCUS_OPTIONS = {
   borrow: [
     {
       id: 'collar',
-      label: 'Collar',
-      panelTitle: 'Collar payoff route',
+      label: 'Protected Growth',
+      panelTitle: 'Protected Growth route',
       summary: 'Hold the underlying, sell some upside, and buy downside protection so the payoff is visibly smoother but capped.',
       lessons: [
         'A collar is the natural next step after a protective hedge.',
@@ -3532,8 +3532,8 @@ const REPLAY_ROUTE_FOCUS_OPTIONS = {
     },
     {
       id: 'covered',
-      label: 'Covered call',
-      panelTitle: 'Covered-call route',
+      label: 'Premium Income',
+      panelTitle: 'Premium Income route',
       summary: 'Hold the underlying and sell upside for premium. Income is real, but upside is capped and downside remains.',
       lessons: [
         'Covered-call income is option premium, not free yield.',
@@ -3543,46 +3543,13 @@ const REPLAY_ROUTE_FOCUS_OPTIONS = {
     },
     {
       id: 'protective-put',
-      label: 'Protective put',
-      panelTitle: 'Protective-put route',
+      label: 'Auto Hedge / Downside Floor',
+      panelTitle: 'Auto Hedge / Downside Floor route',
       summary: 'Hold the underlying and buy downside insurance. The cost is premium drag.',
       lessons: [
         'A protective put is the cleanest option version of insurance.',
         'Premium drag is the price paid for a more visible downside floor.',
         'The preview should show how much protection remains after cost.'
-      ]
-    },
-    {
-      id: 'vertical-spread',
-      label: 'Vertical spread',
-      panelTitle: 'Spread route',
-      summary: 'Use capped-risk option legs to show defined upside, defined downside, and breakeven.',
-      lessons: [
-        'Spreads are multi-leg templates with a defined risk box.',
-        'The user should compare max gain, max loss, and breakeven before execution.',
-        'A spread is easier to teach as one template than as separate option-chain clicks.'
-      ]
-    },
-    {
-      id: 'structured',
-      label: 'Structured note',
-      panelTitle: 'Structured note route',
-      summary: 'Use payoff cards such as twin-win, shark-fin, or barrier notes, but keep barrier and path risk visible.',
-      lessons: [
-        'Structured products look simple on the surface and complicated in the payoff underneath.',
-        'These should be taught as advanced payoff logic, never as ordinary stable yield.',
-        'Barrier, call, and path conditions must stay visible before any yield number is shown.'
-      ]
-    },
-    {
-      id: 'collateral-loop',
-      label: 'Collateral loop',
-      panelTitle: 'Collateral loop route',
-      summary: 'Use a calmer asset as collateral, open a support line, and route the second sleeve only if the spread survives all drag without treating support as new wallet cash.',
-      lessons: [
-        'Collateral loops turn calm assets into leveraged structures quickly.',
-        'Borrow carry and liquidation penalty must be shown before the extra headline yield.',
-        'This is the strategy home for collateral recycling rather than the base Earn page.'
       ]
     }
   ],
@@ -10859,9 +10826,9 @@ function PaperTradingInner() {
   }
   const optionStrategyPreview =
     selectedAdvancedRoute === 'borrow'
-      ? {
-          collar: {
-            title: 'Collar payoff preview',
+        ? {
+            collar: {
+            title: 'Protected Growth preview',
             copy: 'Hold the underlying, sell upside, and buy downside protection.',
             rows: [
               { label: 'Max upside', value: 'Capped near +12%' },
@@ -10872,7 +10839,7 @@ function PaperTradingInner() {
             legs: ['Hold underlying sleeve', 'Sell 110% call', 'Buy 85% put']
           },
           covered: {
-            title: 'Covered-call preview',
+            title: 'Premium Income preview',
             copy: 'Hold the underlying and sell upside for option premium.',
             rows: [
               { label: 'Max upside', value: 'Capped at strike' },
@@ -10883,7 +10850,7 @@ function PaperTradingInner() {
             legs: ['Hold underlying sleeve', 'Sell OTM call', 'Keep premium if below strike']
           },
           'protective-put': {
-            title: 'Protective-put preview',
+            title: 'Auto Hedge / Downside Floor preview',
             copy: 'Hold the underlying and pay premium for a visible downside floor.',
             rows: [
               { label: 'Max upside', value: 'Open after premium' },
@@ -10892,39 +10859,6 @@ function PaperTradingInner() {
               { label: 'Breakeven', value: 'Entry plus premium' }
             ],
             legs: ['Hold underlying sleeve', 'Buy OTM put', 'Keep upside after cost']
-          },
-          'vertical-spread': {
-            title: 'Vertical spread preview',
-            copy: 'Use two same-expiry option legs to define max gain and max loss.',
-            rows: [
-              { label: 'Max upside', value: 'Defined' },
-              { label: 'Max downside', value: 'Defined' },
-              { label: 'Premium', value: 'Net debit / credit' },
-              { label: 'Breakeven', value: 'Strike plus net cost' }
-            ],
-            legs: ['Buy option leg', 'Sell farther strike', 'Same expiry on both legs']
-          },
-          structured: {
-            title: 'Structured-note preview',
-            copy: 'Use a payoff card with barrier, cap, and path risk visible.',
-            rows: [
-              { label: 'Max upside', value: 'Payoff formula cap' },
-              { label: 'Max downside', value: 'Barrier dependent' },
-              { label: 'Premium', value: 'Embedded in note' },
-              { label: 'Breakeven', value: 'Issuer formula' }
-            ],
-            legs: ['Underlying reference', 'Embedded option payoff', 'Issuer / barrier condition']
-          },
-          'collateral-loop': {
-            title: 'Collateral-loop preview',
-            copy: 'Use collateral plus a strategy sleeve only if spread survives borrow drag.',
-            rows: [
-              { label: 'Max upside', value: 'Spread after borrow' },
-              { label: 'Max downside', value: 'Liquidation path' },
-              { label: 'Carry drag', value: 'Borrow + fees' },
-              { label: 'Breakeven', value: 'Borrow APR hurdle' }
-            ],
-            legs: ['Pledge calmer sleeve', 'Borrow PT', 'Route borrowed side into template']
           }
         }[selectedRouteFocusConfig?.id || 'collar'] || null
       : null;

@@ -2690,9 +2690,6 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-                <button className="ghost-btn compact wallet-nickname-top-btn" onClick={openWalletModal}>
-                  {t('Wallet nickname', '钱包昵称')}
-                </button>
                 <button className={`ghost-btn wallet-header-btn ${isConnected ? 'connected' : ''}`} onClick={openWalletModal} disabled={isPending}>
                   {isConnected
                     ? t(`Wallet connected ${walletDisplayName}`, `钱包已连接 ${walletDisplayName}`)
@@ -3620,51 +3617,6 @@ export default function App() {
             </div>
           </section>
 
-          <section className="card" id="walletNickname">
-            <div className="section-head">
-              <div>
-                <div className="eyebrow">Wallet nickname</div>
-                <h2>Edit the local display name for this wallet</h2>
-              </div>
-            </div>
-            {isConnected ? (
-              <div className="wallet-nickname-editor">
-                <div className="env-hint">
-                  <strong>Current label.</strong> {walletDisplayName}
-                </div>
-                <label className="wallet-nickname-label">
-                  Nickname
-                  <input
-                    value={walletNicknameDraft}
-                    onChange={(event) => setWalletNicknameDraft(event.target.value.slice(0, WALLET_NICKNAME_MAX_LENGTH))}
-                    placeholder="Give this wallet a short name"
-                    maxLength={WALLET_NICKNAME_MAX_LENGTH}
-                  />
-                </label>
-                <div className="wallet-nickname-help">
-                  This nickname is stored locally on this device and replaces the short wallet address across the RiskLens demo.
-                </div>
-                <div className="toolbar">
-                  <button className="secondary-btn" onClick={handleSaveWalletNickname}>
-                    Save nickname
-                  </button>
-                  <button className="ghost-btn" onClick={() => {
-                    setWalletNicknameDraft('');
-                    const clearedNickname = writeWalletNickname(address, '');
-                    setWalletNickname(clearedNickname);
-                    setWalletNicknameFeedback('Nickname cleared. The short wallet address will show again.');
-                  }}>
-                    Clear nickname
-                  </button>
-                </div>
-                {walletNicknameFeedback ? <div className="env-hint">{walletNicknameFeedback}</div> : null}
-              </div>
-            ) : (
-              <div className="env-hint">
-                <strong>Connect first.</strong> Open MetaMask, connect a wallet, then you can save a nickname here and reuse it across the demo.
-              </div>
-            )}
-          </section>
         </main>
       </div>
 

@@ -2934,6 +2934,24 @@ label {
     radial-gradient(circle at top right, rgba(34,109,64,0.14), transparent 48%);
 }
 
+.wealth-ai-recommend-button {
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  appearance: none;
+  font: inherit;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.wealth-ai-recommend-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(164,255,47,0.36);
+  background:
+    linear-gradient(180deg, rgba(164,255,47,0.1), rgba(255,255,255,0.04)),
+    radial-gradient(circle at top right, rgba(34,109,64,0.18), transparent 48%);
+}
+
 .wealth-ai-recommend-title {
   display: grid;
   gap: 6px;
@@ -3080,6 +3098,14 @@ label {
   margin-top: 18px;
 }
 
+.wealth-opportunity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
 .wealth-opportunity-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3095,7 +3121,7 @@ label {
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 18px;
   background: rgba(255,255,255,0.035);
-  min-height: 220px;
+  min-height: 118px;
 }
 
 .wealth-opportunity-card.active {
@@ -3356,13 +3382,13 @@ label {
 
 .wealth-compare-chart-shell svg {
   width: 100%;
-  height: 280px;
+  height: 340px;
   display: block;
 }
 
 .wealth-compare-legend {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
 }
 
@@ -3655,6 +3681,84 @@ label {
 .wealth-position-card {
   display: grid;
   gap: 14px;
+}
+
+.wealth-position-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wealth-position-head-actions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.wealth-position-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.wealth-position-metric {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.028);
+}
+
+.wealth-activity-section {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.wealth-activity-list {
+  display: grid;
+  gap: 10px;
+}
+
+.wealth-activity-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.03);
+}
+
+.wealth-activity-badges {
+  display: grid;
+  gap: 8px;
+}
+
+.wealth-activity-main {
+  min-width: 0;
+}
+
+.wealth-activity-side {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  text-align: right;
+}
+
+.wealth-activity-side strong {
+  font-size: 15px;
+}
+
+.wealth-activity-side span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .wealth-modal-backdrop {
@@ -8934,7 +9038,10 @@ label {
 
 .wealth-opportunity-card.clickable {
   width: 100%;
-  min-height: 170px;
+  min-height: 118px;
+  display: grid;
+  gap: 10px;
+  align-content: space-between;
   text-align: left;
   cursor: pointer;
   color: inherit;
@@ -9042,6 +9149,77 @@ label {
   gap: 10px;
 }
 
+.wealth-dual-simulator {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.024);
+}
+
+.wealth-dual-simulator-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wealth-dual-simulator-chart {
+  display: grid;
+  gap: 10px;
+}
+
+.wealth-dual-chart-axis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.wealth-dual-chart-axis span:nth-child(2) {
+  text-align: center;
+}
+
+.wealth-dual-chart-axis span:last-child {
+  text-align: right;
+}
+
+.wealth-dual-sim-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.wealth-dual-sample-grid,
+.wealth-dual-flow-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.wealth-dual-sample-value {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.wealth-dual-sample-value span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.wealth-dual-outcome-grid-compact .entry-copy,
+.wealth-dual-flow-grid .entry-copy {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .wealth-action-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -9065,6 +9243,12 @@ label {
   .wealth-recommended-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .wealth-dual-sample-grid,
+  .wealth-dual-flow-grid,
+  .wealth-dual-sim-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -9072,15 +9256,51 @@ label {
   .wealth-task-detail-grid,
   .wealth-recommended-strip,
   .wealth-opportunity-grid.compact,
+  .wealth-compare-toolbar,
   .wealth-settlement-policy-card,
   .wealth-lifecycle-map,
   .wealth-dual-visual-main,
-  .wealth-dual-branch-grid {
+  .wealth-dual-branch-grid,
+  .wealth-dual-sample-grid,
+  .wealth-dual-flow-grid,
+  .wealth-dual-sim-strip,
+  .wealth-position-metric-grid {
     grid-template-columns: 1fr;
   }
 
   .wealth-lifecycle-link {
     justify-content: start;
+  }
+
+  .wealth-ai-recommend-card,
+  .wealth-activity-row {
+    grid-template-columns: 1fr;
+  }
+
+  .wealth-position-head,
+  .wealth-dual-simulator-head,
+  .wealth-opportunity-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .wealth-activity-row {
+    justify-items: start;
+  }
+
+  .wealth-position-head-actions,
+  .wealth-activity-side {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .wealth-position-head-actions {
+    width: 100%;
+  }
+
+  .wealth-position-head-actions .ghost-btn,
+  .wealth-activity-row .ghost-btn {
+    justify-self: start;
   }
 
   .home-briefing-pill-row {
