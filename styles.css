@@ -1301,6 +1301,22 @@ label {
   font-weight: 700;
 }
 
+.developer-auth-form input,
+.developer-pt-control input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 34, 0.16);
+  background: rgba(255,255,255,0.94);
+  color: #111827;
+  outline: none;
+}
+
+.developer-auth-form input::placeholder,
+.developer-pt-control input::placeholder {
+  color: rgba(17, 24, 39, 0.55);
+}
+
 .developer-analytics {
   display: grid;
   gap: 18px;
@@ -1328,6 +1344,46 @@ label {
   color: var(--text);
   font-size: 13px;
   font-weight: 800;
+}
+
+.developer-profile-card,
+.developer-exit-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  text-align: left;
+}
+
+.developer-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.developer-profile-item {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.14);
+}
+
+.developer-profile-item span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.developer-profile-item strong {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .developer-table-wrap {
@@ -1514,7 +1570,7 @@ label {
 }
 
 .risk-card-picker {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
 }
 
 .risk-card-tab {
@@ -1546,6 +1602,42 @@ label {
   border-radius: 18px;
   border: 1px solid rgba(151, 169, 191, 0.14);
   background: rgba(255,255,255,0.025);
+}
+
+.risk-checkpoint-shell {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+}
+
+.risk-checkpoint-options {
+  display: grid;
+  gap: 8px;
+}
+
+.risk-checkpoint-option {
+  padding: 11px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(151, 169, 191, 0.14);
+  background: rgba(0,0,0,0.14);
+  color: var(--muted);
+  text-align: left;
+  line-height: 1.5;
+}
+
+.risk-checkpoint-option.active {
+  color: var(--text);
+  border-color: rgba(164,255,47,0.28);
+  background: rgba(164,255,47,0.08);
+}
+
+.risk-checkpoint-note.success {
+  border-color: rgba(34, 109, 64, 0.24);
+  background: rgba(34, 109, 64, 0.08);
+  color: #eef8d8;
 }
 
 .risk-card-top {
@@ -2611,11 +2703,23 @@ label {
 }
 
 .wealth-ai-recommend-title {
+  display: grid;
+  gap: 6px;
   margin: 5px 0 8px;
   color: var(--text);
+}
+
+.wealth-ai-recommend-product {
   font-size: 20px;
   font-weight: 900;
-  line-height: 1.28;
+  line-height: 1.2;
+}
+
+.wealth-ai-recommend-reason {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--muted);
 }
 
 .wealth-profile-storage-card {
@@ -3066,8 +3170,8 @@ label {
 }
 
 .detail-nav-chart {
-  height: 240px;
-  padding: 12px;
+  height: clamp(260px, 34vw, 320px);
+  padding: 14px;
   margin-top: 14px;
 }
 
@@ -4561,7 +4665,7 @@ label {
 }
 
 .paper-reward-task-row {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
 }
 
 .paper-reward-detail-shell {
@@ -8574,6 +8678,17 @@ label {
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+}
+
+.wealth-diligence-compact-card {
+  margin-top: 16px;
+}
+
+.wealth-diligence-summary-only .wealth-judge-grid,
+.wealth-diligence-summary-only .wealth-detail-grid,
+.wealth-diligence-summary-only .wealth-rights-grid,
+.wealth-diligence-summary-only > .wealth-inline-note.paper-inline-note {
+  display: none;
 }
 
 @media (max-width: 1100px) {

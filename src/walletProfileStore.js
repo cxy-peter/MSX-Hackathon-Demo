@@ -162,11 +162,55 @@ function normalizePaperReplay(value = {}) {
   };
 }
 
+function normalizeCollateralLedger(value = {}) {
+  if (!isObject(value)) return {};
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([productId, entry]) => {
+        const pledgedShares = roundNumber(Number(entry?.pledgedShares || 0), 6);
+        if (!Number.isFinite(pledgedShares) || pledgedShares <= 0) return null;
+
+        return [
+          productId,
+          {
+            pledgedShares,
+            borrowedAmount: roundNumber(Number(entry?.borrowedAmount || 0), 2),
+            advanceRate: Number(entry?.advanceRate || 0),
+            termMode: entry?.termMode || 'flex',
+            apy: Number(entry?.apy || 0),
+            updatedAt: entry?.updatedAt || '',
+            supportOnly: Boolean(entry?.supportOnly)
+          }
+        ];
+      })
+      .filter(Boolean)
+  );
+}
+
+function sumLegacyCashIncludedBorrow(collateral = {}) {
+  if (!isObject(collateral)) return 0;
+  return roundNumber(
+    Object.values(collateral).reduce((sum, entry) => {
+      if (entry?.supportOnly) return sum;
+      const borrowed = Number(entry?.borrowedAmount || 0);
+      return sum + (Number.isFinite(borrowed) ? borrowed : 0);
+    }, 0),
+    2
+  );
+}
+
+function sanitizeWealthCash(value, collateral = {}) {
+  const rawCash = roundNumber(Number(value ?? UNIFIED_PT_STARTING_BALANCE), 2);
+  return roundNumber(Math.max(0, rawCash - sumLegacyCashIncludedBorrow(collateral)), 2);
+}
+
 function normalizeWealth(value = {}) {
+  const collateral = normalizeCollateralLedger(value.collateral);
   return {
-    cash: roundNumber(Number(value.cash ?? UNIFIED_PT_STARTING_BALANCE), 2),
+    cash: sanitizeWealthCash(value.cash, collateral),
     positions: isObject(value.positions) ? value.positions : {},
-    collateral: isObject(value.collateral) ? value.collateral : {},
+    collateral,
     activityLog: Array.isArray(value.activityLog) ? value.activityLog : []
   };
 }
@@ -195,6 +239,14 @@ function sumBorrowed(collateral = {}) {
     }, 0),
     2
   );
+}
+
+export function getWealthSpendableCash(wealthState = {}) {
+  return normalizeWealth(wealthState).cash;
+}
+
+export function getWealthBorrowedSupport(wealthState = {}) {
+  return sumBorrowed(normalizeWealth(wealthState).collateral);
 }
 
 export function collectLegacyWalletHistory(address) {
@@ -400,7 +452,7 @@ export function getWalletProfileSummary(profile = {}) {
   const wealthDeployedPT = sumPrincipal(normalized.wealth.state.positions);
   const wealthBorrowedPT = sumBorrowed(normalized.wealth.state.collateral);
   const totalDeployedPT = roundNumber(paperDeployedPT + wealthDeployedPT, 2);
-  const reservePT = roundNumber(Math.max(0, availablePT - totalDeployedPT + wealthBorrowedPT), 2);
+  const reservePT = roundNumber(Math.max(0, availablePT - totalDeployedPT), 2);
 
   return {
     symbol: UNIFIED_PT_SYMBOL,

@@ -24,6 +24,7 @@ import {
 import {
   UNIFIED_PT_MILESTONE_REWARD,
   UNIFIED_PT_STARTING_BALANCE,
+  getWalletProfileKey,
   getWalletProfileSummary,
   getWalletProfilePointerKey,
   readRecoveredHomePaperBalance,
@@ -32,58 +33,554 @@ import {
   writeWalletProfilePatch
 } from './walletProfileStore';
 
+const RISK_REVIEW_REQUIRED = 4;
+
 const products = [
   {
-    id: 'ousg',
-    ticker: 'OUSG',
-    name: 'Ondo Short-Term US Government Treasuries',
+    id: 'superstate-ustb',
+    ticker: 'USTB',
+    name: 'Superstate USTB',
     risk: 'Low',
-    summary: 'A treasury-style onchain product that feels easier for Web2 users to understand than tokenized stock wrappers.',
-    useCase: 'Stable reserve and simple first RWA explanation',
+    summary: 'Tokenized short-duration Treasury fund with visible NAV, official yield framing, and market-day redemption controls.',
+    useCase: 'Cash reserve and first RWA explanation',
     beginnerFit: 'Strong',
-    sourceOfReturn: 'Short-duration treasury yield.',
-    worstCase: 'Yield declines, access is gated, or liquidity becomes less convenient than expected.'
+    sourceOfReturn: 'Short-duration Treasury bill carry inside a tokenized fund share.',
+    worstCase: 'Yield resets lower, access rules matter more than expected, or users mistake a fund share for unrestricted dollars.',
+    firstDisclosure: 'Explain that the user owns a fund share with NAV and redemption rails, not a bank deposit.',
+    reviewPrompt: 'What should the user hear first?',
+    reviewOptions: [
+      {
+        id: 'fund-share',
+        label: 'It is a tokenized fund share with NAV and redemption rules.',
+        correct: true,
+        feedback: 'Right. Start with ownership and liquidity mechanics before talking about yield.'
+      },
+      {
+        id: 'free-dollar',
+        label: 'It behaves like unrestricted cash with no gating or settlement steps.',
+        correct: false,
+        feedback: 'Too loose. USTB is cleaner than many products, but it still has fund and redemption rules.'
+      },
+      {
+        id: 'growth-bet',
+        label: 'The main attraction is directional upside if risk assets rally.',
+        correct: false,
+        feedback: 'That misses the point. USTB is a reserve sleeve, not a growth trade.'
+      }
+    ],
+    quiz: {
+      summary: 'Use USTB to test whether the user can separate tokenized fund shares from cash-account language.',
+      successCopy: 'Correct framing: explain the share wrapper, Treasury carry, and market-day redemption path together.',
+      failureCopy: 'For USTB, the first job is to explain ownership and redemption mechanics before the yield headline.',
+      questions: [
+        {
+          id: 'owns',
+          prompt: 'What does the user actually own?',
+          correct: 'fund-share',
+          options: [
+            { id: 'fund-share', label: 'Tokenized fund shares with NAV-based redemption rules' },
+            { id: 'checking-account', label: 'A checking-account style dollar balance with no transfer rules' },
+            { id: 'leveraged-note', label: 'A leveraged rate note that depends on price upside' }
+          ]
+        },
+        {
+          id: 'returnSource',
+          prompt: 'What drives the return here?',
+          correct: 'treasury-carry',
+          options: [
+            { id: 'treasury-carry', label: 'Short-duration Treasury bill carry inside the fund' },
+            { id: 'token-burn', label: 'Token burns and reward emissions' },
+            { id: 'equity-beta', label: 'Listed-equity upside and option premium' }
+          ]
+        },
+        {
+          id: 'firstDisclosure',
+          prompt: 'Which disclosure must come first?',
+          correct: 'nav-redemption',
+          options: [
+            { id: 'nav-redemption', label: 'NAV timing, redemption rails, and fund-share access rules' },
+            { id: 'moonshot', label: 'The upside story if rates or crypto rally' },
+            { id: 'gas-only', label: 'Gas fees are the only real thing users need to know' }
+          ]
+        }
+      ]
+    }
   },
   {
-    id: 'usdy',
-    ticker: 'USDY',
-    name: 'Ondo USDY',
+    id: 'ondo-ousg',
+    ticker: 'OUSG',
+    name: 'Ondo OUSG',
     risk: 'Low',
-    summary: 'Feels closer to a wealth product than a raw DeFi strategy, but still needs eligibility and disclosure framing.',
-    useCase: 'Steady yield for users who are not chasing equity upside',
+    summary: 'Treasury access product that looks simple on the surface but still needs wrapper and redemption explanation.',
+    useCase: 'Treasury sleeve with cleaner reserve behavior than high-yield strategies',
     beginnerFit: 'Good',
-    sourceOfReturn: 'Short-duration U.S. asset yield.',
-    worstCase: 'Eligibility limits, lower yield than expected, or secondary liquidity friction.'
+    sourceOfReturn: 'Treasury bill income delivered through an onchain wrapper.',
+    worstCase: 'Liquidity or eligibility assumptions break before the user expects them to.',
+    firstDisclosure: 'Lead with the wrapper and exit path, not with a raw APY number.',
+    reviewPrompt: 'What should the user compare first?',
+    reviewOptions: [
+      {
+        id: 'ownership-exit',
+        label: 'What is owned, how the wrapper works, and how redemption happens',
+        correct: true,
+        feedback: 'Yes. Treasury products stay understandable only if ownership and exit stay visible.'
+      },
+      {
+        id: 'highest-apy',
+        label: 'Whether the APY is the highest on the page',
+        correct: false,
+        feedback: 'That turns a reserve product into a yield chase, which is exactly what we want to avoid.'
+      },
+      {
+        id: 'meme-beta',
+        label: 'How fast it can move if the market becomes risk-on',
+        correct: false,
+        feedback: 'OUSG is not a beta expression. It should be framed as reserve and treasury access.'
+      }
+    ]
   },
   {
-    id: 'msxq1',
-    ticker: 'MSXQ1',
-    name: 'MSX Quant AI Fund #1',
+    id: 'hashnote-usyc',
+    ticker: 'USYC',
+    name: 'Hashnote USYC',
+    risk: 'Low',
+    summary: 'Yield-bearing dollar sleeve that only stays simple if the UI separates yield, fees, and collateral utility.',
+    useCase: 'Operational cash that still earns something',
+    beginnerFit: 'Good with explanation',
+    sourceOfReturn: 'Short-duration Treasury and repo income after fund costs.',
+    worstCase: 'Users chase the yield and miss fee drag, access rules, or collateral assumptions.',
+    firstDisclosure: 'Show what part is fund yield and what part is wallet utility.',
+    reviewPrompt: 'What misunderstanding should the card prevent?',
+    reviewOptions: [
+      {
+        id: 'yield-not-cash',
+        label: 'That a yield-bearing dollar sleeve is still a product with rules, not free cash interest',
+        correct: true,
+        feedback: 'Exactly. USYC works only if the app shows both the yield source and the wrapper assumptions.'
+      },
+      {
+        id: 'only-stablecoin',
+        label: 'That it is just another stablecoin with no product structure underneath',
+        correct: false,
+        feedback: 'Close to the issue, but be more explicit: the user still owns a product with yield, fees, and access terms.'
+      },
+      {
+        id: 'private-equity',
+        label: 'That it is basically a private-equity allocation',
+        correct: false,
+        feedback: 'That is the wrong risk lane. USYC belongs in the cash-and-yield lane.'
+      }
+    ]
+  },
+  {
+    id: 'superstate-uscc',
+    ticker: 'USCC',
+    name: 'Superstate USCC',
     risk: 'Medium',
-    summary: 'A managed-strategy style product where plain-language explanation matters more than labels alone.',
-    useCase: 'Simple on-platform wealth entry for users who prefer a managed strategy',
-    beginnerFit: 'Needs stronger disclosure',
-    sourceOfReturn: 'Systematic strategy performance and market regime fit.',
-    worstCase: 'Model underperformance, drawdowns, or unclear return expectations.'
+    summary: 'Strategy-style yield fund driven by basis, staking, and collateral management rather than simple Treasury carry.',
+    useCase: 'Higher-income sleeve for users who already understand NAV and execution risk',
+    beginnerFit: 'Needs context',
+    sourceOfReturn: 'Basis capture, staking rewards, and Treasury collateral income.',
+    worstCase: 'Headline yield hides execution, basis, and market risk.',
+    firstDisclosure: 'Do not let users confuse strategy yield with cash parking.',
+    reviewPrompt: 'Which explanation matters most here?',
+    reviewOptions: [
+      {
+        id: 'strategy-yield',
+        label: 'The yield comes from a managed strategy, not from simple cash interest',
+        correct: true,
+        feedback: 'Right. USCC should be taught as an execution product inside a fund wrapper.'
+      },
+      {
+        id: 'same-as-treasury',
+        label: 'It is basically the same as Treasury carry, just with a better headline number',
+        correct: false,
+        feedback: 'That is the exact mistake this card should stop.'
+      },
+      {
+        id: 'no-nav',
+        label: 'NAV and redemption controls matter less because the strategy is diversified',
+        correct: false,
+        feedback: 'Still wrong. Strategy products still need visible NAV and exit controls.'
+      }
+    ],
+    quiz: {
+      summary: 'Use USCC to test whether the user can tell a strategy-yield fund apart from a cash sleeve.',
+      successCopy: 'Correct framing: the user owns fund shares, the return comes from basis and execution, and liquidity plus strategy risk must be disclosed together.',
+      failureCopy: 'USCC should never be sold as simple cash yield. The strategy engine and redemption controls have to stay visible.',
+      questions: [
+        {
+          id: 'owns',
+          prompt: 'What does the user actually own?',
+          correct: 'strategy-fund',
+          options: [
+            { id: 'strategy-fund', label: 'Tokenized private-fund shares around a managed strategy sleeve' },
+            { id: 'spot-btc', label: 'Direct spot BTC with no wrapper assumptions' },
+            { id: 'cash-account', label: 'A treasury cash account with no strategy engine' }
+          ]
+        },
+        {
+          id: 'returnSource',
+          prompt: 'What drives the return here?',
+          correct: 'basis-staking',
+          options: [
+            { id: 'basis-staking', label: 'Basis capture, staking rewards, and collateral management' },
+            { id: 'simple-tbill', label: 'Only Treasury bill carry with no trading layer' },
+            { id: 'stock-split', label: 'Listed-equity upside and stock splits' }
+          ]
+        },
+        {
+          id: 'firstDisclosure',
+          prompt: 'Which disclosure must come first?',
+          correct: 'strategy-risk',
+          options: [
+            { id: 'strategy-risk', label: 'This is strategy yield with execution and liquidity risk, not plain cash parking' },
+            { id: 'highest-coupon', label: 'The headline yield is enough for most users to judge fit' },
+            { id: 'gas-only', label: 'Only wallet gas costs matter because the fund is diversified' }
+          ]
+        }
+      ]
+    }
   },
   {
-    id: 'tslax',
-    ticker: 'TSLAX',
-    name: 'Tokenized Tesla Wrapper',
+    id: 'apollo-acred',
+    ticker: 'ACRED',
+    name: 'Apollo ACRED',
+    risk: 'Medium',
+    summary: 'Tokenized private-credit fund with higher yield, slower liquidity, and real underwriting risk.',
+    useCase: 'Income sleeve after the user accepts credit and liquidity trade-offs',
+    beginnerFit: 'Needs strong disclosure',
+    sourceOfReturn: 'Private-credit coupon income and active portfolio construction.',
+    worstCase: 'Credit losses, markdowns, or redemption limits eat the extra yield.',
+    firstDisclosure: 'Higher yield comes from credit and liquidity risk, not from a free lunch.',
+    reviewPrompt: 'What should this card force the user to say out loud?',
+    reviewOptions: [
+      {
+        id: 'credit-risk',
+        label: 'The extra income exists because the user is underwriting credit and liquidity risk',
+        correct: true,
+        feedback: 'Exactly. This is where the page has to translate yield into underwriting and exit trade-offs.'
+      },
+      {
+        id: 'same-cash',
+        label: 'It is just a stronger version of a Treasury reserve sleeve',
+        correct: false,
+        feedback: 'No. Private credit should never be framed like Treasury cash management.'
+      },
+      {
+        id: 'instant-liquidity',
+        label: 'Liquidity is effectively the same as listed ETF or stablecoin products',
+        correct: false,
+        feedback: 'Wrong lane. Redemption and valuation cadence are part of the risk.'
+      }
+    ],
+    quiz: {
+      summary: 'Use ACRED to test whether the user can tie extra yield to underwriting and redemption trade-offs.',
+      successCopy: 'Correct framing: ACRED is private-credit fund exposure, paid for by credit spread and slower liquidity, not by a safer cash mechanic.',
+      failureCopy: 'For ACRED, the key is to connect higher yield with credit underwriting, valuation marks, and slower liquidity.',
+      questions: [
+        {
+          id: 'owns',
+          prompt: 'What does the user actually own?',
+          correct: 'private-credit-fund',
+          options: [
+            { id: 'private-credit-fund', label: 'Tokenized private-credit fund exposure with managed lending risk' },
+            { id: 'money-market', label: 'A government money-market share with same-day certainty' },
+            { id: 'common-stock', label: 'Listed common stock with corporate voting rights' }
+          ]
+        },
+        {
+          id: 'returnSource',
+          prompt: 'What drives the return here?',
+          correct: 'credit-spread',
+          options: [
+            { id: 'credit-spread', label: 'Private-credit coupon income, borrower spread, and portfolio management' },
+            { id: 'staking', label: 'Pure staking rewards with no borrower exposure' },
+            { id: 'rate-only', label: 'Only short-duration Treasury carry with no credit work' }
+          ]
+        },
+        {
+          id: 'firstDisclosure',
+          prompt: 'Which disclosure must come first?',
+          correct: 'liquidity-underwriting',
+          options: [
+            { id: 'liquidity-underwriting', label: 'Liquidity, markdown, and underwriting risk explain why the yield is higher' },
+            { id: 'yield-headline', label: 'The gross yield headline is enough if it is above Treasury products' },
+            { id: 'wallet-fees', label: 'Wallet transaction fees are the main risk to mention first' }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    id: 'private-watchlist',
+    ticker: 'PRIVATE',
+    name: 'Private Watchlist / SPV Access',
     risk: 'High',
-    summary: 'Good for paper trading demos, but the wrong first touchpoint for a confused newcomer.',
-    useCase: 'High-beta stock upside with crypto-style accessibility',
+    summary: 'Pre-IPO and SPV-style access where transfer rules, lockups, and exit timing matter more than a price chart.',
+    useCase: 'Private-market education and watchlist planning',
     beginnerFit: 'Poor',
-    sourceOfReturn: 'Single-name equity volatility.',
-    worstCase: 'Fast downside, spread shock, and event-driven misunderstanding.'
+    sourceOfReturn: 'Event-driven valuation changes, tender windows, IPO, or acquisition outcomes.',
+    worstCase: 'The user can be right on the company story and still get trapped by transfer, mark, or exit uncertainty.',
+    firstDisclosure: 'Teach transfer, rights, and liquidity before valuation excitement.',
+    reviewPrompt: 'What is the first thing to make explicit?',
+    reviewOptions: [
+      {
+        id: 'transfer-rights',
+        label: 'Transfer restrictions, information rights, and how liquidity might actually appear',
+        correct: true,
+        feedback: 'Yes. Private access is a rights-and-exit problem before it is a chart problem.'
+      },
+      {
+        id: 'daily-price',
+        label: 'The daily price path and whether it beats listed beta this week',
+        correct: false,
+        feedback: 'That makes private access sound liquid when it is not.'
+      },
+      {
+        id: 'gas-cost',
+        label: 'Gas cost optimization for frequent trading',
+        correct: false,
+        feedback: 'This is not the core issue. Private access is about documents, transfer, and exit uncertainty.'
+      }
+    ],
+    quiz: {
+      summary: 'Use the private watchlist to test whether the user can shift from exchange thinking to rights-and-exit thinking.',
+      successCopy: 'Correct framing: private access is about gated ownership, event-driven marks, and uncertain liquidity windows.',
+      failureCopy: 'Private-market cards should lead with transfer rights and exit timing, not with pseudo-daily trading language.',
+      questions: [
+        {
+          id: 'owns',
+          prompt: 'What does the user actually own?',
+          correct: 'gated-access',
+          options: [
+            { id: 'gated-access', label: 'A gated private-market allocation or SPV-style access route' },
+            { id: 'exchange-spot', label: 'Spot shares on an exchange with continuous liquidity' },
+            { id: 'cash-note', label: 'A short-duration cash note with daily redemption certainty' }
+          ]
+        },
+        {
+          id: 'returnSource',
+          prompt: 'What drives the return here?',
+          correct: 'event-driven',
+          options: [
+            { id: 'event-driven', label: 'Secondary marks, tender windows, IPO, or acquisition events' },
+            { id: 'coupon-income', label: 'Recurring coupon income from borrower spread' },
+            { id: 'staking-yield', label: 'Staking rewards with no transfer restrictions' }
+          ]
+        },
+        {
+          id: 'firstDisclosure',
+          prompt: 'Which disclosure must come first?',
+          correct: 'rights-liquidity',
+          options: [
+            { id: 'rights-liquidity', label: 'Transfer rights, documents, and when liquidity might actually appear' },
+            { id: 'price-target', label: 'A short-term price target and weekly upside scenario' },
+            { id: 'gas-only', label: 'The wallet gas budget needed for active trading' }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    id: 'xstocks-public-holdings',
+    ticker: 'XSTOCKS',
+    name: 'xStocks / Public Holdings',
+    risk: 'Medium',
+    summary: 'Listed-equity and ETF-style wrappers for users who need to learn rights, settlement, and price beta together.',
+    useCase: 'Public-market wrapper baseline after reserve products',
+    beginnerFit: 'Okay after reserves',
+    sourceOfReturn: 'Capital gains and losses from listed-equity or ETF exposure.',
+    worstCase: 'Users treat the wrapper like direct brokerage stock ownership and miss settlement or corporate-action rules.',
+    firstDisclosure: 'Separate public-market beta from wrapper rights and settlement path.',
+    reviewPrompt: 'What should this card keep separate?',
+    reviewOptions: [
+      {
+        id: 'beta-vs-wrapper',
+        label: 'Price beta on one side, wrapper rights and settlement mechanics on the other',
+        correct: true,
+        feedback: 'Correct. Public-market wrappers are easiest to teach when price exposure and ownership mechanics stay distinct.'
+      },
+      {
+        id: 'same-as-stock',
+        label: 'Treat it exactly like owning a stock in a brokerage account',
+        correct: false,
+        feedback: 'That hides the wrapper assumptions the user still needs to understand.'
+      },
+      {
+        id: 'yield-first',
+        label: 'Lead with the yield story because listed products usually pay the most',
+        correct: false,
+        feedback: 'This is not a yield lane. Start with exposure and rights instead.'
+      }
+    ],
+    quiz: {
+      summary: 'Use xStocks to test whether the user can keep wrapper mechanics separate from listed-market beta.',
+      successCopy: 'Correct framing: xStocks are public-market wrappers, so the user needs both market exposure context and wrapper-rights disclosure.',
+      failureCopy: 'For xStocks, do not collapse wrapper rights into simple brokerage-share language.',
+      questions: [
+        {
+          id: 'owns',
+          prompt: 'What does the user actually own?',
+          correct: 'wrapped-public',
+          options: [
+            { id: 'wrapped-public', label: 'Wrapped listed-equity or ETF exposure with platform-specific rights' },
+            { id: 'direct-brokerage', label: 'Direct registered brokerage shares with identical rights' },
+            { id: 'private-credit', label: 'Private-credit fund shares with income coupons' }
+          ]
+        },
+        {
+          id: 'returnSource',
+          prompt: 'What drives the return here?',
+          correct: 'listed-beta',
+          options: [
+            { id: 'listed-beta', label: 'Listed-market price movement and any wrapper-defined economics' },
+            { id: 'treasury-carry', label: 'Treasury bill carry and repo income' },
+            { id: 'event-window', label: 'Tender offers and private-company exit events' }
+          ]
+        },
+        {
+          id: 'firstDisclosure',
+          prompt: 'Which disclosure must come first?',
+          correct: 'rights-settlement',
+          options: [
+            { id: 'rights-settlement', label: 'Rights, settlement path, and how the wrapper differs from direct stock ownership' },
+            { id: 'highest-yield', label: 'The payout headline matters more than wrapper detail' },
+            { id: 'no-risk', label: 'There is basically no product risk once it is tokenized' }
+          ]
+        }
+      ]
+    }
   }
 ];
+
+const STARTER_DISCOVER_PRODUCT_IDS = [
+  'superstate-ustb',
+  'ondo-ousg',
+  'hashnote-usyc',
+  'superstate-uscc',
+  'xstocks-public-holdings'
+];
+const STARTER_DISCOVER_PRODUCTS = STARTER_DISCOVER_PRODUCT_IDS
+  .map((productId) => products.find((product) => product.id === productId))
+  .filter(Boolean);
+const QUIZ_PRODUCTS = products.filter((product) => product.quiz);
+const DEFAULT_QUIZ_PRODUCT_ID = QUIZ_PRODUCTS[0]?.id || products[0].id;
+const HOME_PRODUCT_ID_SET = new Set(products.map((product) => product.id));
+
+function createEmptyQuizAnswers() {
+  return {
+    owns: '',
+    returnSource: '',
+    firstDisclosure: ''
+  };
+}
+
+function getCorrectQuizAnswers(productId = DEFAULT_QUIZ_PRODUCT_ID) {
+  const quizProduct = QUIZ_PRODUCTS.find((product) => product.id === productId);
+  if (!quizProduct?.quiz?.questions?.length) return createEmptyQuizAnswers();
+
+  return quizProduct.quiz.questions.reduce((accumulator, question) => {
+    accumulator[question.id] = question.correct;
+    return accumulator;
+  }, createEmptyQuizAnswers());
+}
+
+function sanitizeViewedRiskCards(value = []) {
+  return [...new Set((Array.isArray(value) ? value : []).filter((productId) => HOME_PRODUCT_ID_SET.has(productId)))];
+}
+
+function getAnalyticsEventMeta(eventName) {
+  if (eventName === 'wallet_modal_open') {
+    return {
+      label: 'Wallet modal opened',
+      section: 'Wallet onboarding',
+      takeaway: 'Users opened the MetaMask entry point from the homepage.'
+    };
+  }
+  if (eventName === 'hero_discover_click') {
+    return {
+      label: 'Hero -> Discover',
+      section: 'Homepage hero',
+      takeaway: 'The first-fold CTA pushed users into the product briefings.'
+    };
+  }
+  if (eventName === 'hero_route_help_click') {
+    return {
+      label: 'Hero -> Route help',
+      section: 'Homepage hero',
+      takeaway: 'Users needed onboarding guidance before clicking into products.'
+    };
+  }
+  if (eventName === 'wealth_hub_open') {
+    return {
+      label: 'Open wealth hub',
+      section: 'Wealth routing',
+      takeaway: 'Users moved from the homepage into the full wealth experience.'
+    };
+  }
+  if (eventName === 'paper_trading_page_open') {
+    return {
+      label: 'Open replay lab',
+      section: 'Paper trading',
+      takeaway: 'The user was ready to leave homepage education and enter replay.'
+    };
+  }
+  if (eventName === 'product_quiz_submit') {
+    return {
+      label: 'Submit product quiz',
+      section: 'Quiz',
+      takeaway: 'Users attempted the ownership-and-risk comprehension check.'
+    };
+  }
+  if (eventName.startsWith('module_')) {
+    const moduleId = eventName.replace('module_', '');
+    return {
+      label: `Open task detail: ${moduleId}`,
+      section: 'Quest wall',
+      takeaway: 'Users drilled into a specific onboarding task from the homepage quest wall.'
+    };
+  }
+  if (eventName.startsWith('risk_card_')) {
+    const productId = eventName.replace('risk_card_', '');
+    const product = products.find((entry) => entry.id === productId);
+    return {
+      label: `Risk briefing: ${product?.ticker || productId}`,
+      section: 'Risk review',
+      takeaway: product
+        ? `Users opened the ${product.name} briefing card to inspect fit, return source, and disclosure.`
+        : 'Users opened a risk briefing from the homepage learning panel.'
+    };
+  }
+  if (eventName.startsWith('badge_mint_')) {
+    const badgeId = eventName.replace('badge_mint_', '');
+    return {
+      label: `Mint task badge: ${badgeId}`,
+      section: 'Badge actions',
+      takeaway: 'The user tried to turn a finished task into an onchain badge.'
+    };
+  }
+
+  return {
+    label: eventName,
+    section: 'Other',
+    takeaway: 'Local analytics captured this interaction but it has not been grouped yet.'
+  };
+}
 
 const quests = [
   { title: 'Connect wallet', copy: 'Authenticate with a wallet before any live-style action is unlocked.', reward: 'Starter badge' },
   { title: 'Mint welcome badge on Sepolia', copy: 'Submit one real testnet transaction so the first reward feels onchain, not simulated.', reward: 'Collectible unlock' },
-  { title: 'Read 3 plain-language risk cards', copy: 'Translate wrappers, treasury products, and managed strategies into one-minute explanations.', reward: 'Risk unlock' },
-  { title: 'Finish one product quiz', copy: 'Ask what a user actually owns and what could go wrong in a wrapper product.', reward: 'Fee coupon' },
+  {
+    title: `Review ${RISK_REVIEW_REQUIRED} product briefings`,
+    copy: 'Use the actual Wealth and Paper product lanes to explain ownership, return source, and first disclosure in plain language.',
+    reward: 'Risk unlock'
+  },
+  {
+    title: 'Pass one 3-question product briefing quiz',
+    copy: 'Show that the user can identify what is owned, what drives return, and which disclosure must come first.',
+    reward: 'Fee coupon'
+  },
   { title: 'Complete one paper trade', copy: 'Practice before any real-money handoff happens.', reward: 'Portfolio XP' }
 ];
 
@@ -138,7 +635,7 @@ const painPointGuides = {
   newbie: {
     title: 'Start as a beginner, not as a trader',
     copy: 'MSX should first explain what a product is for, show a simple 1,000 USDT example, and then route users into practice instead of forcing live complexity too early.',
-    nextStep: 'Review starter products first, then try one paper trade.',
+    nextStep: 'Review the reserve and strategy product briefings first, then try one paper trade.',
     module: 'Discover -> Paper Trading'
   },
   contracts: {
@@ -150,7 +647,7 @@ const painPointGuides = {
   safer: {
     title: 'Beginner-safe means lower complexity and clearer downside',
     copy: 'Treasury-style RWAs should surface before stock wrappers because they are easier to explain, easier to compare, and less likely to confuse first-time users.',
-    nextStep: 'Start with OUSG or USDY before any single-name exposure.',
+    nextStep: 'Start with USTB or OUSG before any strategy-yield or private-market exposure.',
     module: 'Starter Shelf'
   }
 };
@@ -195,7 +692,7 @@ const onboardingFlows = {
         copy: 'If the user is unsure what a wallet is, explain that wallet access lets them trade across venues and receive onchain rewards, then keep paper trading locked until the beginner route is complete.',
         primary: 'Open wallet tasks',
         primaryHref: '#learnEarn',
-        secondary: 'See starter products',
+        secondary: 'See product lanes',
         secondaryHref: '#discover'
       }
     }
@@ -273,6 +770,11 @@ function readStorageJson(key, fallback) {
 function writeStorageJson(key, value) {
   if (typeof window === 'undefined' || !key) return;
   window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function deleteStorageKey(key) {
+  if (typeof window === 'undefined' || !key) return;
+  window.localStorage.removeItem(key);
 }
 
 function trackAnalytics(eventName) {
@@ -536,13 +1038,11 @@ export default function App() {
   const [mintRecipient, setMintRecipient] = useState('');
   const [mintTaskKey, setMintTaskKey] = useState('welcome');
   const [viewedRiskCards, setViewedRiskCards] = useState([]);
+  const [riskCheckpointAnswers, setRiskCheckpointAnswers] = useState({});
   const [selectedRiskProduct, setSelectedRiskProduct] = useState(products[0].id);
   const [liveChainId, setLiveChainId] = useState(null);
-  const [quizProductId, setQuizProductId] = useState('tslax');
-  const [quizAnswers, setQuizAnswers] = useState({
-    owns: '',
-    downside: ''
-  });
+  const [quizProductId, setQuizProductId] = useState(DEFAULT_QUIZ_PRODUCT_ID);
+  const [quizAnswers, setQuizAnswers] = useState(createEmptyQuizAnswers);
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [hasMetaMaskInstalled, setHasMetaMaskInstalled] = useState(false);
   const [activeCoreQuest, setActiveCoreQuest] = useState('wallet');
@@ -563,7 +1063,10 @@ export default function App() {
   const [devModePtAmount, setDevModePtAmount] = useState(String(DEFAULT_ADMIN_PT_AMOUNT));
   const [analyticsSnapshot, setAnalyticsSnapshot] = useState({ total: 0, events: {} });
   const [profileBackupStatus, setProfileBackupStatus] = useState('');
+  const [developerExitPromptOpen, setDeveloperExitPromptOpen] = useState(false);
+  const [developerSessionDirty, setDeveloperSessionDirty] = useState(false);
   const previousConnectionRef = useRef(false);
+  const developerSessionSnapshotRef = useRef(null);
   const previousTaskCompletionRef = useRef({
     addressKey: '',
     welcome: false,
@@ -676,7 +1179,7 @@ export default function App() {
   );
 
   const quizProduct = useMemo(
-    () => products.find((product) => product.id === quizProductId) || products[3],
+    () => QUIZ_PRODUCTS.find((product) => product.id === quizProductId) || QUIZ_PRODUCTS[0] || products[0],
     [quizProductId]
   );
   const walletDisplayName = useMemo(
@@ -701,13 +1204,17 @@ export default function App() {
       setQuizCompleted(false);
       setMintHelpOpen('');
       setViewedRiskCards([]);
+      setRiskCheckpointAnswers({});
       setQuizSubmitted(false);
-      setQuizAnswers({ owns: '', downside: '' });
+      setQuizAnswers(createEmptyQuizAnswers());
       setLiveChainId(null);
       setPaperTradesCompleted(0);
       setProgressAccountKey('');
       setMintTaskKey('welcome');
       setTaskCompletionNotice('');
+      setDeveloperExitPromptOpen(false);
+      setDeveloperSessionDirty(false);
+      developerSessionSnapshotRef.current = null;
     }
   }, [isConnected]);
 
@@ -774,16 +1281,18 @@ export default function App() {
       adminUnlocked: false
     });
     const profileProgress = readWalletProfile(address).progress;
-    const initialViewedRiskCards = storedProgress.viewedRiskCards?.length
-      ? storedProgress.viewedRiskCards
-      : profileProgress.viewedRiskCards?.length
-        ? profileProgress.viewedRiskCards
+    const storedViewedRiskCards = sanitizeViewedRiskCards(storedProgress.viewedRiskCards);
+    const profileViewedRiskCards = sanitizeViewedRiskCards(profileProgress.viewedRiskCards);
+    const initialViewedRiskCards = storedViewedRiskCards.length
+      ? storedViewedRiskCards
+      : profileViewedRiskCards.length
+        ? profileViewedRiskCards
         : selectedRiskProduct
           ? [selectedRiskProduct]
           : [];
 
     setViewedRiskCards(initialViewedRiskCards);
-    setGuideCompleted(Boolean(storedProgress.guideCompleted || profileProgress.guideCompleted || initialViewedRiskCards.length >= 3));
+    setGuideCompleted(Boolean(storedProgress.guideCompleted || profileProgress.guideCompleted || initialViewedRiskCards.length >= RISK_REVIEW_REQUIRED));
     setQuizCompleted(Boolean(storedProgress.quizCompleted || profileProgress.quizCompleted));
     setPaperTradesCompleted(Math.max(Number(storedProgress.paperTradesCompleted || 0), Number(profileProgress.paperTradesCompleted || 0)));
     setProgressAccountKey(nextProgressAccountKey);
@@ -793,9 +1302,10 @@ export default function App() {
     if (!address || progressAccountKey !== connectedAddressKey) return;
     const existingProgress = readStorageJson(progressStorageKey, {});
     const profileProgress = readWalletProfile(address).progress;
-    const nextGuideCompleted = Boolean(guideCompleted || viewedRiskCards.length >= 3);
+    const nextViewedRiskCards = sanitizeViewedRiskCards(viewedRiskCards);
+    const nextGuideCompleted = Boolean(guideCompleted || nextViewedRiskCards.length >= RISK_REVIEW_REQUIRED);
     const nextProgress = {
-      viewedRiskCards,
+      viewedRiskCards: nextViewedRiskCards,
       guideCompleted: nextGuideCompleted,
       quizCompleted,
       paperTradesCompleted,
@@ -832,7 +1342,7 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (viewedRiskCards.length >= 3 && !guideCompleted) {
+    if (viewedRiskCards.length >= RISK_REVIEW_REQUIRED && !guideCompleted) {
       setGuideCompleted(true);
     }
   }, [guideCompleted, viewedRiskCards]);
@@ -981,8 +1491,19 @@ export default function App() {
   const quizBadgeChecking = Boolean(address) && badgeContractConfigured && !quizBadgeFetched && quizBadgeFetching;
   const paperBadgeChecking = Boolean(address) && badgeContractConfigured && !paperBadgeFetched && paperBadgeFetching;
   const localProgressReady = Boolean(connectedAddressKey && progressAccountKey === connectedAddressKey);
-  const riskTaskDone = (localProgressReady && (guideCompleted || viewedRiskCards.length >= 3)) || riskTaskBadgeMinted;
+  const riskReviewProgress = Math.min(viewedRiskCards.length, RISK_REVIEW_REQUIRED);
+  const riskTaskDone = (localProgressReady && (guideCompleted || viewedRiskCards.length >= RISK_REVIEW_REQUIRED)) || riskTaskBadgeMinted;
   const quizTaskDone = (localProgressReady && quizCompleted) || quizTaskBadgeMinted;
+  const selectedRiskCheckpoint = selectedRiskCard?.reviewOptions?.find(
+    (option) => option.id === riskCheckpointAnswers[selectedRiskCard.id]
+  ) || null;
+  const riskCheckpointCorrectCount = Object.entries(riskCheckpointAnswers).reduce((count, [productId, optionId]) => {
+    const product = products.find((entry) => entry.id === productId);
+    return product?.reviewOptions?.some((option) => option.id === optionId && option.correct) ? count + 1 : count;
+  }, 0);
+  const quizQuestionRows = quizProduct?.quiz?.questions || [];
+  const quizAllQuestionsAnswered = quizQuestionRows.every((question) => Boolean(quizAnswers[question.id]));
+  const quizPassed = quizQuestionRows.length > 0 && quizQuestionRows.every((question) => quizAnswers[question.id] === question.correct);
   const flowConfig = onboardingFlows[userOrigin];
   const currentRoute = userOrigin === 'web2' ? flowConfig.choices[web2Intent] : flowConfig.choices[web3Intent];
   const fastTrackPaper = userOrigin === 'web3' && web3Intent === 'skip';
@@ -1030,9 +1551,63 @@ export default function App() {
         : `No signed backup yet for ${shortAddress(address)}. Sign one here so this wallet can recover PT progress, replay history, and wealth context later.`
       : 'Connect a wallet to create or recover a signed demo-state backup for this address.'
   );
+  const adminUnlockedForCurrentAccount = Boolean(
+    (address && readStorageJson(getAdminUnlockStorageKey(address), false)) || walletProfileSnapshot.progress?.adminUnlocked
+  );
+  const developerAnalyticsRows = useMemo(
+    () =>
+      Object.entries(analyticsSnapshot.events || {})
+        .sort((left, right) => right[1] - left[1])
+        .map(([name, count]) => {
+          const meta = getAnalyticsEventMeta(name);
+          return {
+            name,
+            count,
+            share: analyticsSnapshot.total ? (count / analyticsSnapshot.total) * 100 : 0,
+            ...meta
+          };
+        }),
+    [analyticsSnapshot]
+  );
+  const developerTopAnalyticsRow = developerAnalyticsRows[0] || null;
+  const developerTrackedSectionCount = new Set(developerAnalyticsRows.map((row) => row.section)).size;
+  const developerOnboardingShare = analyticsSnapshot.total
+    ? developerAnalyticsRows
+        .filter((row) => ['Wallet onboarding', 'Quest wall', 'Risk review', 'Quiz', 'Badge actions'].includes(row.section))
+        .reduce((sum, row) => sum + row.count, 0) / analyticsSnapshot.total
+    : 0;
   const completedBoxes = [walletQuestDone, welcomeGateCompleted, riskTaskDone].filter(Boolean).length;
   const paperTradingUnlocked = completedBoxes >= 3 || fastTrackPaper;
   const paperTradingLockedByTutorial = !paperTradingUnlocked;
+  const walletLearningProfile = !isConnected
+    ? {
+        title: 'No wallet connected',
+        copy: 'Connect a wallet to inspect live wallet progress, PT state, and override behavior from this admin panel.'
+      }
+    : paperTradesCompleted > 0 || adminUnlockedForCurrentAccount || paperTradingUnlocked
+      ? {
+          title: 'Replay-ready wallet',
+          copy: 'This wallet has crossed the guided path into replay or admin-ready behavior. PT balance, unlocks, and backups should stay consistent across Home, Wealth, and Paper.'
+        }
+      : quizTaskDone || riskTaskDone
+        ? {
+            title: 'Builder wallet',
+            copy: 'This wallet already understands ownership, return source, and disclosure well enough to move beyond pure reserve products.'
+          }
+        : {
+            title: 'Starter wallet',
+            copy: 'This wallet should still be routed toward reserve sleeves, explicit ownership language, and guided explanation before strategy-heavy products.'
+          };
+  const developerWalletSummaryRows = [
+    { label: 'Wallet stage', value: walletLearningProfile.title },
+    { label: 'Risk briefings', value: `${riskReviewProgress}/${RISK_REVIEW_REQUIRED}` },
+    { label: 'Checkpoint answers', value: `${riskCheckpointCorrectCount} correct` },
+    { label: 'Quiz status', value: quizTaskDone ? 'Passed' : 'Open' },
+    { label: 'Paper unlock', value: paperTradingUnlocked ? 'Unlocked' : 'Locked' },
+    { label: 'Admin override', value: adminUnlockedForCurrentAccount ? 'Enabled' : 'Off' },
+    { label: 'PT available', value: `${walletProfileSummary.availablePT.toLocaleString()} PT` },
+    { label: 'Backup', value: profileBackupConfigured ? 'Signed snapshot ready' : 'No signed snapshot' }
+  ];
   const effectiveChainId = chainId ?? liveChainId ?? null;
   const onSepolia = effectiveChainId === SEPOLIA_CHAIN_ID;
   const hasSepoliaGas = Boolean(sepoliaBalance?.value && sepoliaBalance.value > 0n);
@@ -1056,7 +1631,7 @@ export default function App() {
   const remainingPaperPrereqs = [
     walletQuestDone ? null : 'connect wallet',
     welcomeGateCompleted ? null : badgeContractConfigured ? 'mint welcome badge' : 'connect wallet',
-    riskTaskDone ? null : 'review risk cards'
+    riskTaskDone ? null : 'review product briefings'
   ].filter(Boolean);
   const paperUnlockChecklist = [
     {
@@ -1079,9 +1654,9 @@ export default function App() {
     },
     {
       id: 'risk',
-      label: 'Risk cards reviewed',
+      label: 'Product briefings reviewed',
       done: riskTaskDone,
-      helper: riskTaskDone ? 'This wallet already completed the risk-card prerequisite.' : 'Review 3 risk cards so paper mode opens with product context.'
+      helper: riskTaskDone ? 'This wallet already completed the product-briefing prerequisite.' : `Review ${RISK_REVIEW_REQUIRED} product briefings so paper mode opens with product context.`
     }
   ];
   const mintChecklist = [
@@ -1108,9 +1683,6 @@ export default function App() {
         : 'Use a faucet below to request test ETH before minting.'
     }
   ];
-  const quizPassed =
-    quizAnswers.owns === 'wrapper-rights' &&
-    quizAnswers.downside === 'single-name-downside';
   const paperTaskDone = paperTaskBadgeMinted;
 
   function getMintTaskStatus(taskKey) {
@@ -1166,19 +1738,19 @@ export default function App() {
     },
     {
       id: 'risk',
-      title: riskTaskBadgeMinted ? 'Risk task completed' : riskTaskDone ? 'Risk cards ready to mint' : 'Read risk cards',
+      title: riskTaskBadgeMinted ? 'Briefing task completed' : riskTaskDone ? 'Product briefings ready to mint' : 'Review product briefings',
       status: riskTaskBadgeMinted ? 'Completed' : riskTaskDone ? 'Done' : riskBadgeChecking ? 'Checking' : 'To do',
       reward: '+1000 PT',
       label: quests[2].reward,
-      hint: 'Can be reviewed independently.'
+      hint: `Review any ${RISK_REVIEW_REQUIRED} live product briefings from the current Wealth and Paper lanes.`
     },
     {
       id: 'quiz',
-      title: quizTaskBadgeMinted ? 'Product quiz completed' : quizTaskDone ? 'Product quiz ready to mint' : 'Finish product quiz',
+      title: quizTaskBadgeMinted ? 'Product quiz completed' : quizTaskDone ? 'Product quiz ready to mint' : 'Finish 3-question quiz',
       status: quizTaskBadgeMinted ? 'Completed' : quizTaskDone ? 'Done' : quizBadgeChecking ? 'Checking' : 'To do',
       reward: '+1000 PT',
       label: quests[3].reward,
-      hint: 'Can be completed independently.'
+      hint: 'Check ownership, return source, and first disclosure for one real product lane.'
     },
     {
       id: 'paper',
@@ -1186,7 +1758,7 @@ export default function App() {
       status: paperTaskDone ? 'Completed' : paperTradingUnlocked ? 'Done' : paperBadgeChecking ? 'Checking' : `${completedBoxes}/3 completed`,
       reward: '+1000 PT',
       label: quests[4].reward,
-      hint: 'Unlock depends on wallet, mint, and risk cards.'
+      hint: 'Unlock depends on wallet, welcome mint, and product-briefing review.'
     }
   ];
 
@@ -1313,10 +1885,22 @@ export default function App() {
     setViewedRiskCards((current) => (current.includes(productId) ? current : [...current, productId]));
   }
 
+  function handleRiskCheckpointSelect(productId, optionId) {
+    setRiskCheckpointAnswers((current) => ({
+      ...current,
+      [productId]: optionId
+    }));
+  }
+
   useEffect(() => {
     if (!selectedRiskProduct) return;
     setViewedRiskCards((current) => (current.includes(selectedRiskProduct) ? current : [...current, selectedRiskProduct]));
   }, [selectedRiskProduct]);
+
+  useEffect(() => {
+    setQuizAnswers(createEmptyQuizAnswers());
+    setQuizSubmitted(false);
+  }, [quizProductId]);
 
   function handleQuizChange(field, value) {
     setQuizAnswers((current) => ({
@@ -1328,7 +1912,9 @@ export default function App() {
   function handleQuizSubmit() {
     setAnalyticsSnapshot(trackAnalytics('product_quiz_submit'));
     setQuizSubmitted(true);
-    setQuizCompleted(quizPassed);
+    if (quizPassed) {
+      setQuizCompleted(true);
+    }
   }
 
   function handleConnect() {
@@ -1487,8 +2073,64 @@ export default function App() {
     setActiveOptionalQuest(questId);
   }
 
+  function captureDeveloperSessionSnapshot() {
+    if (!address) return null;
+
+    return {
+      addressKey: address.toLowerCase(),
+      progress: readStorageJson(progressStorageKey, {}),
+      homePaperState: readStorageJson(paperStorageKey, {
+        balance: STARTING_PAPER_TOKENS,
+        positions: {}
+      }),
+      replayPaperState: readStorageJson(getPaperReplayStateKey(address), {
+        cash: STARTING_PAPER_TOKENS,
+        positions: {},
+        trades: [],
+        realizedPnl: 0
+      }),
+      walletProfile: readStorageJson(getWalletProfileKey(address), readWalletProfile(address)),
+      adminUnlock: readStorageJson(getAdminUnlockStorageKey(address), false)
+    };
+  }
+
+  function ensureDeveloperSessionSnapshot() {
+    if (!address) return null;
+
+    if (!developerSessionSnapshotRef.current || developerSessionSnapshotRef.current.addressKey !== address.toLowerCase()) {
+      developerSessionSnapshotRef.current = captureDeveloperSessionSnapshot();
+    }
+
+    return developerSessionSnapshotRef.current;
+  }
+
+  function applyLocalProgressFromProfile(progress = {}, profile = {}) {
+    const nextViewedRiskCards = sanitizeViewedRiskCards(progress.viewedRiskCards);
+    const nextGuideCompleted = Boolean(progress.guideCompleted || nextViewedRiskCards.length >= RISK_REVIEW_REQUIRED);
+    const nextQuizCompleted = Boolean(progress.quizCompleted);
+    const nextPaperTradesCompleted = Math.max(0, Number(progress.paperTradesCompleted || 0));
+    const nextUserOrigin = profile.home?.userOrigin || progress.userOrigin || 'web2';
+    const nextWeb2Intent = profile.home?.web2Intent || progress.web2Intent || 'trading';
+    const nextWeb3Intent = profile.home?.web3Intent || progress.web3Intent || 'learn';
+
+    setViewedRiskCards(nextViewedRiskCards);
+    setGuideCompleted(nextGuideCompleted);
+    setQuizCompleted(nextQuizCompleted);
+    setQuizSubmitted(nextQuizCompleted);
+    setQuizAnswers(nextQuizCompleted ? getCorrectQuizAnswers(DEFAULT_QUIZ_PRODUCT_ID) : createEmptyQuizAnswers());
+    setPaperTradesCompleted(nextPaperTradesCompleted);
+    setPaperBalanceSnapshot(readRecoveredHomePaperBalance(address, Number(profile.home?.paperBalanceSnapshot ?? STARTING_PAPER_TOKENS)));
+    setProgressAccountKey(address ? address.toLowerCase() : '');
+    setUserOrigin(nextUserOrigin);
+    setWeb2Intent(nextWeb2Intent);
+    setWeb3Intent(nextWeb3Intent);
+  }
+
   function openDeveloperMode() {
     setAnalyticsSnapshot(readStorageJson(ANALYTICS_STORAGE_KEY, { total: 0, events: {} }));
+    developerSessionSnapshotRef.current = captureDeveloperSessionSnapshot();
+    setDeveloperSessionDirty(false);
+    setDeveloperExitPromptOpen(false);
     setDevModeOpen(true);
     setDevModeError('');
   }
@@ -1509,8 +2151,8 @@ export default function App() {
   }
 
   function buildDeveloperUnlockedProgress(existingProgress = {}) {
-    const starterRiskCards = products.slice(0, 3).map((product) => product.id);
-    const viewedCards = Array.from(new Set([...(existingProgress.viewedRiskCards || []), ...starterRiskCards]));
+    const reviewedProducts = products.map((product) => product.id);
+    const viewedCards = Array.from(new Set([...(sanitizeViewedRiskCards(existingProgress.viewedRiskCards) || []), ...reviewedProducts]));
 
     return {
       ...existingProgress,
@@ -1547,16 +2189,19 @@ export default function App() {
       return;
     }
 
+    ensureDeveloperSessionSnapshot();
     const nextProgress = buildDeveloperUnlockedProgress(readStorageJson(progressStorageKey, {}));
     setViewedRiskCards(nextProgress.viewedRiskCards);
+    setRiskCheckpointAnswers({});
     setGuideCompleted(true);
     setQuizCompleted(true);
     setQuizSubmitted(true);
-    setQuizAnswers({ owns: 'wrapper-rights', downside: 'single-name-downside' });
+    setQuizAnswers(getCorrectQuizAnswers(DEFAULT_QUIZ_PRODUCT_ID));
     setPaperTradesCompleted(nextProgress.paperTradesCompleted);
     setUserOrigin('web3');
     setWeb3Intent('skip');
     writeDeveloperUnlockedProgress(nextProgress);
+    setDeveloperSessionDirty(true);
     setDevModeError('');
     setDevModeNotice(`All local onboarding and replay gates are enabled for ${shortAddress(address)}.`);
   }
@@ -1575,6 +2220,7 @@ export default function App() {
       return;
     }
 
+    ensureDeveloperSessionSnapshot();
     const normalizedBalance = roundNumber(Math.max(0, Number(nextBalance || 0)), 2);
     const homePaperState = readStorageJson(paperStorageKey, {
       balance: STARTING_PAPER_TOKENS,
@@ -1625,8 +2271,58 @@ export default function App() {
     setPaperTradesCompleted(nextProgress.paperTradesCompleted);
     setUserOrigin('web3');
     setWeb3Intent('skip');
+    setDeveloperSessionDirty(true);
     setDevModeError('');
     setDevModeNotice(`${actionLabel}: ${normalizedBalance.toLocaleString()} PT is now available for ${shortAddress(address)}.`);
+  }
+
+  function finalizeDeveloperModeClose() {
+    setDeveloperExitPromptOpen(false);
+    setDevModeOpen(false);
+    setDevModeError('');
+  }
+
+  function handleDeveloperModeCloseRequest() {
+    if (developerSessionDirty && developerSessionSnapshotRef.current) {
+      setDeveloperExitPromptOpen(true);
+      return;
+    }
+
+    finalizeDeveloperModeClose();
+  }
+
+  function handleDeveloperModeKeepChanges() {
+    setDeveloperSessionDirty(false);
+    developerSessionSnapshotRef.current = null;
+    finalizeDeveloperModeClose();
+  }
+
+  function handleDeveloperModeRestoreSnapshot() {
+    const snapshot = developerSessionSnapshotRef.current;
+    if (!snapshot || !address || snapshot.addressKey !== address.toLowerCase()) {
+      setDeveloperExitPromptOpen(false);
+      finalizeDeveloperModeClose();
+      return;
+    }
+
+    writeStorageJson(progressStorageKey, snapshot.progress);
+    writeStorageJson(paperStorageKey, snapshot.homePaperState);
+    writeStorageJson(getPaperReplayStateKey(address), snapshot.replayPaperState);
+    writeStorageJson(getWalletProfileKey(address), snapshot.walletProfile);
+
+    if (snapshot.adminUnlock) {
+      writeStorageJson(getAdminUnlockStorageKey(address), true);
+    } else {
+      deleteStorageKey(getAdminUnlockStorageKey(address));
+    }
+
+    applyLocalProgressFromProfile(snapshot.progress, snapshot.walletProfile || {});
+    setRiskCheckpointAnswers({});
+    setTaskCompletionNotice('Developer overrides were rolled back. This wallet is back on its previous local PT and onboarding state.');
+    setDevModeNotice('Developer overrides were restored to the pre-session state.');
+    setDeveloperSessionDirty(false);
+    developerSessionSnapshotRef.current = null;
+    finalizeDeveloperModeClose();
   }
 
   function handleDeveloperAddPt() {
@@ -1738,13 +2434,12 @@ export default function App() {
 
     const recoveredProfile = pointerRecord.profile;
     const recoveredSummary = getWalletProfileSummary(recoveredProfile);
-    const nextViewedRiskCards =
-      Array.isArray(recoveredProfile.progress?.viewedRiskCards) && recoveredProfile.progress.viewedRiskCards.length
-        ? recoveredProfile.progress.viewedRiskCards
-        : selectedRiskProduct
-          ? [selectedRiskProduct]
-          : [];
-    const nextGuideCompleted = Boolean(recoveredProfile.progress?.guideCompleted || nextViewedRiskCards.length >= 3);
+    const nextViewedRiskCards = sanitizeViewedRiskCards(recoveredProfile.progress?.viewedRiskCards).length
+      ? sanitizeViewedRiskCards(recoveredProfile.progress?.viewedRiskCards)
+      : selectedRiskProduct
+        ? [selectedRiskProduct]
+        : [];
+    const nextGuideCompleted = Boolean(recoveredProfile.progress?.guideCompleted || nextViewedRiskCards.length >= RISK_REVIEW_REQUIRED);
     const nextQuizCompleted = Boolean(recoveredProfile.progress?.quizCompleted);
     const nextPaperTradesCompleted = Math.max(0, Number(recoveredProfile.progress?.paperTradesCompleted || 0));
     const nextUserOrigin = recoveredProfile.home?.userOrigin || recoveredProfile.progress?.userOrigin || userOrigin || 'web2';
@@ -1799,17 +2494,21 @@ export default function App() {
 
     if (nextProgress.adminUnlocked) {
       writeStorageJson(getAdminUnlockStorageKey(address), true);
+    } else {
+      deleteStorageKey(getAdminUnlockStorageKey(address));
     }
 
-    setViewedRiskCards(nextViewedRiskCards);
-    setGuideCompleted(nextGuideCompleted);
-    setQuizCompleted(nextQuizCompleted);
-    setPaperTradesCompleted(nextPaperTradesCompleted);
-    setPaperBalanceSnapshot(readRecoveredHomePaperBalance(address, nextPaperBalance));
-    setProgressAccountKey(address.toLowerCase());
-    setUserOrigin(nextUserOrigin);
-    setWeb2Intent(nextWeb2Intent);
-    setWeb3Intent(nextWeb3Intent);
+    applyLocalProgressFromProfile(nextProgress, {
+      ...(recoveredProfile || {}),
+      home: {
+        ...(recoveredProfile.home || {}),
+        paperBalanceSnapshot: nextPaperBalance,
+        userOrigin: nextUserOrigin,
+        web2Intent: nextWeb2Intent,
+        web3Intent: nextWeb3Intent
+      }
+    });
+    setRiskCheckpointAnswers({});
     setProfileBackupStatus(`Saved demo state restored for ${shortAddress(address)}. PT balance, task progress, and wallet-linked history are back on this device.`);
   }
 
@@ -1896,7 +2595,7 @@ export default function App() {
                   {t('Connect wallet', '连接钱包')}
                 </button>
                 <a className="secondary-btn" href="#discover" onClick={() => setAnalyticsSnapshot(trackAnalytics('hero_discover_click'))}>
-                  {t('Explore starter products', '查看入门产品')}
+                  {t('Explore product lanes', '查看产品路径')}
                 </a>
               </div>
               <a className="hero-helper-link" href="#route" onClick={() => setAnalyticsSnapshot(trackAnalytics('hero_route_help_click'))}>
@@ -2333,7 +3032,7 @@ export default function App() {
                   <div className="quest-side-panel">
                     <div className="muted">{quests[2].copy}</div>
                     <div className="risk-card-picker">
-                      {products.slice(0, 3).map((product) => (
+                      {products.map((product) => (
                         <button
                           key={product.id}
                           className={`risk-card-tab ${selectedRiskCard.id === product.id ? 'active' : ''}`}
@@ -2368,7 +3067,32 @@ export default function App() {
                           <div className="k">Beginner fit</div>
                           <div className="v">{selectedRiskCard.beginnerFit}</div>
                         </div>
+                        <div className="guide-chip">
+                          <div className="k">First disclosure</div>
+                          <div className="v">{selectedRiskCard.firstDisclosure}</div>
+                        </div>
                       </div>
+                    </div>
+                    <div className="risk-checkpoint-shell">
+                      <div className="quest-panel-title">Explain-it-back checkpoint</div>
+                      <div className="muted">{selectedRiskCard.reviewPrompt}</div>
+                      <div className="risk-checkpoint-options">
+                        {selectedRiskCard.reviewOptions.map((option) => (
+                          <button
+                            key={option.id}
+                            type="button"
+                            className={`risk-checkpoint-option ${riskCheckpointAnswers[selectedRiskCard.id] === option.id ? 'active' : ''}`}
+                            onClick={() => handleRiskCheckpointSelect(selectedRiskCard.id, option.id)}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                      {selectedRiskCheckpoint ? (
+                        <div className={`wealth-inline-note paper-inline-note risk-checkpoint-note ${selectedRiskCheckpoint.correct ? 'success' : ''}`}>
+                          {selectedRiskCheckpoint.feedback}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="env-hint">
                       {riskTaskBadgeMinted ? (
@@ -2377,11 +3101,11 @@ export default function App() {
                         </>
                       ) : riskTaskDone ? (
                         <>
-                          <strong>Ready:</strong> Three starter cards were already reviewed for this wallet. You can mint the risk task badge now.
+                          <strong>Ready:</strong> {RISK_REVIEW_REQUIRED} product briefings were already reviewed for this wallet. You can mint the risk task badge now.
                         </>
                       ) : (
                         <>
-                          <strong>Progress:</strong> Open any 3 starter cards to complete this step. Current progress: {Math.min(viewedRiskCards.length, 3)}/3.
+                          <strong>Progress:</strong> Open any {RISK_REVIEW_REQUIRED} product briefings to complete this step. Current progress: {riskReviewProgress}/{RISK_REVIEW_REQUIRED}. Checkpoint answers correct: {riskCheckpointCorrectCount}.
                         </>
                       )}
                     </div>
@@ -2389,7 +3113,7 @@ export default function App() {
                       <div>
                         <div className="product-title">Mint risk task badge</div>
                         <div className="muted">
-                          Once three risk cards are reviewed, this task can mint its own badge for the current wallet account.
+                          Once {RISK_REVIEW_REQUIRED} product briefings are reviewed, this task can mint its own badge for the current wallet account.
                         </div>
                       </div>
                       <div className="mint-status-stack">
@@ -2404,7 +3128,7 @@ export default function App() {
                               ? getMintTaskStatus('risk') || 'Finish current mint first'
                               : riskTaskDone
                                 ? 'Mint risk task badge'
-                                : 'Review 3 cards first'}
+                                : `Review ${RISK_REVIEW_REQUIRED} briefings first`}
                         </button>
                       </div>
                     </div>
@@ -2418,48 +3142,45 @@ export default function App() {
                     <label>
                       Quiz product
                       <select value={quizProductId} onChange={(event) => setQuizProductId(event.target.value)}>
-                        <option value="tslax">TSLAX wrapper product</option>
-                        <option value="msxq1">MSXQ1 managed product</option>
-                        <option value="ousg">OUSG treasury product</option>
+                        {QUIZ_PRODUCTS.map((product) => (
+                          <option key={product.id} value={product.id}>
+                            {product.ticker} - {product.name}
+                          </option>
+                        ))}
                       </select>
                     </label>
                     <div className="env-hint">
-                      <strong>{quizProduct.ticker}</strong> {quizProduct.summary}
+                      <strong>{quizProduct.ticker}</strong> {quizProduct.quiz?.summary || quizProduct.summary}
                     </div>
-                    <label>
-                      What does the user actually own here?
-                      <select value={quizAnswers.owns} onChange={(event) => handleQuizChange('owns', event.target.value)}>
-                        <option value="">Select one answer</option>
-                        <option value="wrapper-rights">A wrapped product with specific access and disclosure limits</option>
-                        <option value="bank-deposit">A bank deposit with principal protection</option>
-                        <option value="guaranteed-upside">A guaranteed upside note with no downside</option>
-                      </select>
-                    </label>
-                    <label>
-                      What is the clearest downside to explain?
-                      <select value={quizAnswers.downside} onChange={(event) => handleQuizChange('downside', event.target.value)}>
-                        <option value="">Select one answer</option>
-                        <option value="single-name-downside">Drawdown, access limits, or liquidity friction can still happen</option>
-                        <option value="no-risk">There is basically no risk once tokenized</option>
-                        <option value="only-gas">Gas fees are the only real risk</option>
-                      </select>
-                    </label>
-                    <button className="secondary-btn" onClick={handleQuizSubmit} disabled={!quizAnswers.owns || !quizAnswers.downside}>
-                      {quizTaskBadgeMinted ? 'Quiz completed' : quizTaskDone ? 'Quiz passed, mint badge' : 'Submit product quiz'}
+                    {quizQuestionRows.map((question) => (
+                      <label key={question.id}>
+                        {question.prompt}
+                        <select value={quizAnswers[question.id] || ''} onChange={(event) => handleQuizChange(question.id, event.target.value)}>
+                          <option value="">Select one answer</option>
+                          {question.options.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
+                    <button className="secondary-btn" onClick={handleQuizSubmit} disabled={!quizAllQuestionsAnswered}>
+                      {quizTaskBadgeMinted ? 'Quiz completed' : quizTaskDone ? 'Quiz passed, mint badge' : 'Check 3-question quiz'}
                     </button>
                     {quizSubmitted ? (
                       <div className={`env-hint ${quizPassed ? '' : 'quiz-error'}`}>
                         <strong>{quizPassed ? 'Correct framing.' : 'Try again.'}</strong>{' '}
                         {quizPassed
-                          ? 'The right answer is to explain what rights the wrapper gives and what downside or access limits still exist.'
-                          : 'For beginner-safe framing, the user should understand that wrapper products are not bank deposits and can still have downside, access limits, or liquidity friction.'}
+                          ? quizProduct.quiz?.successCopy || 'The ownership, return source, and first disclosure were all identified correctly.'
+                          : quizProduct.quiz?.failureCopy || 'Recheck what is owned, where the return comes from, and which disclosure must come first.'}
                       </div>
                     ) : null}
                     <div className="mint-action-box inline-mint-action task-badge-mint-box">
                       <div>
                         <div className="product-title">Mint quiz task badge</div>
                         <div className="muted">
-                          After the ownership-and-downside quiz is passed, this module can mint its own task badge for the connected wallet.
+                          After the 3-question product briefing quiz is passed, this module can mint its own task badge for the connected wallet.
                         </div>
                       </div>
                       <div className="mint-status-stack">
@@ -2517,9 +3238,9 @@ export default function App() {
                       },
                       {
                         id: 'risk',
-                        label: 'Step 3: Read risk cards',
+                        label: 'Step 3: Review product briefings',
                         done: riskTaskDone,
-                        helper: riskTaskDone ? 'The risk-card review task is already complete for this wallet.' : 'Open any 3 starter risk cards before opening paper trading.'
+                        helper: riskTaskDone ? 'The product-briefing review task is already complete for this wallet.' : `Open any ${RISK_REVIEW_REQUIRED} product briefings before opening paper trading.`
                       }
                     ].map((item) => (
                       <div className={`checklist-item ${item.done ? 'done' : ''}`} key={item.id}>
@@ -2587,11 +3308,14 @@ export default function App() {
             <div className="section-head">
               <div>
                 <div className="eyebrow">Discover</div>
-                <h2>Starter products for a cleaner first touchpoint</h2>
+                <h2>Start with the product lanes that now drive Wealth and Paper</h2>
               </div>
             </div>
+            <div className="env-hint">
+              We trimmed the homepage shelf to the lanes that already have the clearest Wealth detail and Paper replay support. Reserve sleeves come first, then strategy yield, then public-market wrappers.
+            </div>
             <div className="product-grid">
-              {products.map((product) => (
+              {STARTER_DISCOVER_PRODUCTS.map((product) => (
                 <div className="product-card" key={product.id}>
                   <div className="product-top">
                     <div>
@@ -2617,6 +3341,10 @@ export default function App() {
                     <div>
                       <div className="k">Worst case</div>
                       <div className="v">{product.worstCase}</div>
+                    </div>
+                    <div>
+                      <div className="k">First disclosure</div>
+                      <div className="v">{product.firstDisclosure}</div>
                     </div>
                   </div>
                 </div>
@@ -2698,8 +3426,8 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="entry-card active">
-                      <div className="entry-title">Risk cards already reviewed</div>
-                      <div className="entry-copy">This wallet already completed the risk-card prerequisite, so paper trading can focus on actual simulation instead of first-pass education.</div>
+                      <div className="entry-title">Product briefings already reviewed</div>
+                      <div className="entry-copy">This wallet already completed the product-briefing prerequisite, so paper trading can focus on actual simulation instead of first-pass education.</div>
                     </div>
                   )}
                 </div>
@@ -2818,17 +3546,20 @@ export default function App() {
       />
 
       {devModeOpen ? (
-        <div className="wallet-modal-backdrop" onClick={(event) => event.target === event.currentTarget && setDevModeOpen(false)}>
+        <div className="wallet-modal-backdrop" onClick={(event) => event.target === event.currentTarget && handleDeveloperModeCloseRequest()}>
           <div className="wallet-modal developer-modal">
-            <button className="wallet-modal-close" onClick={() => setDevModeOpen(false)} aria-label="Close developer mode">
+            <button className="wallet-modal-close" onClick={handleDeveloperModeCloseRequest} aria-label="Close developer mode">
               X
             </button>
             <div className="wallet-modal-pane wallet-modal-sidebar">
               <div className="wallet-modal-title">Developer Mode</div>
               <div className="wallet-modal-subtitle">Analytics panel</div>
               <div className="wallet-install-copy">
-                Inspect click-through activity across key welcome-page modules. This is protected by a simple developer login.
+                Inspect click-through activity, wallet state, and local override behavior across the homepage. Close the panel anytime; if you changed live wallet settings in this session, you can keep them or restore the earlier local state on exit.
               </div>
+              <button className="secondary-btn" onClick={handleDeveloperModeCloseRequest}>
+                Exit developer mode
+              </button>
             </div>
             <div className="wallet-modal-pane wallet-modal-main developer-modal-main">
               {!devModeAuthed ? (
@@ -2859,12 +3590,14 @@ export default function App() {
                       <div className="value">{analyticsSnapshot.total}</div>
                     </div>
                     <div className="paper-balance-box">
-                      <div className="label">Auth mode</div>
-                      <div className="value">Local demo auth</div>
+                      <div className="label">Top event</div>
+                      <div className="value">{developerTopAnalyticsRow ? developerTopAnalyticsRow.count : 0}</div>
+                      <div className="muted">{developerTopAnalyticsRow ? developerTopAnalyticsRow.label : 'No click data yet'}</div>
                     </div>
                     <div className="paper-balance-box">
-                      <div className="label">Active wallet</div>
-                      <div className="value">{isConnected ? walletDisplayName : 'Not connected'}</div>
+                      <div className="label">Sections touched</div>
+                      <div className="value">{developerTrackedSectionCount}</div>
+                      <div className="muted">{analyticsSnapshot.total ? `${(developerOnboardingShare * 100).toFixed(1)}% onboarding share` : 'No clicks tracked yet'}</div>
                     </div>
                   </div>
                   <div className="developer-admin-grid">
@@ -2898,31 +3631,74 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                  <div className="developer-profile-card">
+                    <div className="section-head compact">
+                      <div>
+                        <div className="eyebrow">Wallet profile</div>
+                        <h3>{isConnected ? walletDisplayName : 'No wallet connected'}</h3>
+                      </div>
+                      <span className="pill risk-low">{walletLearningProfile.title}</span>
+                    </div>
+                    <div className="muted">{walletLearningProfile.copy}</div>
+                    <div className="developer-profile-grid">
+                      {developerWalletSummaryRows.map((row) => (
+                        <div className="developer-profile-item" key={row.label}>
+                          <span>{row.label}</span>
+                          <strong>{row.value}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                   {devModeNotice ? <div className="env-hint">{devModeNotice}</div> : null}
                   {devModeError ? <div className="env-hint quiz-error">{devModeError}</div> : null}
                   <div className="wallet-modal-status">Module click-through</div>
-                  <div className="developer-table-wrap">
-                    <table className="developer-table">
-                      <thead>
-                        <tr>
-                          <th>Module</th>
-                          <th>Clicks</th>
-                          <th>CTR</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Object.entries(analyticsSnapshot.events || {})
-                          .sort((a, b) => b[1] - a[1])
-                          .map(([name, count]) => (
-                            <tr key={name}>
-                              <td>{name}</td>
-                              <td>{count}</td>
-                              <td>{analyticsSnapshot.total ? `${((count / analyticsSnapshot.total) * 100).toFixed(1)}%` : '0%'}</td>
+                  {developerAnalyticsRows.length ? (
+                    <div className="developer-table-wrap">
+                      <table className="developer-table">
+                        <thead>
+                          <tr>
+                            <th>Event</th>
+                            <th>Section</th>
+                            <th>Clicks</th>
+                            <th>Share</th>
+                            <th>What it tells us</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {developerAnalyticsRows.map((row) => (
+                            <tr key={row.name}>
+                              <td>{row.label}</td>
+                              <td>{row.section}</td>
+                              <td>{row.count}</td>
+                              <td>{analyticsSnapshot.total ? `${row.share.toFixed(1)}%` : '0%'}</td>
+                              <td>{row.takeaway}</td>
                             </tr>
                           ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="route-highlight">No click-through data is stored yet for this browser session.</div>
+                  )}
+                  {developerExitPromptOpen ? (
+                    <div className="developer-exit-card">
+                      <div className="wallet-modal-status">Leave developer mode?</div>
+                      <div className="muted">
+                        This session changed wallet-linked PT or onboarding state. You can keep the current override, restore the earlier local state for this wallet, or stay here and continue editing.
+                      </div>
+                      <div className="toolbar">
+                        <button className="secondary-btn" onClick={handleDeveloperModeKeepChanges}>
+                          Keep current state
+                        </button>
+                        <button className="ghost-btn compact" onClick={handleDeveloperModeRestoreSnapshot}>
+                          Restore previous state
+                        </button>
+                        <button className="ghost-btn compact" onClick={() => setDeveloperExitPromptOpen(false)}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>

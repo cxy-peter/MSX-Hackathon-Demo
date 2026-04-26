@@ -19,6 +19,7 @@ import { buildDiligenceModel, fetchDay1BriefSnapshot } from './day1BriefAdapter'
 import { LanguageToggle, useDomTranslation, useUiLanguage } from './uiLanguage';
 import { getWalletDisplayName, readWalletNickname } from './walletNickname';
 import {
+  getWealthSpendableCash,
   getWalletProfileSummary,
   readRecoveredWealthState,
   readWalletProfile,
@@ -60,9 +61,9 @@ const DEFAULT_COLLATERAL_ADVANCE_RATE = 0.55;
 const COLLATERAL_WARNING_LTV = 0.85;
 const WEALTH_ACTIVITY_LIMIT = 12;
 const SETTLEMENT_ACTION_OPTIONS = [
-  { id: 'roll', label: 'Renew / roll', helper: 'Settle the current term and restart the same receipt basis.' },
-  { id: 'transfer', label: 'Transfer', helper: 'Burn the free receipt value and mint another product receipt.' },
-  { id: 'exit', label: 'End and settle', helper: 'Burn the free receipt and return PT cash to the wallet ledger.' },
+  { id: 'roll', label: 'Roll into next term', helper: 'Settle the current receipt at the projected NAV, then reopen the same product with a new basis. This is the demo rollover path.' },
+  { id: 'transfer', label: 'Transfer into another product', helper: 'Settle this receipt first, then remint the released value into the transfer target you pick below.' },
+  { id: 'exit', label: 'Settle into PT cash', helper: 'End this receipt and return the free value to spendable PT cash in the Wealth wallet.' },
   { id: 'preview', label: 'Preview only', helper: 'Mark the future value without changing the wallet ledger.' }
 ];
 const DUAL_CURRENCY_PAIR_OPTIONS = [
@@ -75,12 +76,10 @@ const DUAL_CURRENCY_DIRECTION_OPTIONS = [
   { id: 'sell-high', label: 'Sell high', copy: 'User earns premium but may sell the base asset into quote if price finishes above target.' }
 ];
 const DETAIL_TOPIC_OPTIONS = [
-  { id: 'flow', label: 'Buy / settle / pledge', helper: 'Use this after reading the overview and AI diligence. Buy, time-jump settlement, and collateral pledge live here; redeem only appears when product terms allow it.' },
-  { id: 'receipt', label: 'Receipt detail', helper: 'Plain-English map of what the receipt represents, what settle means, and when pledge is useful.' },
+  { id: 'flow', label: 'Buy / settle / pledge', helper: 'Use this after reading the overview and AI diligence. Buy, settlement, rollover, transfer, and pledge all live in the same lifecycle desk.' },
   { id: 'snapshot', label: 'Overview', helper: 'Read the compact one-screen summary: what the product is, what it earns from, and how difficult it is.' },
   { id: 'nav', label: 'Timeline', helper: 'Check the NAV path and time-window result without duplicating the order controls.' },
-  { id: 'diligence', label: 'AI Diligence', helper: 'Use this before buying: evidence matrix, red flags, AI memo, and what changed.' },
-  { id: 'automation', label: 'Automation', helper: 'Read how monitors or agents would watch this product after purchase.' }
+  { id: 'diligence', label: 'AI Diligence', helper: 'Use this before buying: compact fit, key evidence, and the AI memo without opening a long checklist.' }
 ];
 
 const WEALTH_HOME_SURFACE_NOTES = {
@@ -280,7 +279,7 @@ const WEALTH_OPPORTUNITY_PRODUCT_IDS = WEALTH_OPPORTUNITY_TYPES.reduce((acc, ite
 const FEATURED_WEALTH_OPPORTUNITY_IDS = new Set(['protected-growth', 'premium-income']);
 const FEATURED_WEALTH_OPPORTUNITIES = WEALTH_OPPORTUNITY_TYPES.filter((type) => FEATURED_WEALTH_OPPORTUNITY_IDS.has(type.id));
 const WEALTH_PRODUCT_TYPE_FILTERS = [
-  ...CATEGORY_OPTIONS,
+  ...CATEGORY_OPTIONS.filter((category) => !['private', 'earn'].includes(category.id)),
   { id: 'dual', label: 'Dual Investment' },
   { id: 'protectedGrowth', label: 'Protected Growth' },
   { id: 'premiumIncome', label: 'Premium Income' },
@@ -665,7 +664,8 @@ function normalizeWealthState(value) {
             advanceRate: Number(entry?.advanceRate || 0),
             termMode: entry?.termMode || 'flex',
             apy: Number(entry?.apy || 0),
-            updatedAt: entry?.updatedAt || ''
+            updatedAt: entry?.updatedAt || '',
+            supportOnly: Boolean(entry?.supportOnly)
           }
         ];
       })
@@ -673,7 +673,7 @@ function normalizeWealthState(value) {
   );
 
   return {
-    cash: Number(value?.cash ?? WEALTH_STARTING_CASH),
+    cash: getWealthSpendableCash(value),
     positions,
     collateral,
     activityLog: Array.isArray(value?.activityLog) ? value.activityLog.slice(0, WEALTH_ACTIVITY_LIMIT) : []
@@ -918,13 +918,15 @@ function getGoalIdForProduct(product) {
 
 function getCategoryIdForProduct(product) {
   const surface = getWealthProductSurface(product);
-  const text = `${product.productType || ''} ${product.name || ''}`.toLowerCase();
+  const text = `${product.productType || ''} ${product.name || ''} ${product.id || ''}`.toLowerCase();
 
   if (/dual investment|dual currency/.test(text)) return 'dual';
   if (/protected growth|defined outcome/.test(text)) return 'protectedGrowth';
   if (/premium income|covered call/.test(text)) return 'premiumIncome';
   if (/auto-call|autocall/.test(text)) return 'autoCall';
-  return ['cash', 'public', 'private', 'auto', 'earn'].includes(surface) ? surface : 'all';
+  if (/private credit|credit fund/.test(text)) return 'privateCredit';
+  if (surface === 'private' || surface === 'earn') return 'all';
+  return ['cash', 'public', 'auto'].includes(surface) ? surface : 'all';
 }
 
 function isDualInvestmentProduct(product = {}) {
@@ -1079,7 +1081,7 @@ function getForwardProjectedNav(product, days) {
 
 function getUnlockCopy(product, progressState) {
   if (product.bucket === 'strategy' && !progressState.guideCompleted) {
-    return 'Review 3 risk cards first to unlock the managed-strategy shelf.';
+    return 'Review 4 product briefings first to unlock the managed-strategy shelf.';
   }
 
   if (isClosedEndProduct(product) && !progressState.quizCompleted && !(progressState.paperTradesCompleted > 0)) {
@@ -1141,8 +1143,8 @@ function getAccessChecklist(product, progress) {
       label: 'Risk guide',
       done: progress.guideTaskDone,
       detail: progress.guideTaskDone
-        ? 'Risk-card review is already linked to this wallet.'
-        : 'Review the 3 risk cards first to unlock the managed sleeve.'
+        ? 'Product-briefing review is already linked to this wallet.'
+        : 'Review the 4 product briefings first to unlock the managed sleeve.'
     });
   } else {
     items.push({
@@ -1875,11 +1877,17 @@ function MiniNavChart({ series = [], tone = 'neutral' }) {
 
 function formatWealthDate(timestamp, pointCount) {
   const date = new Date(timestamp);
-  if (pointCount > 60) {
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  }
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
 
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+function formatWealthDateTime(timestamp) {
+  if (!timestamp) return '--';
+  return new Date(timestamp).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
 }
 
 function clamp(value, min, max) {
@@ -1889,9 +1897,9 @@ function clamp(value, min, max) {
 function DetailNavChart({ series = [] }) {
   const [hoverIndex, setHoverIndex] = useState(null);
   const points = normalizeNavSeries(series);
-  const width = 540;
-  const height = 240;
-  const padding = { top: 20, right: 74, bottom: 36, left: 16 };
+  const width = 620;
+  const height = 280;
+  const padding = { top: 20, right: 74, bottom: 28, left: 16 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
   const values = points.map((point) => point.value);
@@ -2025,9 +2033,9 @@ function DetailNavChart({ series = [] }) {
 }
 
 function CompareNavChart({ seriesList = [], periodLabel = '30D' }) {
-  const width = 640;
-  const height = 260;
-  const padding = { top: 20, right: 20, bottom: 36, left: 16 };
+  const width = 680;
+  const height = 280;
+  const padding = { top: 20, right: 20, bottom: 28, left: 16 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
   const allValues = seriesList.flatMap((series) => series.points.map((point) => point.value));
@@ -2231,6 +2239,7 @@ function WealthInner() {
   const [compareProductIds, setCompareProductIds] = useState(WEALTH_PRODUCTS.slice(0, 3).map((product) => product.id));
   const [comparePickerValue, setComparePickerValue] = useState('');
   const [selectedDetailTopics, setSelectedDetailTopics] = useState(['flow']);
+  const [wealthDiligencePageIndex, setWealthDiligencePageIndex] = useState(0);
   const [fastForwardTarget, setFastForwardTarget] = useState('90d');
   const [settlementDays, setSettlementDays] = useState(180);
   const [settlementAction, setSettlementAction] = useState('roll');
@@ -2596,7 +2605,7 @@ function WealthInner() {
       badge: WEALTH_TASK_BADGES.subscribe,
       activityLabel: 'Receipt mint',
       title: 'Buy one receipt',
-      copy: 'Choose a product, open Receipt detail, review the buy flow, then mint a local receipt balance in the wealth ledger.',
+      copy: 'Choose a product, open the lifecycle desk, review the buy flow, then mint a local receipt balance in the wealth ledger.',
       done: Object.keys(wealthState.positions || {}).length > 0,
       statusLabel: Object.keys(wealthState.positions || {}).length > 0 ? 'Receipt live' : 'To do',
       statusTone: Object.keys(wealthState.positions || {}).length > 0 ? 'done' : 'todo'
@@ -2607,7 +2616,7 @@ function WealthInner() {
       badge: WEALTH_TASK_BADGES.settlement,
       activityLabel: 'Settle / pledge',
       title: 'Simulate settle or pledge',
-      copy: 'Settle means close, redeem, roll, or mature the receipt. Pledge means lock it as collateral before release.',
+      copy: 'Settle means close, redeem, roll, or mature the receipt. Pledge means locking it as route support before release.',
       done: wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') || Object.keys(wealthState.collateral || {}).length > 0,
       statusLabel: wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') || Object.keys(wealthState.collateral || {}).length > 0 ? 'Completed' : 'To do',
       statusTone: wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') || Object.keys(wealthState.collateral || {}).length > 0 ? 'done' : 'todo'
@@ -2673,6 +2682,9 @@ function WealthInner() {
   }, [liveProducts, recommendedProducts, selectedProductId]);
 
   const selectedProduct = useMemo(() => getProductByIdFrom(liveProducts, selectedProductId), [liveProducts, selectedProductId]);
+  useEffect(() => {
+    setWealthDiligencePageIndex(0);
+  }, [selectedProduct.id]);
   const activeDetailTopic = selectedDetailTopics[0] || '';
   const activeDetailTopicMeta = DETAIL_TOPIC_OPTIONS.find((topic) => topic.id === activeDetailTopic) || null;
   const guideTaskDone = progressState.guideCompleted || Boolean(riskBadgeOnchain);
@@ -3105,12 +3117,7 @@ function WealthInner() {
     shortAddress: shortAddress(address)
   });
   const day1Timestamp = day1BriefState.data?.timestamp
-    ? new Date(day1BriefState.data.timestamp).toLocaleString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit'
-      })
+    ? formatWealthDateTime(day1BriefState.data.timestamp)
     : 'Snapshot unavailable';
   const shelfStatusCopy =
     liveSnapshotState === 'ready'
@@ -3369,7 +3376,7 @@ function WealthInner() {
     }
 
     if (!isConnected || !address) {
-      setFeedback('Connect MetaMask first so the pledged receipt and borrowed PT stay mapped to one wallet.');
+      setFeedback('Connect MetaMask first so the pledged receipt and support line stay mapped to one wallet.');
       return;
     }
 
@@ -3389,12 +3396,12 @@ function WealthInner() {
     );
 
     if (!Number.isFinite(nextBorrowTarget) || nextBorrowTarget <= 0) {
-      setFeedback('Enter a positive PT borrow target first.');
+      setFeedback('Enter a positive support-line target first.');
       return;
     }
 
     if (nextBorrowTarget <= selectedBorrowedAmount) {
-      setFeedback('This borrow target is not above the current borrowed balance. Use repay and release when you want to unwind the collateral flow.');
+      setFeedback('This support target is not above the current line. Use Release support when you want to unwind the collateral flow.');
       return;
     }
 
@@ -3407,7 +3414,7 @@ function WealthInner() {
 
     const borrowDelta = roundNumber(nextBorrowTarget - selectedBorrowedAmount, 2);
     const signed = await ensureWealthActionSignature({
-      action: 'pledge and borrow',
+      action: 'pledge receipt support',
       amount: nextBorrowTarget,
       shares: collateralShares,
       extraLines: [
@@ -3415,7 +3422,7 @@ function WealthInner() {
         `Advance rate: ${(selectedCollateralAdvanceRate * 100).toFixed(0)}%`,
         `Pledge term: ${pledgeTermMode === 'fixed' ? 'Fixed term' : 'Flexible'}`,
         `Modeled pledge APY: ${formatYieldPercent(selectedCollateralApy)}`,
-        `Borrow delta: ${formatValue(borrowDelta, false)}`
+        `Support delta: ${formatValue(borrowDelta, false)}`
       ]
     });
 
@@ -3424,7 +3431,6 @@ function WealthInner() {
     setWealthState((current) => {
       const nextState = {
         ...current,
-        cash: roundNumber(current.cash + borrowDelta, 2),
         collateral: {
           ...(current.collateral || {}),
           [selectedProduct.id]: {
@@ -3433,7 +3439,8 @@ function WealthInner() {
             advanceRate: selectedCollateralAdvanceRate,
             termMode: pledgeTermMode,
             apy: selectedCollateralApy,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            supportOnly: true
           }
         }
       };
@@ -3448,7 +3455,7 @@ function WealthInner() {
     });
 
     setFeedback(
-      `${selectedProduct.shareToken} collateral activated: ${collateralShares.toLocaleString()} shares are now pledged. Borrowed balance is ${nextBorrowTarget.toLocaleString()} PT, and paper trading can read this wallet collateral support.`
+      `${selectedProduct.shareToken} collateral activated: ${collateralShares.toLocaleString()} shares are now pledged. The route support line is ${nextBorrowTarget.toLocaleString()} PT, and Paper Trading can read it without adding that PT to Wealth cash.`
     );
   }
 
@@ -3463,20 +3470,13 @@ function WealthInner() {
       return;
     }
 
-    if (wealthState.cash < selectedBorrowedAmount) {
-      setFeedback(
-        `Repay ${selectedBorrowedAmount.toLocaleString()} PT first. The wallet currently has ${wealthState.cash.toLocaleString()} PT of cash before milestone bonus buying power is counted.`
-      );
-      return;
-    }
-
     const signed = await ensureWealthActionSignature({
-      action: 'repay and release collateral',
+      action: 'release pledged support',
       amount: selectedBorrowedAmount,
       shares: selectedPledgedShares,
       extraLines: [
         `Current LTV: ${(selectedCollateralLtv * 100).toFixed(2)}%`,
-        'Release returns the receipt to the free balance before redemption.'
+        'Release removes route support and returns the receipt to the free balance before settlement.'
       ]
     });
 
@@ -3487,7 +3487,6 @@ function WealthInner() {
       delete nextCollateral[selectedProduct.id];
       const nextState = {
         ...current,
-        cash: roundNumber(current.cash - selectedBorrowedAmount, 2),
         collateral: nextCollateral
       };
 
@@ -3501,7 +3500,7 @@ function WealthInner() {
     });
 
     setFeedback(
-      `${selectedProduct.shareToken} collateral released: repaid ${selectedBorrowedAmount.toLocaleString()} PT and unlocked ${selectedPledgedShares.toLocaleString()} shares for normal redemption again.`
+      `${selectedProduct.shareToken} collateral released: removed ${selectedBorrowedAmount.toLocaleString()} PT of route support and unlocked ${selectedPledgedShares.toLocaleString()} shares for normal settlement again.`
     );
   }
 
@@ -3524,7 +3523,7 @@ function WealthInner() {
     }
 
     if (selectedFreeShares <= 0) {
-      setFeedback('All current shares are pledged as collateral. Repay and release them before trying to redeem this sleeve.');
+      setFeedback('All current shares are pledged as collateral. Release the support line first before trying to settle this sleeve back to PT cash.');
       return;
     }
 
@@ -3595,7 +3594,7 @@ function WealthInner() {
     }
 
     if (selectedFreeShares <= 0) {
-      setFeedback('All current shares are pledged as collateral. Repay and release them before settling, transferring, or exiting this receipt.');
+      setFeedback('All current shares are pledged as collateral. Release the support line first before settling, transferring, or exiting this receipt.');
       return;
     }
 
@@ -3971,108 +3970,386 @@ function WealthInner() {
     const report = selectedDiligenceReport;
     if (!report) return null;
 
+    const fitCards = [
+      {
+        label: 'Product quality',
+        value: `${report.productQuality.score}/100`,
+        copy: report.productQuality.label
+      },
+      {
+        label: 'Evidence confidence',
+        value: `${report.evidenceConfidence.score}/100`,
+        copy: `${report.evidenceConfidence.label}: source ${report.evidenceConfidence.sourceQuality}, coverage ${report.evidenceConfidence.coverage}.`
+      },
+      {
+        label: 'Current stance',
+        value: selectedResearchView.stance.label,
+        tone: selectedResearchView.stance.tone,
+        copy: selectedResearchView.stance.summary
+      },
+      {
+        label: 'Wallet fit',
+        value: report.suitability.label,
+        tone: report.suitability.tone,
+        copy: report.suitability.reason
+      }
+    ];
+    const evidenceRows = report.evidenceMatrix.slice(0, 3);
+    const leadFlag =
+      report.redFlags[0] || {
+        title: 'No major blocker surfaced',
+        detail: 'The bundled evidence does not currently surface a high-severity blocker.',
+        severity: 'low'
+      };
+    const watchLines = report.whatChanged.slice(0, 2);
+    const pages = [
+      {
+        id: 'fit',
+        eyebrow: '01 Wallet fit',
+        title: 'Compact suitability snapshot',
+        pill: <span className={`pill ${report.suitability.tone}`}>{report.suitability.label}</span>,
+        body: (
+          <>
+            <div className="paper-side-score-grid">
+              {fitCards.map((item) => (
+                <div className="paper-side-score-card" key={item.label}>
+                  <div className="paper-side-score-top">
+                    <span>{item.label}</span>
+                    <strong className={item.tone || ''}>{item.value}</strong>
+                  </div>
+                  <div className="paper-side-score-copy">{item.copy}</div>
+                </div>
+              ))}
+            </div>
+            <div className="paper-side-score">{selectedResearchView.sourceLine}</div>
+          </>
+        )
+      },
+      {
+        id: 'evidence',
+        eyebrow: '02 Key evidence',
+        title: 'What the AI checked first',
+        pill: <span className="pill risk-low">{evidenceRows.length || 0} checks</span>,
+        body: (
+          <>
+            {evidenceRows.length ? (
+              <div className="paper-asset-list">
+                {evidenceRows.map((row) => (
+                  <div className="paper-asset-row paper-side-row-wide" key={row.id}>
+                    <div className="paper-side-row-title">{row.question}</div>
+                    <div className="paper-side-row-meta">
+                      <strong>{row.confidence}</strong>
+                    </div>
+                    <div className="entry-copy paper-side-row-copy">{row.finding}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="paper-side-score">No evidence rows were bundled for this product snapshot yet.</div>
+            )}
+            <div className="paper-side-score">
+              Macro overlay: {selectedResearchView.macroLens.value} / {selectedResearchView.assetLens.value}
+            </div>
+          </>
+        )
+      },
+      {
+        id: 'memo',
+        eyebrow: '03 Memo & next watch',
+        title: report.memo.title,
+        pill: <span className={`pill ${leadFlag.severity === 'high' ? 'risk-high' : leadFlag.severity === 'medium' ? 'risk-medium' : 'risk-low'}`}>{leadFlag.severity}</span>,
+        body: (
+          <>
+            <div className="paper-side-score">AI memo: {report.memo.summary}</div>
+            <div className="paper-asset-list">
+              <div className="paper-asset-row paper-side-row-wide">
+                <div className="paper-side-row-title">{leadFlag.title}</div>
+                <div className="paper-side-row-meta">
+                  <strong>{leadFlag.severity}</strong>
+                </div>
+                <div className="entry-copy paper-side-row-copy">{leadFlag.detail}</div>
+              </div>
+              {watchLines.map((line) => (
+                <div className="paper-asset-row paper-side-row-wide" key={line}>
+                  <div className="entry-copy paper-side-row-copy">{line}</div>
+                </div>
+              ))}
+            </div>
+            <div className="paper-side-score">{day1BriefState.note || selectedDiligenceModel.overlayNote}</div>
+          </>
+        )
+      }
+    ];
+    const activePage = pages[wealthDiligencePageIndex] || pages[0];
+    const canGoBack = wealthDiligencePageIndex > 0;
+    const canGoForward = wealthDiligencePageIndex < pages.length - 1;
+
     return (
-      <div className="diligence-workspace">
-        <div className="diligence-workspace-head">
+      <div className="paper-side-card wealth-diligence-compact-card">
+        <div className="paper-side-card-head">
           <div>
-            <div className="eyebrow">Evidence-backed AI Diligence</div>
-            <div className="product-title">Research workspace before score</div>
+            <div className="eyebrow">{activePage.eyebrow}</div>
+            <h3>{activePage.title}</h3>
+          </div>
+          <div className="paper-side-card-toolbar">
+            {activePage.pill}
+            <div className="paper-side-card-pager" aria-label="Wealth AI diligence pages">
+              <button
+                type="button"
+                className="ghost-btn compact paper-side-card-pager-btn"
+                onClick={() => canGoBack && setWealthDiligencePageIndex((current) => Math.max(0, current - 1))}
+                disabled={!canGoBack}
+                aria-label="Previous wealth AI diligence page"
+              >
+                {'<'}
+              </button>
+              <span>
+                {wealthDiligencePageIndex + 1} / {pages.length}
+              </span>
+              <button
+                type="button"
+                className="ghost-btn compact paper-side-card-pager-btn"
+                onClick={() => canGoForward && setWealthDiligencePageIndex((current) => Math.min(pages.length - 1, current + 1))}
+                disabled={!canGoForward}
+                aria-label="Next wealth AI diligence page"
+              >
+                {'>'}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="paper-side-card-body">{activePage.body}</div>
+      </div>
+    );
+  }
+
+  function renderFlowDetailSection() {
+    const lifecycleGuideCards = [
+      {
+        title: selectedRedeemAllowed ? 'Settle into PT cash' : 'Hold to scheduled settlement',
+        copy: selectedRedeemAllowed
+          ? 'Use the settlement desk below with "Settle into PT cash" when you want the free receipt balance to end and return to spendable PT in Wealth.'
+          : 'This sleeve does not support a casual early redeem path. The settlement desk below is where the scheduled end, roll, or transfer flow is modeled.'
+      },
+      {
+        title: 'Roll into next term',
+        copy: 'Roll means the current receipt settles at the projected NAV and immediately reopens as the same product with a refreshed basis. This is the demo rollover path.'
+      },
+      {
+        title: isCollateralPilotProduct(selectedProduct) ? 'Pledge as route support' : 'Transfer into another sleeve',
+        copy: isCollateralPilotProduct(selectedProduct)
+          ? 'Pledge locks the receipt and opens a support line that Paper Trading can read for route capacity. It should not inflate Wealth cash or total PT.'
+          : 'Transfer settles this receipt first, then remints the released value into another product receipt.'
+      }
+    ];
+
+    return (
+      <div className="paper-mode-card wealth-detail-section wealth-action-card">
+        <div className="product-top">
+          <div>
+            <div className="product-title">Receipt lifecycle desk</div>
             <div className="muted">
-              The score is deterministic. The AI layer organizes evidence, red flags, change notes, and the memo so the reviewer can audit the why.
+              Buy the receipt, then handle settlement, rollover, transfer, or pledge in one place instead of jumping between separate explanation panels.
             </div>
           </div>
-          <div className="wealth-header-pill-row">
-            <span className={`pill ${report.stance.tone}`}>{report.stance.label}</span>
-            <span className={`pill ${report.suitability.tone}`}>{report.suitability.label}</span>
+          <span className={`pill ${riskClass(selectedProduct.risk)}`}>{selectedProduct.riskNote}</span>
+        </div>
+
+        <label className="wealth-field">
+          Subscribe amount
+          <input
+            type="number"
+            min={Math.max(WEALTH_MIN_SUBSCRIPTION, selectedProduct.minSubscription)}
+            step="100"
+            value={allocationAmount}
+            onChange={(event) => setAllocationAmount(Number(event.target.value))}
+          />
+        </label>
+
+        <div className="wealth-amount-preset-row" aria-label="Quick subscribe amount presets">
+          {subscriptionAmountPresets.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              className={`ghost-btn compact ${preset.active ? 'active-toggle' : ''}`}
+              onClick={() => setAllocationAmount(preset.value)}
+              disabled={preset.disabled}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="paper-balance-strip wealth-balance-strip">
+          <div className="paper-balance-box">
+            <div className="label">Current shares</div>
+            <div className="value">{formatShareBalance(selectedPosition.shares, hideBalances)}</div>
+          </div>
+          <div className="paper-balance-box">
+            <div className="label">Current value</div>
+            <div className="value">{formatValue(selectedPositionValue, hideBalances)}</div>
+          </div>
+          <div className="paper-balance-box">
+            <div className="label">PnL</div>
+            <div className={`value ${selectedPositionPnl >= 0 ? 'risk-low' : 'risk-high'}`}>
+              {formatSignedValue(selectedPositionPnl, hideBalances)}
+            </div>
           </div>
         </div>
 
-        <div className="diligence-score-grid">
-          <div className="guide-chip diligence-score-card">
-            <div className="k">Product quality</div>
-            <div className="v">{report.productQuality.score}/100</div>
-            <div className="muted">Static product quality from structure, rights, liquidity, pricing, and security evidence.</div>
-          </div>
-          <div className="guide-chip diligence-score-card">
-            <div className="k">Evidence confidence</div>
-            <div className="v">{report.evidenceConfidence.score}/100</div>
-            <div className="muted">
-              {report.evidenceConfidence.label}: source quality {report.evidenceConfidence.sourceQuality}, coverage {report.evidenceConfidence.coverage}.
+        {isCollateralPilotProduct(selectedProduct) ? (
+          <div className="wealth-chart-summary">
+            <div>
+              <div className="label">Free receipt</div>
+              <div className="value">{formatShareBalance(selectedFreeShares, hideBalances)}</div>
+            </div>
+            <div>
+              <div className="label">Pledged shares</div>
+              <div className="value">{formatShareBalance(selectedPledgedShares, hideBalances)}</div>
+            </div>
+            <div>
+              <div className="label">Route support</div>
+              <div className={`value ${selectedBorrowedAmount > 0 ? 'risk-medium' : 'risk-low'}`}>
+                {formatValue(selectedBorrowedAmount, hideBalances)}
+              </div>
             </div>
           </div>
-          <div className="guide-chip diligence-score-card">
-            <div className="k">Market regime</div>
-            <div className={`v ${report.marketRegime.scoreImpact >= 0 ? 'risk-low' : 'risk-high'}`}>
-              {formatSignedScore(report.marketRegime.scoreImpact)}
-            </div>
-            <div className="muted">{report.marketRegime.label}. This overlay stays separate from product quality.</div>
+        ) : null}
+
+        <div className="wealth-settlement-policy-card">
+          <div>
+            <div className="eyebrow">Redemption / settlement timing</div>
+            <div className="product-title">{selectedSettlementPolicy.timing}</div>
+            <div className="muted">{selectedSettlementPolicy.detail}</div>
           </div>
-          <div className="guide-chip diligence-score-card">
-            <div className="k">User fit gate</div>
-            <div className={`v ${report.suitability.tone}`}>{report.suitability.label}</div>
-            <div className="muted">{report.suitability.reason}</div>
+          <span className={`pill ${selectedSettlementPolicy.tone}`}>{selectedSettlementPolicy.label}</span>
+        </div>
+
+        <ReceiptLifecycleDiagram product={selectedProduct} compact />
+
+        <div className="toolbar wealth-action-toolbar">
+          <button className="primary-btn" onClick={handleOpenSubscribeModal} disabled={selectedProductLocked || isWealthSigning}>
+            {isWealthSigning ? 'Await wallet' : 'Review and buy'}
+          </button>
+        </div>
+
+        <div className="starter-reasons" style={{ marginTop: 16 }}>
+          {lifecycleGuideCards.map((item) => (
+            <div className="reason-card" key={item.title}>
+              <div className="entry-title">{item.title}</div>
+              <div className="entry-copy">{item.copy}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="paper-mode-card wealth-subpanel-card" style={{ marginTop: 16 }}>
+          <div className="product-title">Settlement desk: settle, roll, transfer, or preview</div>
+          <div className="muted">
+            Choose the future window, then decide whether the free receipt balance should stay in the same product, move elsewhere, or end as PT cash.
+          </div>
+
+          <label className="wealth-field">
+            Days forward: {settlementWindowLabel}
+            <input
+              type="range"
+              min="0"
+              max="730"
+              step="30"
+              value={settlementDays}
+              onChange={(event) => setSettlementDays(Number(event.target.value))}
+            />
+          </label>
+
+          <div className="wealth-compare-toolbar">
+            <label>
+              <div className="muted">Settlement action</div>
+              <select value={settlementAction} onChange={(event) => setSettlementAction(event.target.value)}>
+                {SETTLEMENT_ACTION_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              <div className="muted">Transfer target</div>
+              <select
+                value={settlementTransferProduct?.id || ''}
+                onChange={(event) => setSettlementTransferProductId(event.target.value)}
+                disabled={settlementAction !== 'transfer'}
+              >
+                {settlementTransferProducts.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="wealth-chart-summary">
+            <div>
+              <div className="label">Projected NAV</div>
+              <div className="value">{settlementProjectedNav.toFixed(3)}</div>
+            </div>
+            <div>
+              <div className="label">Free receipt value</div>
+              <div className="value">{formatValue(settlementPreviewValue, hideBalances)}</div>
+            </div>
+            <div>
+              <div className="label">Projected gain</div>
+              <div className={`value ${settlementPreviewGain >= 0 ? 'risk-low' : 'risk-high'}`}>
+                {formatSignedValue(settlementPreviewGain, hideBalances)}
+              </div>
+            </div>
+          </div>
+
+          {settlementAction === 'transfer' ? (
+            <div className="wealth-inline-note paper-inline-note">
+              Transfer preview: {formatValue(settlementPreviewValue, hideBalances)} would mint about {formatShareBalance(
+                settlementTargetShares,
+                hideBalances
+              )}{' '}
+              {settlementTransferProduct?.shareToken} at {settlementTransferProduct?.name}.
+            </div>
+          ) : (
+            <div className="wealth-inline-note paper-inline-note">
+              <strong>{settlementActionMeta.label}.</strong> {settlementActionMeta.helper}
+            </div>
+          )}
+
+          <div className="toolbar">
+            <button className="primary-btn" onClick={handleSimulateSettlement} disabled={isWealthSigning || !selectedPosition.shares}>
+              {isWealthSigning ? 'Await wallet' : 'Sign settlement action'}
+            </button>
           </div>
         </div>
 
-        <div className="diligence-section-grid">
-          <div className="diligence-panel">
-            <div className="product-top">
-              <div>
-                <div className="eyebrow">Evidence Matrix</div>
-                <div className="product-title">Questions the reviewer can audit</div>
-              </div>
-            </div>
-            <div className="diligence-matrix">
-              {report.evidenceMatrix.map((row) => (
-                <div className="diligence-matrix-row" key={row.id}>
-                  <div>
-                    <span>{row.question}</span>
-                    <strong>{row.finding}</strong>
-                  </div>
-                  <div>
-                    <span>Evidence</span>
-                    <strong>{row.evidence}</strong>
-                  </div>
-                  <div>
-                    <span>Confidence</span>
-                    <strong>{row.confidence}</strong>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+        <div className="product-title" style={{ marginTop: 16 }}>Approve, subscribe, and exit preview</div>
+        <FlowPreviewGrid cards={flowPreviewCards} />
 
-          <div className="diligence-panel">
-            <div className="product-top">
-              <div>
-                <div className="eyebrow">Red Flags</div>
-                <div className="product-title">What the AI would challenge first</div>
-              </div>
+        <div className="product-title" style={{ marginTop: 16 }}>Future wallet call preview</div>
+        <ModeledCallGrid cards={modeledCallCards} />
+
+        <div className="env-hint">
+          <strong>Token mechanic.</strong> {selectedProduct.shareToken} is treated as the receipt: subscribe mints it, settlement burns or rolls it, and a pledge only opens route support instead of minting extra Wealth cash.
+        </div>
+
+        <div className="wealth-contract-grid" style={{ marginTop: 16 }}>
+          {onchainMechanics.map((item) => (
+            <div className="reason-card wealth-contract-card" key={item.title}>
+              <div className="entry-title">{item.title}</div>
+              <div className="entry-copy">{item.copy}</div>
             </div>
+          ))}
+        </div>
+
+        <div className="wealth-rights-grid" style={{ marginTop: 16 }}>
+          <div className="paper-mode-card wealth-subpanel-card">
+            <div className="product-title">{selectedProduct.shareToken} rights snapshot</div>
             <div className="starter-reasons">
-              {(report.redFlags.length ? report.redFlags : [{ id: 'clean', severity: 'low', title: 'No high-severity red flag', detail: 'The bundled evidence does not surface a major blocker yet.' }]).map((flag) => (
-                <div className="reason-card diligence-red-flag" key={flag.id}>
-                  <div className="entry-title">{flag.title}</div>
-                  <div className="entry-copy">{flag.detail}</div>
-                  <span className={`pill ${flag.severity === 'high' ? 'risk-high' : flag.severity === 'medium' ? 'risk-medium' : 'risk-low'}`}>
-                    {flag.severity}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="diligence-section-grid">
-          <div className="diligence-panel">
-            <div className="product-top">
-              <div>
-                <div className="eyebrow">What Changed</div>
-                <div className="product-title">Monitor notes for the next review</div>
-              </div>
-            </div>
-            <div className="starter-reasons">
-              {report.whatChanged.map((line) => (
+              {selectedProduct.shareRights.map((line) => (
                 <div className="reason-card" key={line}>
                   <div className="entry-copy">{line}</div>
                 </div>
@@ -4080,24 +4357,110 @@ function WealthInner() {
             </div>
           </div>
 
-          <div className="diligence-panel">
-            <div className="product-top">
-              <div>
-                <div className="eyebrow">AI Memo</div>
-                <div className="product-title">{report.memo.title}</div>
-              </div>
-            </div>
-            <div className="wealth-inline-note paper-inline-note">{report.memo.summary}</div>
-            <div className="diligence-memo-list">
-              {report.memo.sections.map((section) => (
-                <div className="diligence-memo-row" key={section.title}>
-                  <span>{section.title}</span>
-                  <strong>{section.body}</strong>
+          <div className="paper-mode-card wealth-subpanel-card">
+            <div className="product-title">Global rights notes</div>
+            <div className="starter-reasons">
+              {GLOBAL_TOKEN_RIGHTS_NOTES.map((line) => (
+                <div className="reason-card" key={line}>
+                  <div className="entry-copy">{line}</div>
                 </div>
               ))}
             </div>
           </div>
         </div>
+
+        {isCollateralPilotProduct(selectedProduct) ? (
+          <div className="wealth-pilot-grid">
+            <div className="paper-mode-card wealth-subpanel-card">
+              <div className="product-title">Use this receipt as collateral</div>
+              <div className="muted">
+                Pledge the receipt to open a Paper Trading support line. That support can help route sizing, but it should not flow into Wealth cash or total PT.
+              </div>
+
+              <div className="wealth-nav-period-strip compact">
+                {[
+                  { id: 'flex', label: 'Flexible pledge' },
+                  { id: 'fixed', label: 'Fixed-term pledge' }
+                ].map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={`wealth-nav-chip compact ${pledgeTermMode === option.id ? 'active' : ''}`}
+                    onClick={() => setPledgeTermMode(option.id)}
+                  >
+                    <span>Pledge mode</span>
+                    <strong>{option.label}</strong>
+                  </button>
+                ))}
+              </div>
+
+              <label className="wealth-field">
+                Support line target
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={collateralBorrowInput}
+                  onChange={(event) => setCollateralBorrowInput(Number(event.target.value))}
+                />
+              </label>
+
+              <div className="wealth-chart-summary">
+                <div>
+                  <div className="label">Collateral value</div>
+                  <div className="value">{formatValue(selectedPotentialCollateralValue, hideBalances)}</div>
+                </div>
+                <div>
+                  <div className="label">Max support @ {(selectedCollateralAdvanceRate * 100).toFixed(0)}%</div>
+                  <div className="value">{formatValue(selectedPotentialMaxBorrowValue, hideBalances)}</div>
+                </div>
+                <div>
+                  <div className="label">Current LTV</div>
+                  <div className={`value ${selectedCollateralLtv >= COLLATERAL_WARNING_LTV ? 'risk-high' : selectedCollateralLtv > 0 ? 'risk-medium' : 'risk-low'}`}>
+                    {formatYieldPercent(selectedCollateralLtv, hideBalances)}
+                  </div>
+                </div>
+                <div>
+                  <div className="label">Pledge APY</div>
+                  <div className="value risk-low">{formatYieldPercent(selectedCollateralApy, hideBalances)}</div>
+                </div>
+              </div>
+
+              <div className="toolbar">
+                <button className="primary-btn" onClick={handleUseAsCollateral} disabled={isWealthSigning}>
+                  {isWealthSigning ? 'Await wallet' : `Open support line on ${selectedProduct.shareToken}`}
+                </button>
+                <button className="secondary-btn" onClick={handleReleaseCollateral} disabled={isWealthSigning}>
+                  Release support
+                </button>
+              </div>
+
+              <div className="wealth-inline-note paper-inline-note">
+                <strong>Wallet path.</strong> Buy PT into this product, mint the receipt, optionally pledge the receipt, let Paper read that support line for route capacity, then release the support before normal settlement if you want the receipt fully free again.
+              </div>
+            </div>
+
+            <div className="paper-mode-card wealth-subpanel-card">
+              <div className="product-title">Collateral guardrails</div>
+              <div className="starter-reasons">
+                <div className="reason-card">
+                  <div className="entry-title">Redeem lock</div>
+                  <div className="entry-copy">Pledged shares stay locked until the support line is released, so redemption or settlement only applies to the free balance.</div>
+                </div>
+                <div className="reason-card">
+                  <div className="entry-title">Haircut first</div>
+                  <div className="entry-copy">The line size is clipped by the advance rate, and higher LTV should be treated as a warning instead of free capacity.</div>
+                </div>
+                <div className="reason-card">
+                  <div className="entry-title">Support, not new cash</div>
+                  <div className="entry-copy">This line is modeled as route support for Paper Trading only, so Wealth PnL and total PT should not jump when it opens.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {feedback ? <div className="env-hint">{feedback}</div> : null}
       </div>
     );
   }
@@ -4529,7 +4892,7 @@ function WealthInner() {
                     <div className="value">{formatShareBalance(selectedPledgedShares, hideBalances)}</div>
                   </div>
                   <div>
-                    <div className="label">Borrowed PT</div>
+                    <div className="label">Route support</div>
                     <div className={`value ${selectedBorrowedAmount > 0 ? 'risk-medium' : 'risk-low'}`}>
                       {formatValue(selectedBorrowedAmount, hideBalances)}
                     </div>
@@ -4550,35 +4913,35 @@ function WealthInner() {
                 <button className="primary-btn" onClick={() => handleOpenSubscribeModal()} disabled={selectedProductLocked || isWealthSigning}>
                   {isWealthSigning ? 'Await wallet' : 'Review and buy'}
                 </button>
-                <button
-                  className="secondary-btn"
-                  onClick={selectedRedeemAllowed ? handleRedeem : handlePreviewMaturity}
-                  disabled={isWealthSigning || (selectedRedeemAllowed && !selectedPosition.shares)}
-                >
-                  {selectedRedeemAllowed ? 'Redeem receipt' : 'Preview settlement'}
-                </button>
-                <button
-                  className="secondary-btn"
-                  onClick={handleSimulateSettlement}
-                  disabled={isWealthSigning || !selectedPosition.shares}
-                >
-                  Settle / roll
-                </button>
-                {isCollateralPilotProduct(selectedProduct) ? (
-                  <button
-                    className="secondary-btn"
-                    onClick={handleUseAsCollateral}
-                    disabled={isWealthSigning || !selectedPosition.shares}
-                  >
-                    Pledge receipt
-                  </button>
-                ) : null}
+              </div>
+
+              <div className="starter-reasons" style={{ marginTop: 16 }}>
+                <div className="reason-card">
+                  <div className="entry-title">{selectedRedeemAllowed ? 'Settle into PT cash' : 'Scheduled settlement only'}</div>
+                  <div className="entry-copy">
+                    {selectedRedeemAllowed
+                      ? 'Use the settlement desk below with "Settle into PT cash" when you want the free receipt balance to end and return to spendable PT in Wealth.'
+                      : 'This sleeve does not support a casual early redeem path. Use the settlement desk below to model the scheduled end, roll, or transfer flow.'}
+                  </div>
+                </div>
+                <div className="reason-card">
+                  <div className="entry-title">Roll into next term</div>
+                  <div className="entry-copy">Roll means the current receipt settles at the projected NAV and immediately restarts as the same product with a refreshed basis.</div>
+                </div>
+                <div className="reason-card">
+                  <div className="entry-title">{isCollateralPilotProduct(selectedProduct) ? 'Pledge as route support' : 'Transfer into another sleeve'}</div>
+                  <div className="entry-copy">
+                    {isCollateralPilotProduct(selectedProduct)
+                      ? 'Pledge opens support for Paper routes, but it should not inflate Wealth cash or total PT.'
+                      : 'Transfer settles this receipt first, then remints the released value into another product receipt.'}
+                  </div>
+                </div>
               </div>
 
               <div className="paper-mode-card wealth-subpanel-card" style={{ marginTop: 16 }}>
-                <div className="product-title">Time slider: maturity, roll, transfer, or end</div>
+                <div className="product-title">Settlement desk: settle, roll, transfer, or preview</div>
                 <div className="muted">
-                  This turns waiting time into a signed wallet action: choose how far forward to jump, then settle the free receipt balance.
+                  Choose the future window, then decide whether the free receipt balance should stay in the same product, move elsewhere, or end as PT cash.
                 </div>
 
                 <label className="wealth-field">
@@ -4653,7 +5016,7 @@ function WealthInner() {
 
                 <div className="toolbar">
                   <button className="primary-btn" onClick={handleSimulateSettlement} disabled={isWealthSigning || !selectedPosition.shares}>
-                    {isWealthSigning ? 'Await wallet' : 'Sign and simulate settlement'}
+                    {isWealthSigning ? 'Await wallet' : 'Sign settlement action'}
                   </button>
                 </div>
               </div>
@@ -4665,8 +5028,7 @@ function WealthInner() {
               <ModeledCallGrid cards={modeledCallCards} />
 
               <div className="env-hint">
-                <strong>Token mechanic.</strong> {selectedProduct.shareToken} is treated as the receipt: subscribe mints it, redeem or maturity burns it,
-                and the final net value should be explained after fee, tax, and route drag.
+                <strong>Token mechanic.</strong> {selectedProduct.shareToken} is treated as the receipt: subscribe mints it, settlement burns or rolls it, and a pledge only opens route support instead of minting extra Wealth cash.
               </div>
 
               <div className="wealth-contract-grid" style={{ marginTop: 16 }}>
@@ -4683,7 +5045,7 @@ function WealthInner() {
                   <div className="paper-mode-card wealth-subpanel-card">
                     <div className="product-title">Use this receipt as collateral</div>
                     <div className="muted">
-                      Buy the receipt, pledge it, borrow PT against it, then decide whether to deploy that PT elsewhere or repay and unlock the receipt.
+                      Buy the receipt, pledge it, open a route support line, then release that support when you want the receipt fully free again.
                     </div>
 
                     <div className="wealth-nav-period-strip compact">
@@ -4704,7 +5066,7 @@ function WealthInner() {
                     </div>
 
                     <label className="wealth-field">
-                      Borrow target
+                      Support line target
                       <input
                         type="number"
                         min="0"
@@ -4737,15 +5099,15 @@ function WealthInner() {
 
                     <div className="toolbar">
                       <button className="primary-btn" onClick={handleUseAsCollateral} disabled={isWealthSigning}>
-                        {isWealthSigning ? 'Await wallet' : `Borrow PT against ${selectedProduct.shareToken}`}
+                        {isWealthSigning ? 'Await wallet' : `Open support line on ${selectedProduct.shareToken}`}
                       </button>
                       <button className="secondary-btn" onClick={handleReleaseCollateral} disabled={isWealthSigning}>
-                        Repay and release
+                        Release support
                       </button>
                     </div>
 
                     <div className="wealth-inline-note paper-inline-note">
-                      <strong>Wallet path.</strong> Buy PT into this product, mint the receipt, optionally pledge the receipt, borrow PT, invest elsewhere, then repay to unlock the receipt before normal redemption or settlement.
+                      <strong>Wallet path.</strong> Buy PT into this product, mint the receipt, optionally pledge it, let Paper read the support line for route sizing, then release support before normal redemption or settlement.
                     </div>
                   </div>
 
@@ -4830,13 +5192,13 @@ function WealthInner() {
           ) : null}
 
           {selectedDetailTopics.includes('diligence') ? (
-            <div className="paper-mode-card wealth-detail-section">
+            <div className="paper-mode-card wealth-detail-section wealth-diligence-summary-only">
               <div className="product-top">
                 <div>
                   <div className="eyebrow">AI Risk + Research View</div>
-                  <div className="product-title">How the rubric, Day1 overlay, and stance fit together</div>
+                  <div className="product-title">AI diligence snapshot</div>
                   <div className="muted">
-                    Product diligence stays primary, then Day1-style macro and sentiment overlays refine the current stance.
+                    The compact pager below keeps the fit, key evidence, and memo in one place instead of listing every internal rubric row at once.
                   </div>
                 </div>
                 <div className="wealth-header-pill-row">
@@ -5218,7 +5580,8 @@ function WealthInner() {
             <div>
               <div className="eyebrow">AI recommended / {walletProfileLabel}</div>
               <div className="wealth-ai-recommend-title">
-                {aiRecommendedProduct.name} fits this wallet because {aiRecommendationReason}
+                <span className="wealth-ai-recommend-product">{aiRecommendedProduct.name}</span>
+                <span className="wealth-ai-recommend-reason">Fits this wallet because {aiRecommendationReason}</span>
               </div>
               <div className="muted">
                 Signals used: wallet connection, homepage learning, quiz, paper trading, flash-style sophistication, collateral, and prior settlement activity when available.
@@ -5426,7 +5789,7 @@ function WealthInner() {
                             Wallet owns {formatShareBalance(productPosition.shares, hideBalances)} {product.shareToken} / {formatValue(
                               productReceiptValue,
                               hideBalances
-                            )}. Pledged {formatShareBalance(productCollateral.pledgedShares || 0, hideBalances)} / borrowed {formatValue(
+                            )}. Pledged {formatShareBalance(productCollateral.pledgedShares || 0, hideBalances)} / support {formatValue(
                               productCollateral.borrowedAmount || 0,
                               hideBalances
                             )}.
@@ -5763,7 +6126,7 @@ function WealthInner() {
                           </div>
                           <div className="reason-card">
                             <div className="entry-title">Pledge</div>
-                            <div className="entry-copy">Pledge means lock the receipt as collateral, borrow PT against it, and repay or release it before normal redemption or settlement.</div>
+                            <div className="entry-copy">Pledge means lock the receipt as route support, not new wallet cash, and release that support before normal redemption or settlement.</div>
                           </div>
                         </div>
                       </div>
@@ -5773,9 +6136,9 @@ function WealthInner() {
                       <div className="paper-mode-card wealth-detail-section wealth-action-card">
                         <div className="product-top">
                           <div>
-                            <div className="product-title">Wallet share token flow and rights</div>
+                            <div className="product-title">Receipt lifecycle desk</div>
                             <div className="muted">
-                              Simulate subscribe, mint, hold, redeem, and maturity in the same sequence a future MSX live flow would teach.
+                              Buy the receipt first, then read settlement, rollover, transfer, or pledge as one lifecycle instead of separate mystery buttons.
                             </div>
                           </div>
                           <span className={`pill ${riskClass(selectedProduct.risk)}`}>{selectedProduct.riskNote}</span>
@@ -5838,21 +6201,29 @@ function WealthInner() {
                           <button className="primary-btn" onClick={handleOpenSubscribeModal} disabled={selectedProductLocked}>
                             Review and buy
                           </button>
-                          <button
-                            className="secondary-btn"
-                            onClick={selectedRedeemAllowed ? handleRedeem : handlePreviewMaturity}
-                            disabled={selectedRedeemAllowed && !selectedPosition.shares}
-                          >
-                            {selectedRedeemAllowed ? 'Redeem receipt' : 'Preview settlement'}
-                          </button>
-                          <button className="secondary-btn" onClick={handleSimulateSettlement} disabled={!selectedPosition.shares}>
-                            Settle / roll
-                          </button>
-                          {isCollateralPilotProduct(selectedProduct) ? (
-                            <button className="secondary-btn" onClick={handleUseAsCollateral} disabled={!selectedPosition.shares}>
-                              Pledge receipt
-                            </button>
-                          ) : null}
+                        </div>
+
+                        <div className="starter-reasons" style={{ marginTop: 16 }}>
+                          <div className="reason-card">
+                            <div className="entry-title">{selectedRedeemAllowed ? 'Settle into PT cash' : 'Scheduled settlement only'}</div>
+                            <div className="entry-copy">
+                              {selectedRedeemAllowed
+                                ? 'Use the main settlement desk to end the free receipt balance and return it to spendable PT cash in Wealth.'
+                                : 'Use the main settlement desk to model the scheduled end, roll, or transfer flow for this sleeve.'}
+                            </div>
+                          </div>
+                          <div className="reason-card">
+                            <div className="entry-title">Roll or transfer</div>
+                            <div className="entry-copy">Roll restarts the same receipt with a refreshed basis; transfer settles this receipt first, then remints another one.</div>
+                          </div>
+                          <div className="reason-card">
+                            <div className="entry-title">{isCollateralPilotProduct(selectedProduct) ? 'Pledge as route support' : 'Lifecycle preview'}</div>
+                            <div className="entry-copy">
+                              {isCollateralPilotProduct(selectedProduct)
+                                ? 'Pledge opens support for Paper routes, but it should not inflate Wealth cash or total PT.'
+                                : 'The preview cards below show what the wallet would sign before the lifecycle changes are applied.'}
+                            </div>
+                          </div>
                         </div>
 
                         <div className="product-title" style={{ marginTop: 16 }}>Approve, subscribe, and exit preview</div>
@@ -5862,8 +6233,7 @@ function WealthInner() {
                         <ModeledCallGrid cards={modeledCallCards} />
 
                         <div className="env-hint">
-                          <strong>Token mechanic.</strong> {selectedProduct.shareToken} is treated as the receipt: subscribe mints it, redeem or maturity burns it,
-                          and the final net value should be explained after fee, tax, and route drag.
+                          <strong>Token mechanic.</strong> {selectedProduct.shareToken} is treated as the receipt: subscribe mints it, settlement burns or rolls it, and a pledge only opens route support instead of minting extra Wealth cash.
                         </div>
 
                         <div className="wealth-contract-grid" style={{ marginTop: 16 }}>
@@ -5930,13 +6300,13 @@ function WealthInner() {
                     ) : null}
 
                     {selectedDetailTopics.includes('diligence') ? (
-                      <div className="paper-mode-card wealth-detail-section">
+                      <div className="paper-mode-card wealth-detail-section wealth-diligence-summary-only">
                         <div className="product-top">
                           <div>
                             <div className="eyebrow">AI Risk + Research View</div>
-                            <div className="product-title">How the rubric, Day1 overlay, and stance fit together</div>
+                            <div className="product-title">AI diligence snapshot</div>
                             <div className="muted">
-                              Product diligence stays primary, then Day1-style macro and sentiment overlays refine the current stance.
+                              The compact pager below keeps the fit, key evidence, and memo in one place instead of listing every internal rubric row at once.
                             </div>
                           </div>
                           <div className="wealth-header-pill-row">
@@ -6209,7 +6579,7 @@ function WealthInner() {
                   <div className="wealth-leader-main">
                     <div className="product-title">{entry.productName || entry.productId}</div>
                     <div className="muted">
-                      {new Date(entry.ts).toLocaleString()} / {entry.action || 'wallet signed'} / {formatValue(entry.amount || 0, hideBalances)}
+                      {formatWealthDateTime(entry.ts)} / {entry.action || 'wallet signed'} / {formatValue(entry.amount || 0, hideBalances)}
                     </div>
                   </div>
                   <div className="wealth-leader-move">

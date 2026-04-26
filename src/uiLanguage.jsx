@@ -274,9 +274,9 @@ const EN_TO_ZH = {
   'Daily submit usage:': '当日提交次数：',
   'Latest score tx:': '最近一次分数交易：',
   'Latest claim tx:': '最近一次 claim 交易：',
-  'This wallet already carries the welcome badge plus guide and quiz completion from the home page, including onchain task badges and reviewed risk cards.':
+  'This wallet already carries the welcome badge plus guide and quiz completion from the home page, including onchain task badges and reviewed product briefings.':
     '这个钱包已经继承了首页的欢迎徽章、guide 和 quiz 完成进度，包括链上任务徽章和已阅读风险卡片。',
-  'Replay mode checks the same wallet for the welcome badge, then accepts guide progress from reviewed risk cards or the risk badge, and quiz progress from the quiz badge or local pass state.':
+  'Replay mode checks the same wallet for the welcome badge, then accepts guide progress from reviewed product briefings or the risk badge, and quiz progress from the quiz badge or local pass state.':
     'Replay 模式会检查同一个钱包是否有欢迎徽章，然后接受来自已阅读风险卡片或风险徽章的 guide 进度，以及来自 quiz 徽章或本地通过状态的 quiz 进度。',
   'This wallet already used at least one replay buy or sell action.': '这个钱包已经至少使用过一次 replay 买入或卖出操作。',
   'Place at least one replay buy or sell so the wallet proves it used the trading surface.':

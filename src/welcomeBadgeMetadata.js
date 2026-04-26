@@ -181,7 +181,7 @@ export const taskBadgeMetadataUris = {
   risk: buildMetadataUri(
     'guide',
     'MSX Risk Review Badge',
-    'A risk-card review collectible for the MSX guided investing flow.'
+    'A product-briefing review collectible for the MSX guided investing flow.'
   ),
   quiz: buildMetadataUri(
     'quiz',

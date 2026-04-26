@@ -42,6 +42,7 @@ import {
 } from './walletNickname';
 import { queryClient, wagmiConfig } from './wagmiSetup';
 import {
+  getWealthSpendableCash,
   getWalletProfileSummary,
   readRecoveredPaperState,
   readWalletProfile,
@@ -2384,7 +2385,7 @@ function readStoredWealthDeskState(address) {
 
   return {
     paperCash: 0,
-    wealthCash: roundNumber(Number(wealthState?.cash || 0), 2),
+    wealthCash: getWealthSpendableCash(wealthState),
     collateralBorrowed: roundNumber(collateralBorrowed, 2),
     pledgedProducts: collateralEntries.length
   };
@@ -2898,7 +2899,7 @@ function buildRouteStructureOptions(product, guide, routeId = 'spot') {
       options.push({
         id: 'collateral',
         label: 'Collateral loop',
-        copy: 'Use a lower-vol sleeve as collateral, borrow against it, then route the borrowed PT into the active template.'
+        copy: 'Use a lower-vol sleeve as collateral, open a route support line, then let the active template read that support without counting it as new wallet cash.'
       });
     }
 
@@ -2948,7 +2949,7 @@ function buildRouteStructureOptions(product, guide, routeId = 'spot') {
     options.push({
       id: 'collateral',
       label: 'Collateral route',
-      copy: 'Use a lower-vol sleeve as collateral, borrow against it, then route the borrowed PT into the active ticket.'
+      copy: 'Use a lower-vol sleeve as collateral, open a route support line, then let the active ticket read that support without counting it as new wallet cash.'
     });
   }
 
@@ -2972,12 +2973,12 @@ function buildRouteStructureOptions(product, guide, routeId = 'spot') {
 }
 
 function buildFundingBreakdown(availableCash, rewardCredit, wealthDeskState) {
-  const wealthCollateralBorrow = Number(wealthDeskState?.collateralBorrowed || 0);
+  const wealthReceiptSupport = Number(wealthDeskState?.collateralBorrowed || 0);
   const corePaperCash = Math.max(0, Number(availableCash || 0) - Number(rewardCredit || 0));
   return {
     corePaperCash,
     rewardCredit: Number(rewardCredit || 0),
-    wealthCollateralBorrow
+    wealthReceiptSupport
   };
 }
 
@@ -3457,7 +3458,7 @@ const REPLAY_ROUTE_FOCUS_OPTIONS = {
       id: 'collateral-loop',
       label: 'Collateral loop',
       panelTitle: 'Collateral loop route',
-      summary: 'Use a calmer asset as collateral, borrow against it, and route the borrowed side into a second sleeve only if the spread survives all drag.',
+      summary: 'Use a calmer asset as collateral, open a support line, and route the second sleeve only if the spread survives all drag without treating support as new wallet cash.',
       lessons: [
         'Collateral loops turn calm assets into leveraged structures quickly.',
         'Borrow carry and liquidation penalty must be shown before the extra headline yield.',
@@ -4838,12 +4839,12 @@ function buildReplayAchievements({
       contractId: 'Replay badge #5',
       activityLabel: 'Lifecycle action',
       coverCopy: 'Lifecycle action learned',
-      requirement: 'After buying a receipt, either settle/close it into cash or pledge a Wealth receipt as collateral support.',
-      reward: 'Shows that the user understands a receipt is not just a buy ticket: it eventually settles, rolls, redeems, or can be pledged before it is released.',
+      requirement: 'After buying a receipt, either settle/close it into cash or pledge a Wealth receipt as route support.',
+      reward: 'Shows that the user understands a receipt is not just a buy ticket: it eventually settles, rolls, redeems, or can be pledged to support another route before it is released.',
       unlocked: onboardingReady && spotBuySeen && settleOrPledgeUsed,
       detail: settleOrPledgeUsed
-        ? 'The wallet already completed a receipt lifecycle action: either the replay position was closed/settled or a Wealth receipt was pledged as collateral.'
-        : 'Settle means finishing the receipt lifecycle: close, redeem, roll, or let maturity turn the receipt back into cash or the promised payoff. Pledge means locking the receipt as collateral so borrowed PT can support another route.'
+        ? 'The wallet already completed a receipt lifecycle action: either the replay position was closed/settled or a Wealth receipt was pledged as route support.'
+        : 'Settle means finishing the receipt lifecycle: close, redeem, roll, or let maturity turn the receipt back into cash or the promised payoff. Pledge means locking the receipt as route support so Paper can read extra capacity without minting extra wallet cash.'
     }
   ];
 }
@@ -5074,7 +5075,7 @@ function PaperTradingInner() {
   const [hedgePreviewSleeveInput, setHedgePreviewSleeveInput] = useState('2500');
   const [hedgeDiligencePulse, setHedgeDiligencePulse] = useState(false);
   const [learnMoreProductId, setLearnMoreProductId] = useState(null);
-  const [selectedRewardTaskId, setSelectedRewardTaskId] = useState(REPLAY_BADGE_TYPES.perpLeverage);
+  const [selectedRewardTaskId, setSelectedRewardTaskId] = useState(REPLAY_BADGE_TYPES.baseCheck);
   const [claimingAchievementId, setClaimingAchievementId] = useState(null);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [walletError, setWalletError] = useState('');
@@ -6332,11 +6333,6 @@ function PaperTradingInner() {
       hedgeRouteUsed
     ]
   );
-  const primaryReplayAchievements = replayAchievements.filter(
-    (achievement) =>
-      achievement.id === REPLAY_BADGE_TYPES.perpLeverage ||
-      achievement.id === REPLAY_BADGE_TYPES.protectiveHedge
-  );
   const selectedRewardTask = replayAchievements.find((achievement) => achievement.id === selectedRewardTaskId) || null;
   const selectedRewardTaskChecklistItems = selectedRewardTask
     ? selectedRewardTask.id === REPLAY_BADGE_TYPES.baseCheck
@@ -6485,7 +6481,7 @@ function PaperTradingInner() {
                   indicator: 'PLEDGE',
                   interactive: true,
                   onClick: () => handleSelectLearningRoute('perp:hedge'),
-                  copy: 'Pledge means lock a receipt as collateral so borrowed PT can support a hedge or another route; repay or settle before the receipt is released.'
+                  copy: 'Pledge means lock a receipt as route support so Paper can read extra hedge capacity; it should not mint extra wallet cash before the receipt is released.'
                 }
               ]
     : [];
@@ -6525,7 +6521,7 @@ function PaperTradingInner() {
   const unlockedReplayAchievementCount = replayAchievements.filter((achievement) => achievement.unlocked).length;
   const claimReadyReplayAchievementCount = replayAchievements.filter((achievement) => achievement.canClaimOnchain).length;
   const claimedReplayAchievementCount = replayAchievements.filter((achievement) => achievement.onchainClaimed).length;
-  const nextReplayAchievement = primaryReplayAchievements.find((achievement) => !achievement.unlocked) || null;
+  const nextReplayAchievement = replayAchievements.find((achievement) => !achievement.unlocked) || null;
   const selectedPosition = paperState.positions[selectedProductId] || {
     units: 0,
     principal: 0,
@@ -9457,7 +9453,7 @@ function PaperTradingInner() {
     if (modeId === 'flash') {
       setFeedback('Flash route preview is illustrative only. The edge must exceed spread, gas, and same-block unwind risk before it is usable.');
     } else if (modeId === 'collateral') {
-      setFeedback('Collateral loop preview is active. The desk now models borrowed PT, borrow carry, and the need to release collateral before normal redemption.');
+      setFeedback('Collateral loop preview is active. The desk now models route support, support carry, and the need to release collateral before normal redemption.');
     } else if (modeId === 'combo') {
       setFeedback('Anchor + active preview is active. The desk now blends the current route with a calmer anchor so diversification and blended drag stay readable.');
     } else if (modeId === 'dca') {
@@ -11716,7 +11712,10 @@ function PaperTradingInner() {
                         {hedgeFocusActive ? (
                           <>
                             <div>
-                              PT source = core paper cash {formatNotional(fundingBreakdown.corePaperCash)} + quest rewards {formatNotional(fundingBreakdown.rewardCredit)} + wealth collateral borrow {formatNotional(fundingBreakdown.wealthCollateralBorrow)} = wallet PT {formatNotional(availableCash)}.
+                              PT source = core paper cash {formatNotional(fundingBreakdown.corePaperCash)} + quest rewards {formatNotional(fundingBreakdown.rewardCredit)} = wallet PT {formatNotional(availableCash)}.
+                            </div>
+                            <div>
+                              Wealth receipt support {formatNotional(fundingBreakdown.wealthReceiptSupport)} PT is separate: it can raise certain route caps after a pledge, but it is not added to wallet cash and it should not flow into Wealth PnL.
                             </div>
                             <div>
                               Principal uses wallet {formatNotional(hedgePrincipalCashReserved)} PT first, then loan {formatNotional(hedgePrincipalFlashNotional)} PT if Want more is on.
@@ -11771,7 +11770,7 @@ function PaperTradingInner() {
                             {leverageRouteActive ? <div>Wallet cash total: {formatNotional(availableCash)} PT</div> : null}
                             <div>Core paper cash: {formatNotional(fundingBreakdown.corePaperCash)} PT</div>
                             <div>Quest rewards: {formatNotional(fundingBreakdown.rewardCredit)} PT</div>
-                            <div>Wealth collateral borrow: {formatNotional(fundingBreakdown.wealthCollateralBorrow)} PT</div>
+                            <div>Wealth receipt support: {formatNotional(fundingBreakdown.wealthReceiptSupport)} PT</div>
                             {leverageRouteActive ? <div>Initial margin posted: {formatNotional(routePostedBaseMarginCapital)} PT</div> : null}
                             {leverageRouteActive && routeFlashReserveCapital > 0 ? <div>Flash reserve posted: {formatNotional(routePostedFlashReserveCapital)} PT</div> : null}
                           </>
@@ -13007,7 +13006,7 @@ function PaperTradingInner() {
             </div>
 
           <div className="learn-quest-optional-row paper-reward-task-row" style={{ marginTop: 18 }}>
-            {primaryReplayAchievements.map((achievement) => (
+            {replayAchievements.map((achievement) => (
               (() => {
                 const tileStatus = getReplayAchievementTileStatus(achievement);
 
