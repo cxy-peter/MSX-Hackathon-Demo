@@ -1379,43 +1379,6 @@ const ADDITIONAL_PAPER_PRODUCTS = [
         'It turns hedging into a concrete replay path rather than a generic concept card.'
     },
     {
-      id: 'tsll-leverage',
-      ticker: 'TSLL',
-      name: 'TSLL Leveraged Tesla Route',
-      lane: 'leverage',
-      risk: 'High',
-      productType: 'Single-stock leveraged ETF',
-      sourceLabel: 'Bundled 1Y TSLL daily history',
-      csvPath: '/replay-data/TSLL_1d.csv',
-      costModel: {
-        tradeFeeBps: 10,
-        spreadBps: 14,
-        fxBps: 4,
-        channelBps: 4,
-        annualCarryBps: 44,
-        shortTermTaxRate: 0.24,
-        longTermTaxRate: 0.15,
-        incomeTaxRate: 0.24,
-        taxTreatment: 'capital-gains'
-      },
-      fallback: {
-        price: 11,
-        drift: 0.0012,
-        volatility: 0.05,
-        volumeBase: 530000,
-        minPrice: 3
-      },
-      fit: 'Users who want leverage math on a single high-volatility stock instead of on an index.',
-      humanSummary:
-        'TSLL turns Tesla beta into a leveraged route, which makes drawdown and timing risk much easier to feel than in a plain public wrapper.',
-      technicalSummary:
-        'Replay bars use bundled daily ETF history so the product shows actual single-stock leverage behavior.',
-      returnSource: 'Leveraged Tesla exposure.',
-      worstCase: 'A routine Tesla swing wipes out weeks of gains because the route is both single-name and leveraged.',
-      whyItMatters:
-        'It separates a tokenized stock wrapper from an outright leverage product on the same underlying theme.'
-    },
-    {
       id: 'nvdl-leverage',
       ticker: 'NVDL',
       name: 'NVDL Leveraged NVIDIA Route',
@@ -1918,8 +1881,7 @@ const CURATED_PAPER_PRODUCT_IDS = [
   'googlx',
   'spyx',
   'qqqx',
-  'gldx',
-  'tsll-leverage'
+  'gldx'
 ];
 
 const CURATED_PAPER_PRODUCT_OVERRIDES = {
@@ -2129,18 +2091,6 @@ const CURATED_PAPER_PRODUCT_OVERRIDES = {
   'sqqq-leverage': {
     productType: 'Listed leveraged wrapper',
     structureTags: ['Collateral-eligible', 'Listed proxy']
-  },
-  'tsll-leverage': {
-    lane: 'public',
-    name: 'TSLL Tesla ETF Replay',
-    productType: 'Listed ETF / xStock-style wrapper',
-    structureTags: ['Listed ETF', 'High beta', 'Tesla-linked'],
-    defaultInterval: '1D',
-    defaultRange: '1Y',
-    humanSummary:
-      'TSLL stays available as the high-beta Tesla-linked daily replay, but it lives inside the xStock/listed shelf instead of a separate route category.',
-    technicalSummary:
-      'Replay bars use bundled TSLL daily history. The UI treats it as a listed wrapper with higher beta and daily-reset drag, not as a standalone leverage route.'
   },
   'nvdl-leverage': {
     productType: 'Listed leveraged wrapper',

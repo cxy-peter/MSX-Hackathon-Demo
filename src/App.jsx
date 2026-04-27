@@ -3529,7 +3529,7 @@ export default function App() {
                 {learnQuestCards.slice(0, 2).map((quest, index) => (
                   <button
                     key={quest.id}
-                    className={`learn-quest-tile core ${activeCoreQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' || quest.status === 'Unlocked' ? 'done' : ''} ${quest.status === 'Done' ? 'ready' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}
+                    className={`learn-quest-tile core ${activeCoreQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' ? 'done' : ''} ${quest.status === 'Done' || quest.status === 'Unlocked' ? 'ready' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}
                     onClick={() => openLearnQuest(quest.id)}
                   >
                     <div className="home-quest-task-summary">
@@ -3748,7 +3748,7 @@ export default function App() {
               {learnQuestCards.slice(2).map((quest) => (
                 <button
                   key={quest.id}
-                className={`learn-quest-tile ${activeOptionalQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' || quest.status === 'Unlocked' ? 'done' : ''} ${quest.status === 'Done' ? 'ready' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}
+                className={`learn-quest-tile ${activeOptionalQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' ? 'done' : ''} ${quest.status === 'Done' || quest.status === 'Unlocked' ? 'ready' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}
                   onClick={() => openLearnQuest(quest.id)}
                 >
                   <div className="home-quest-task-summary">

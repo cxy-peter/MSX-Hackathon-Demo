@@ -366,6 +366,7 @@ const WEALTH_PRODUCT_TYPE_GROUPS = [
     id: 'wrapper',
     label: '',
     options: [
+      { id: 'all', label: 'All' },
       { id: 'cash', label: 'Cash & Treasury' },
       { id: 'public', label: 'Pre-IPO / Private' },
       { id: 'dual', label: 'Dual Investment' }
@@ -373,7 +374,7 @@ const WEALTH_PRODUCT_TYPE_GROUPS = [
   },
   {
     id: 'productType',
-    label: 'Product type',
+    label: '',
     options: [
       { id: 'all', label: 'All' },
       { id: 'protected', label: 'Protected' },
@@ -2717,6 +2718,7 @@ function DualOutcomeSimulator({
   settlementDays,
   settlementMovePct,
   onSettlementMoveChange,
+  showSettlementSlider = true,
   className = ''
 }) {
   const quotePayout = roundNumber(1000 + 1000 * apr * (Math.max(1, Number(settlementDays || 1)) / 365), 2);
@@ -2797,17 +2799,19 @@ function DualOutcomeSimulator({
         </div>
       </div>
 
-      <label className="wealth-field compact wealth-dual-sim-slider">
-        Simulated settlement move: {Number(settlementMovePct || 0).toFixed(0)}%
-        <input
-          type="range"
-          min="-12"
-          max="12"
-          step="1"
-          value={settlementMovePct}
-          onChange={(event) => onSettlementMoveChange(Number(event.target.value))}
-        />
-      </label>
+      {showSettlementSlider ? (
+        <label className="wealth-field compact wealth-dual-sim-slider">
+          Simulated settlement move: {Number(settlementMovePct || 0).toFixed(0)}%
+          <input
+            type="range"
+            min="-12"
+            max="12"
+            step="1"
+            value={settlementMovePct}
+            onChange={(event) => onSettlementMoveChange(Number(event.target.value))}
+          />
+        </label>
+      ) : null}
 
       <div className="wealth-dual-sim-strip">
         <div className="paper-balance-box">
@@ -4518,7 +4522,7 @@ function WealthInner() {
   }, [effectiveShelfFilterIds, goalFilteredProducts, hasEffectiveShelfFilter, liveProducts, recommendedProducts]);
   const normalizedShelfSearchQuery = shelfSearchQuery.trim().toLowerCase();
   const searchableShelfProducts = useMemo(() => {
-    if (!normalizedShelfSearchQuery) return baseShelfProducts;
+    if (!normalizedShelfSearchQuery || dualInvestmentShelfActive) return baseShelfProducts;
 
     return baseShelfProducts.filter((product) =>
       [
@@ -4536,7 +4540,7 @@ function WealthInner() {
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(normalizedShelfSearchQuery))
     );
-  }, [baseShelfProducts, normalizedShelfSearchQuery]);
+  }, [baseShelfProducts, dualInvestmentShelfActive, normalizedShelfSearchQuery]);
   const shelfProducts = useMemo(() => {
     const sortedProducts = sortProductsWithOwnedFirst(searchableShelfProducts, displayWealthState.positions);
     if (!dualInvestmentShelfActive) {
@@ -6077,6 +6081,11 @@ function WealthInner() {
   }
 
   function focusShelfFilterForCategory(categoryId = 'all') {
+    if (!categoryId || categoryId === 'all') {
+      applyShelfProductFilters('all', 'all');
+      return;
+    }
+
     const group = WEALTH_PRODUCT_TYPE_GROUPS.find((item) =>
       item.options.some((option) => option.id === categoryId)
     );
@@ -6131,16 +6140,18 @@ function WealthInner() {
 
   function handleProductTypeSelect(category, selectedGroupId = '') {
     const nextCategory = category?.id || 'all';
-    if (nextCategory === 'all') {
-      applyShelfProductFilters('all', 'all');
-      setShelfSearchQuery('');
-      return;
-    }
-
     const groupId =
       selectedGroupId ||
       WEALTH_PRODUCT_TYPE_GROUPS.find((group) => group.options.some((option) => option.id === nextCategory))?.id ||
       'wrapper';
+    if (nextCategory === 'all') {
+      const nextWrapperCategory = groupId === 'wrapper' ? 'all' : selectedWrapperCategory;
+      const nextProductTypeCategory = groupId === 'productType' ? 'all' : selectedProductTypeCategory;
+      applyShelfProductFilters(nextWrapperCategory, nextProductTypeCategory);
+      setShelfSearchQuery('');
+      return;
+    }
+
     const nextWrapperCategory = groupId === 'wrapper' ? nextCategory : selectedWrapperCategory;
     const nextProductTypeCategory = groupId === 'productType' ? nextCategory : selectedProductTypeCategory;
 
@@ -7134,43 +7145,39 @@ function WealthInner() {
           This demo uses the page reference price for quote education, but subscription and rewards settle only in PT.
         </div>
 
-        <div className="wealth-dual-direction-panel">
-          <div className="product-title">{activePair.id} direction</div>
-          <div className="wealth-dual-direction-row">
-            {DUAL_CURRENCY_DIRECTION_OPTIONS.map((option) => (
-              <button
-                type="button"
-                key={option.id}
-                className={`wealth-dual-direction-chip ${dualCurrencyDirection === option.id ? 'active' : ''}`}
-                onClick={() => {
-                  setDualCurrencyDirection(option.id);
-                  setDualCurrencyTargetPct(option.id === 'buy-low' ? -4 : 5);
-                }}
-              >
-                {option.id === 'buy-low' ? 'Buy low' : 'Sell high'}
-              </button>
-            ))}
+        <div className="wealth-dual-control-panel">
+          <div className="wealth-dual-control-block">
+            <div className="product-title">{activePair.id}</div>
+            <div className="wealth-dual-direction-row">
+              {DUAL_CURRENCY_DIRECTION_OPTIONS.map((option) => (
+                <button
+                  type="button"
+                  key={option.id}
+                  className={`wealth-dual-direction-chip ${dualCurrencyDirection === option.id ? 'active' : ''}`}
+                  onClick={() => {
+                    setDualCurrencyDirection(option.id);
+                    setDualCurrencyTargetPct(option.id === 'buy-low' ? -4 : 5);
+                  }}
+                >
+                  {option.id === 'buy-low' ? 'Buy low' : 'Sell high'}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div className="wealth-dual-filter-panel">
-          <div className="wealth-dual-filter-row">
-            {termFilters.map((filter) => (
-              <button
-                type="button"
-                key={filter.id}
-                className={`wealth-dual-filter-chip ${selectedDualTermDays === filter.days ? 'active' : ''}`}
-                onClick={() => setSettlementDays(filter.days)}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
-          <div className="wealth-dual-price-row">
-            <div className="wealth-dual-current-price">
-              <span className="wealth-dual-coin">{activePair.base.slice(0, 1)}</span>
-              <span>{activePair.id} current price:</span>
-              <strong>{activePair.referencePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 8 })}</strong>
+          <div className="wealth-dual-control-block">
+            <div className="wealth-dual-control-label">Term</div>
+            <div className="wealth-dual-filter-row">
+              {termFilters.map((filter) => (
+                <button
+                  type="button"
+                  key={filter.id}
+                  className={`wealth-dual-filter-chip ${selectedDualTermDays === filter.days ? 'active' : ''}`}
+                  onClick={() => setSettlementDays(filter.days)}
+                >
+                  {filter.label}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -7186,6 +7193,11 @@ function WealthInner() {
               <div>
                 <h3>{dualCurrencyDirection === 'sell-high' ? `Sell high ${activePair.base} with PT` : `Buy low ${activePair.base} with PT`}</h3>
               </div>
+            </div>
+            <div className="wealth-dual-current-price wealth-dual-preview-price">
+              <span className="wealth-dual-coin">{activePair.base.slice(0, 1)}</span>
+              <span>{activePair.id} current price:</span>
+              <strong>{formatPairPrice(activePair.referencePrice)}</strong>
             </div>
 
             <div className="wealth-dual-quote-metrics">
@@ -7270,6 +7282,19 @@ function WealthInner() {
                   />
                 </label>
               </div>
+
+              <DualOutcomeSimulator
+                pair={activePair}
+                direction={dualCurrencyDirection}
+                targetPrice={ptSettlementPreview.targetPrice}
+                targetPct={targetSliderValue}
+                apr={quotedDualApr}
+                settlementDays={selectedDualTermDays}
+                settlementMovePct={ptSettlementPreview.settlementMovePct}
+                onSettlementMoveChange={setDualCurrencySettlementMovePct}
+                showSettlementSlider={false}
+                className="wealth-dual-receipt-map"
+              />
 
               <div className="wealth-dual-settlement-metrics">
                 <div>
@@ -8359,7 +8384,6 @@ function WealthInner() {
               {selectedDetailTopics.includes('flow') && isDualInvestmentProduct(selectedProduct) ? renderDualInvestmentOrderBook({ surface: 'detail' }) : null}
           {selectedDetailTopics.includes('snapshot') ? (
             <div className="paper-mode-card wealth-detail-section">
-              {isDualInvestmentProduct(selectedProduct) ? renderDualOutcomeMap({ className: 'wealth-dual-overview-map' }) : null}
               <div className="route-highlight wealth-detail-banner">
                 <strong>{selectedProduct.status}</strong> / {selectedProduct.liveTieIn}
               </div>
@@ -9623,23 +9647,25 @@ function WealthInner() {
                 </span>
               </div>
 
-              <div className="wealth-search-shell">
-                <div className="wealth-search-field">
-                  <span className="wealth-search-icon" aria-hidden="true">
-                    <svg viewBox="0 0 20 20" fill="none">
-                      <circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.6" />
-                      <path d="M12.5 12.5L17 17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                    </svg>
-                  </span>
-                  <input
-                    type="search"
-                    value={shelfSearchQuery}
-                    onChange={(event) => setShelfSearchQuery(event.target.value)}
-                    placeholder="Search any fund you know"
-                    aria-label="Search product shelf"
-                  />
+              {!dualInvestmentShelfActive ? (
+                <div className="wealth-search-shell">
+                  <div className="wealth-search-field">
+                    <span className="wealth-search-icon" aria-hidden="true">
+                      <svg viewBox="0 0 20 20" fill="none">
+                        <circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.6" />
+                        <path d="M12.5 12.5L17 17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                      </svg>
+                    </span>
+                    <input
+                      type="search"
+                      value={shelfSearchQuery}
+                      onChange={(event) => setShelfSearchQuery(event.target.value)}
+                      placeholder="Search any fund you know"
+                      aria-label="Search product shelf"
+                    />
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               {shelfProducts.length ? (
                 <div className="wealth-product-row">

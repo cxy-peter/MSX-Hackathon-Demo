@@ -126,6 +126,7 @@ const PAPER_LOCKUP_FILTERS = [
 const HIDDEN_REPLAY_PRODUCT_LANES = new Set(['yield', 'strategy', 'ai']);
 const HIDDEN_REPLAY_LANE_TAB_IDS = new Set([]);
 const HIDDEN_LEARNING_ROUTE_IDS = new Set(['routing', 'lending']);
+const REMOVED_REPLAY_PRODUCT_IDS = new Set(['tsll-leverage']);
 const HIDDEN_PERP_FOCUS_IDS = new Set([]);
 const DEFAULT_STRATEGY_AI_PROMPT =
   'Protect a BTC sleeve with a collar when volatility expands, keep upside capped, and exit if drawdown breaks 8%.';
@@ -345,7 +346,10 @@ const OPTION_STRATEGY_PARAMETER_LABELS = {
 };
 const WEALTH_SURFACE_REPLAY_PRODUCT_IDS = new Set(['msx-income-ladder']);
 const REPLAY_PRODUCTS = PAPER_PRODUCTS.filter(
-  (product) => !WEALTH_SURFACE_REPLAY_PRODUCT_IDS.has(product.id) && !HIDDEN_REPLAY_PRODUCT_LANES.has(product.lane)
+  (product) =>
+    !WEALTH_SURFACE_REPLAY_PRODUCT_IDS.has(product.id) &&
+    !REMOVED_REPLAY_PRODUCT_IDS.has(product.id) &&
+    !HIDDEN_REPLAY_PRODUCT_LANES.has(product.lane)
 );
 const REPLAY_LANE_OPTIONS = PAPER_LANE_OPTIONS.filter(
   (lane) => !HIDDEN_REPLAY_LANE_TAB_IDS.has(lane.id) && (lane.id === 'all' || REPLAY_PRODUCTS.some((product) => product.lane === lane.id))
@@ -2278,28 +2282,36 @@ function normalizeTradeOutcomeHistory(payload) {
 }
 
 function normalizePaperState(payload) {
+  const removedProductSeen =
+    (payload?.positions &&
+      typeof payload.positions === 'object' &&
+      !Array.isArray(payload.positions) &&
+      Object.keys(payload.positions).some((productId) => REMOVED_REPLAY_PRODUCT_IDS.has(productId))) ||
+    (Array.isArray(payload?.trades) && payload.trades.some((trade) => REMOVED_REPLAY_PRODUCT_IDS.has(trade?.productId)));
   const safePositions =
     payload?.positions && typeof payload.positions === 'object' && !Array.isArray(payload.positions)
       ? Object.fromEntries(
-          Object.entries(payload.positions).map(([productId, position]) => [
-            productId,
-            {
-              units: roundNumber(Number(position?.units || 0), 6),
-              principal: roundNumber(Number(position?.principal || 0), 2),
-              avgEntry: roundNumber(Number(position?.avgEntry || 0), 4),
-              carryPaid: roundNumber(Number(position?.carryPaid || 0), 2),
-              grossNotional: roundNumber(Number(position?.grossNotional || 0), 2),
-              entryFeePaid: roundNumber(Number(position?.entryFeePaid || 0), 2),
-              principalLoan: roundNumber(Number(position?.principalLoan || 0), 2),
-              entryTs: position?.entryTs || ''
-            }
-          ])
+          Object.entries(payload.positions)
+            .filter(([productId]) => !REMOVED_REPLAY_PRODUCT_IDS.has(productId))
+            .map(([productId, position]) => [
+              productId,
+              {
+                units: roundNumber(Number(position?.units || 0), 6),
+                principal: roundNumber(Number(position?.principal || 0), 2),
+                avgEntry: roundNumber(Number(position?.avgEntry || 0), 4),
+                carryPaid: roundNumber(Number(position?.carryPaid || 0), 2),
+                grossNotional: roundNumber(Number(position?.grossNotional || 0), 2),
+                entryFeePaid: roundNumber(Number(position?.entryFeePaid || 0), 2),
+                principalLoan: roundNumber(Number(position?.principalLoan || 0), 2),
+                entryTs: position?.entryTs || ''
+              }
+            ])
         )
       : {};
 
   const safeTrades = Array.isArray(payload?.trades)
     ? payload.trades
-        .filter((trade) => trade && typeof trade === 'object')
+        .filter((trade) => trade && typeof trade === 'object' && !REMOVED_REPLAY_PRODUCT_IDS.has(trade.productId))
         .map((trade) => ({
           ...trade,
           notional: roundNumber(Number(trade.notional || 0), 2),
@@ -2324,7 +2336,7 @@ function normalizePaperState(payload) {
     cash: roundNumber(Number(payload?.cash ?? STARTING_PAPER_TOKENS), 2),
     positions: safePositions,
     trades: safeTrades,
-    realizedPnl: roundNumber(Number(payload?.realizedPnl ?? derivedRealizedPnl), 2)
+    realizedPnl: roundNumber(Number(removedProductSeen ? derivedRealizedPnl : payload?.realizedPnl ?? derivedRealizedPnl), 2)
   };
 }
 
@@ -7834,6 +7846,7 @@ function PaperTradingInner() {
   );
   const [productLeaderboardGesture, setProductLeaderboardGesture] = useState(null);
   const [autoSellDockGesture, setAutoSellDockGesture] = useState(null);
+  const [paperLedgerOpen, setPaperLedgerOpen] = useState(false);
   const [developerOverride, setDeveloperOverride] = useState(false);
   const hoverDebugEnabled = useMemo(() => {
     if (typeof window === 'undefined') return false;
@@ -11468,6 +11481,12 @@ function PaperTradingInner() {
     if (isConnected) {
       setWalletModalOpen(false);
       setWalletError('');
+    }
+  }, [isConnected]);
+
+  useEffect(() => {
+    if (!isConnected) {
+      setPaperLedgerOpen(false);
     }
   }, [isConnected]);
 
@@ -17429,6 +17448,46 @@ function PaperTradingInner() {
     );
   }
 
+  function renderPaperFloatingLedger() {
+    if (!isConnected) return null;
+
+    if (!paperLedgerOpen) {
+      return (
+        <button
+          type="button"
+          className="paper-floating-ledger-tab"
+          onClick={() => setPaperLedgerOpen(true)}
+          aria-label="Open wallet-linked positions and trade log"
+          aria-expanded="false"
+        >
+          <span>Open positions</span>
+          <strong>{portfolioRows.length}</strong>
+        </button>
+      );
+    }
+
+    return (
+      <div className="paper-floating-ledger-stack" aria-label="Open positions and trade log">
+        <div className="paper-floating-ledger-head">
+          <div>
+            <div className="eyebrow">Wallet ledger</div>
+            <h3>{walletDisplayName}</h3>
+          </div>
+          <button
+            type="button"
+            className="ghost-btn compact paper-floating-ledger-close"
+            onClick={() => setPaperLedgerOpen(false)}
+            aria-label="Close wallet ledger"
+          >
+            X
+          </button>
+        </div>
+        {renderPaperPositionsSideCard()}
+        {renderReplayFillsSideCard()}
+      </div>
+    );
+  }
+
   function renderLeaderboardScoreRouteCard() {
     return (
       <>
@@ -18289,10 +18348,7 @@ function PaperTradingInner() {
         </section>
 
         {renderProductFloatingLeaderboard()}
-        <div className="paper-floating-ledger-stack" aria-label="Open positions and trade log">
-          {renderPaperPositionsSideCard()}
-          {renderReplayFillsSideCard()}
-        </div>
+        {renderPaperFloatingLedger()}
       </main>
 
       <PaperBuyPrimerModal
