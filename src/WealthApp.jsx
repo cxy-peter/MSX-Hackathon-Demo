@@ -1408,7 +1408,6 @@ function DeveloperModeModal({
   onUsernameChange,
   onPasswordChange,
   onLogin,
-  onLogout,
   errorText,
   noticeText,
   isConnected,
@@ -1428,16 +1427,11 @@ function DeveloperModeModal({
           <div className="wallet-modal-title">Developer Mode</div>
           <div className="wallet-modal-subtitle">Wealth controls</div>
           <div className="wallet-install-copy">
-            Browser-local admin access for the Wealth page. Sign in for the current use; the panel does not reuse a saved developer login.
+            Browser-local admin access for the Wealth page. Sign in for the current use; closing this panel exits developer mode and the next open asks again.
           </div>
           <button className="secondary-btn" onClick={onClose}>
-            Keep reviewing
+            Close panel
           </button>
-          {isAuthed ? (
-            <button className="ghost-btn compact" onClick={onLogout}>
-              Sign out of developer mode
-            </button>
-          ) : null}
         </div>
         <div className="wallet-modal-pane wallet-modal-main developer-modal-main">
           {!isAuthed ? (
@@ -1477,7 +1471,7 @@ function DeveloperModeModal({
                 </div>
               </div>
               <div className="wealth-inline-note">
-                Wealth developer review is open for this signed-in use, so you can inspect wallet-linked cash, holdings, and routing behavior without making the page default to admin mode.
+                Wealth developer review is open for this signed-in use. Closing the panel exits the mode, so wallet-linked cash, holdings, and routing behavior stay normal on the next open.
               </div>
               {walletProfilePanel ? (
                 <div className="developer-wallet-profile-panel">
@@ -1487,9 +1481,6 @@ function DeveloperModeModal({
               <div className="toolbar">
                 <button className="secondary-btn" onClick={onClose}>
                   Close panel
-                </button>
-                <button className="ghost-btn compact" onClick={onLogout}>
-                  Turn off developer mode
                 </button>
               </div>
               {noticeText ? <div className="env-hint">{noticeText}</div> : null}
@@ -6363,24 +6354,25 @@ function WealthInner() {
     setDevModeNotice('');
   }
 
+  function closeDeveloperMode() {
+    setDevModeOpen(false);
+    setDevModeAuthed(false);
+    setDevModeUsername('');
+    setDevModePassword('');
+    setDevModeError('');
+    setDevModeNotice('');
+  }
+
   function handleDeveloperLogin() {
     if (devModeUsername.trim() === DEV_MODE_USERNAME && devModePassword.trim() === DEV_MODE_PASSWORD) {
       setDevModeAuthed(true);
       setDevModeError('');
-      setDevModeNotice('Developer controls are open for this use. Reopening this panel asks for the account again.');
+      setDevModeNotice('Developer controls are open for this use. Closing this panel exits the mode and asks for the account again next time.');
       return;
     }
 
     setDevModeError('Incorrect developer credentials.');
     setDevModeNotice('');
-  }
-
-  function handleDeveloperLogout() {
-    setDevModeAuthed(false);
-    setDevModeUsername('');
-    setDevModePassword('');
-    setDevModeError('');
-    setDevModeNotice('Developer controls are closed for this browser.');
   }
 
   function handleSaveWalletNickname() {
@@ -11027,14 +11019,13 @@ function WealthInner() {
       />
       <DeveloperModeModal
         open={devModeOpen}
-        onClose={() => setDevModeOpen(false)}
+        onClose={closeDeveloperMode}
         isAuthed={devModeAuthed}
         username={devModeUsername}
         password={devModePassword}
         onUsernameChange={setDevModeUsername}
         onPasswordChange={setDevModePassword}
         onLogin={handleDeveloperLogin}
-        onLogout={handleDeveloperLogout}
         errorText={devModeError}
         noticeText={devModeNotice}
         isConnected={isConnected}

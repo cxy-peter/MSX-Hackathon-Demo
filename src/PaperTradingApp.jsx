@@ -1149,7 +1149,6 @@ function DeveloperModeModal({
   onUsernameChange,
   onPasswordChange,
   onLogin,
-  onLogout,
   errorText,
   noticeText,
   isConnected,
@@ -1168,16 +1167,11 @@ function DeveloperModeModal({
           <div className="wallet-modal-title">Developer Mode</div>
           <div className="wallet-modal-subtitle">Replay controls</div>
           <div className="wallet-install-copy">
-            Browser-local admin access for the replay lab. Sign in for the current use to open the old unlimited PT and advanced route overrides; the form asks again next time.
+            Browser-local admin access for the replay lab. Sign in for the current use to open the old unlimited PT and advanced route overrides; closing this panel exits developer mode and asks again next time.
           </div>
           <button className="secondary-btn" onClick={onClose}>
-            Keep reviewing
+            Close panel
           </button>
-          {isAuthed ? (
-            <button className="ghost-btn compact" onClick={onLogout}>
-              Sign out of developer mode
-            </button>
-          ) : null}
         </div>
         <div className="wallet-modal-pane wallet-modal-main developer-modal-main">
           {!isAuthed ? (
@@ -1217,14 +1211,11 @@ function DeveloperModeModal({
                 </div>
               </div>
               <div className="wealth-inline-note">
-                Replay routes, wallet-linked state, and local leaderboard storage are unlocked for this signed-in developer use. This is the quick way to inspect advanced tutorial gates without losing the wallet context.
+                Replay routes, wallet-linked state, and local leaderboard storage are unlocked for this signed-in developer use. Closing the panel exits the mode and returns the replay lab to normal wallet gating.
               </div>
               <div className="toolbar">
                 <button className="secondary-btn" onClick={onClose}>
                   Close panel
-                </button>
-                <button className="ghost-btn compact" onClick={onLogout}>
-                  Turn off developer mode
                 </button>
               </div>
               {noticeText ? <div className="env-hint">{noticeText}</div> : null}
@@ -11736,26 +11727,27 @@ function PaperTradingInner() {
     setDevModeNotice('');
   }
 
-  function handleDeveloperLogin() {
-    if (devModeUsername.trim() === DEV_MODE_USERNAME && devModePassword.trim() === DEV_MODE_PASSWORD) {
-      setDevModeAuthed(true);
-      setDeveloperOverride(true);
-      setDevModeError('');
-      setDevModeNotice('Developer controls are open for this use. Reloading or reopening asks for the account again.');
-      return;
-    }
-
-    setDevModeError('Incorrect developer credentials.');
-    setDevModeNotice('');
-  }
-
-  function handleDeveloperLogout() {
+  function closeDeveloperMode() {
+    setDevModeOpen(false);
     setDevModeAuthed(false);
     setDevModeUsername('');
     setDevModePassword('');
     setDeveloperOverride(Boolean(readStorageJson(getAdminUnlockStorageKey(address), false)));
     setDevModeError('');
-    setDevModeNotice('Developer controls are closed for this browser.');
+    setDevModeNotice('');
+  }
+
+  function handleDeveloperLogin() {
+    if (devModeUsername.trim() === DEV_MODE_USERNAME && devModePassword.trim() === DEV_MODE_PASSWORD) {
+      setDevModeAuthed(true);
+      setDeveloperOverride(true);
+      setDevModeError('');
+      setDevModeNotice('Developer controls are open for this use. Closing this panel exits the mode and asks for the account again next time.');
+      return;
+    }
+
+    setDevModeError('Incorrect developer credentials.');
+    setDevModeNotice('');
   }
 
   function handleSaveWalletNickname() {
@@ -18724,14 +18716,13 @@ function PaperTradingInner() {
       />
       <DeveloperModeModal
         open={devModeOpen}
-        onClose={() => setDevModeOpen(false)}
+        onClose={closeDeveloperMode}
         isAuthed={devModeAuthed}
         username={devModeUsername}
         password={devModePassword}
         onUsernameChange={setDevModeUsername}
         onPasswordChange={setDevModePassword}
         onLogin={handleDeveloperLogin}
-        onLogout={handleDeveloperLogout}
         errorText={devModeError}
         noticeText={devModeNotice}
         isConnected={isConnected}

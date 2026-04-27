@@ -208,13 +208,16 @@ button, input, select { font: inherit; color: inherit; }
 }
 
 .site-header .header-actions {
-  flex: 0 1 auto;
+  flex: 1 1 100%;
   min-width: 0;
-  max-width: min(620px, 100%);
+  max-width: 100%;
+  margin-left: auto;
+  justify-content: flex-end;
 }
 
 .site-header .header-status-row,
 .site-header .header-admin-row {
+  width: 100%;
   max-width: 100%;
   justify-content: flex-end;
 }
@@ -1659,6 +1662,50 @@ label {
   gap: 14px;
 }
 
+.developer-clickthrough-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.developer-clickthrough-button {
+  display: grid;
+  gap: 6px;
+  min-height: 112px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.14);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.developer-clickthrough-button:hover {
+  border-color: rgba(164,255,47,0.26);
+  background: rgba(164,255,47,0.06);
+}
+
+.developer-clickthrough-button span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.developer-clickthrough-button strong {
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1.15;
+}
+
+.developer-clickthrough-button em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
 .developer-admin-card {
   display: grid;
   gap: 14px;
@@ -1671,7 +1718,7 @@ label {
 
 .developer-detail-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 10px;
 }
 

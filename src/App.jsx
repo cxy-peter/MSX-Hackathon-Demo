@@ -2163,39 +2163,28 @@ export default function App() {
         title: 'Starter wallet',
         copy: 'This wallet should still be routed toward reserve sleeves, explicit ownership language, and guided explanation before strategy-heavy products.'
       };
-  const selectedDeveloperWalletLearningProfile = !selectedDeveloperWalletAddress
-    ? {
-        title: 'No wallet selected',
-        copy: 'Select a connected or previously saved wallet on the left to inspect its profile, behavior, storage pointer, and design preference.'
-      }
-    : selectedDeveloperPaperUnlocked || selectedDeveloperTaskCount > 1 || selectedDeveloperBehavior.total > 2
-      ? {
-          title: 'Replay-ready wallet',
-          copy: 'This wallet has enough task or behavior history to enter replay. The profile below is read from that wallet address, not just the currently connected account.'
-        }
-      : selectedDeveloperProgress.quizCompleted || selectedDeveloperRiskCount >= RISK_REVIEW_REQUIRED
-        ? {
-            title: 'Builder wallet',
-            copy: 'This wallet has learning progress but still benefits from clearer product framing and goal-first routing.'
-          }
-        : {
-            title: 'Starter wallet',
-            copy: 'This wallet has little recorded behavior, so the safest design route is guided tasks, reserve products, and explicit ownership language.'
-          };
-  const developerWalletSummaryRows = [
-    { label: 'Wallet stage', value: selectedDeveloperWalletLearningProfile.title },
-    { label: 'Account', value: selectedDeveloperWalletAddress ? shortAddress(selectedDeveloperWalletAddress) : 'None' },
-    { label: 'Behavior events', value: `${Number(selectedDeveloperBehavior.total || 0)} tracked` },
-    { label: 'Risk briefings', value: `${Math.min(selectedDeveloperRiskCount, RISK_REVIEW_REQUIRED)}/${RISK_REVIEW_REQUIRED}` },
-    { label: 'Quiz status', value: selectedDeveloperProgress.quizCompleted ? 'Passed' : 'Open' },
-    { label: 'Paper unlock', value: selectedDeveloperPaperUnlocked ? 'Unlocked' : 'Locked' },
-    { label: 'PT available', value: `${Number(selectedDeveloperWalletSummary?.availablePT || 0).toLocaleString()} PT` },
-    { label: 'Backup', value: selectedDeveloperWalletSummary?.contentHash ? 'Signed snapshot ready' : 'No signed snapshot' },
-    { label: 'Storage mode', value: selectedDeveloperStorageMode },
-    { label: 'Profile pointer', value: selectedDeveloperWalletSummary?.contentHash ? `${selectedDeveloperWalletSummary.contentHash.slice(0, 12)}...` : 'Not signed' },
-    { label: 'Behavior pointer', value: selectedDeveloperBehaviorPointer ? `${selectedDeveloperBehaviorPointer.slice(0, 12)}...` : 'No events yet' }
-  ];
   const getDeveloperEventCount = (eventName) => Number(analyticsSnapshot.events?.[eventName] || 0);
+  const developerClickthroughRows = [
+    {
+      label: 'Total tracked clicks',
+      value: Number(analyticsSnapshot.total || 0).toLocaleString(),
+      copy: analyticsSnapshot.total
+        ? `${developerTrackedSectionCount} section groups captured in this browser.`
+        : 'No click-through data is stored yet.'
+    },
+    {
+      label: 'Top click',
+      value: developerTopAnalyticsRow ? developerTopAnalyticsRow.label : 'None yet',
+      copy: developerTopAnalyticsRow
+        ? `${developerTopAnalyticsRow.count} events in ${developerTopAnalyticsRow.section}.`
+        : 'Open wallet, quest, Wealth, or Paper routes to populate this.'
+    },
+    {
+      label: 'Guided onboarding share',
+      value: `${Math.round(developerOnboardingShare * 100)}%`,
+      copy: 'Share of tracked clicks tied to onboarding, quest, risk, quiz, or collectible actions.'
+    }
+  ];
   const developerClickthroughTiles = [
     {
       label: 'Hero CTAs',
@@ -2228,27 +2217,39 @@ export default function App() {
       copy: 'Wallet collectible mint attempts captured locally.'
     }
   ];
+  const developerClickthroughButtons = [
+    ...developerClickthroughTiles,
+    ...developerAnalyticsRows.slice(0, 8).map((row) => ({
+      label: row.label,
+      value: row.count,
+      copy: `${row.section} / ${row.share.toFixed(1)}% of stored clicks.`
+    }))
+  ];
   const developerDetailPanels = [
     {
       id: 'clicks',
       label: 'Click-through',
       kicker: 'Analytics',
-      title: 'Click-through',
-      rows: []
-    },
-    {
-      id: 'profile',
-      label: 'Wallet profile',
-      kicker: 'Replay-ready wallet',
-      title: 'Wallet profile',
-      rows: []
+      title: 'Module click-through map',
+      copy: analyticsSnapshot.total
+        ? `This browser has ${analyticsSnapshot.total} tracked clicks across ${developerTrackedSectionCount} section groups.`
+        : 'No click-through data is stored yet; start by opening wallet, quest, wealth, or paper flows.',
+      rows: developerClickthroughRows
     },
     {
       id: 'exchange',
-      label: 'Guided task-first preference',
-      kicker: 'Design preference',
-      title: 'Guided task-first preference',
-      rows: []
+      label: 'Guided preference',
+      kicker: selectedDeveloperWalletDisplayName,
+      title: selectedDeveloperDesignTitle,
+      copy: 'This view reads wallet behavior, task progress, and signed profile metadata. Feature override and PT controls live here only.',
+      rows: [
+        { label: 'Arrival mindset', value: selectedDeveloperOrigin === 'unknown' ? 'Unknown' : selectedDeveloperOrigin.toUpperCase(), copy: `Stored intent: ${selectedDeveloperIntent || 'not set'}.` },
+        { label: 'Most common action', value: selectedDeveloperTopBehavior ? selectedDeveloperTopBehavior.label : 'No behavior yet', copy: selectedDeveloperTopBehavior ? `${selectedDeveloperTopBehavior.count} clicks in ${selectedDeveloperTopBehavior.section}.` : 'Actions will appear here after this wallet uses Home routes.' },
+        { label: 'Replay stance', value: selectedDeveloperPaperUnlocked ? 'Open replay' : 'Guide first', copy: selectedDeveloperPaperUnlocked ? 'Paper trading can open because at least one task is complete.' : 'Route through a first task before replay.' },
+        { label: 'Storage read form', value: selectedDeveloperStorageMode, copy: selectedDeveloperWalletSummary?.contentHash ? `Readable profile pointer ${selectedDeveloperWalletSummary.contentHash.slice(0, 12)}...` : selectedDeveloperBehaviorPointer ? `Readable behavior snapshot ${selectedDeveloperBehaviorPointer.slice(0, 12)}...` : 'No storage pointer yet; use this wallet once or sign a profile backup to create a readable record.' },
+        { label: 'Feature override', value: adminUnlockedForCurrentAccount ? 'Already on' : 'Ready', copy: 'Enable onboarding, quiz, paper unlock, and admin override for the connected wallet.' },
+        { label: 'PT amount box', value: `${Number(devModePtAmount || 0).toLocaleString()} PT`, copy: 'Add to or set the Home and Paper cash stores for the connected account.' }
+      ]
     }
   ];
   const activeDeveloperDetailPanel =
@@ -4318,7 +4319,7 @@ export default function App() {
               <div className="wallet-modal-title">Developer Mode</div>
               <div className="wallet-modal-subtitle">Analytics panel</div>
               <div className="wallet-install-copy">
-                Inspect click-through activity, wallet state, and local override behavior across the homepage. Close the panel anytime; if you changed live wallet settings in this session, you can keep them or restore the earlier local state on exit.
+                Inspect click-through activity, wallet state, and local override behavior across the homepage. Closing the panel exits developer mode for this use; if you changed live wallet settings in this session, you can keep them or restore the earlier local state on exit.
               </div>
               {devModeAuthed ? (
                 <div className="developer-account-selector">
@@ -4349,7 +4350,7 @@ export default function App() {
                 </div>
               ) : null}
               <button className="secondary-btn" onClick={handleDeveloperModeCloseRequest}>
-                Exit developer mode
+                Close panel
               </button>
             </div>
             <div className="wallet-modal-pane wallet-modal-main developer-modal-main">
@@ -4411,37 +4412,55 @@ export default function App() {
                       </div>
                     ) : null}
                   </div>
-                  <div className="developer-admin-grid">
-                    <div className="developer-admin-card">
-                      <div>
-                        <div className="eyebrow">Feature override</div>
-                        <div className="wealth-profile-storage-title">Enable all local onboarding and replay gates</div>
-                        <div className="muted">
-                          Writes completed guide, quiz, paper unlock, and admin override progress for the connected wallet. Onchain collectible minting still remains a real Sepolia action.
+                  {activeDeveloperDetailPanel.id === 'clicks' ? (
+                    <div className="developer-clickthrough-grid" aria-label="Click-through analytics buttons">
+                      {developerClickthroughButtons.map((tile) => (
+                        <button
+                          type="button"
+                          className="developer-clickthrough-button"
+                          key={`${tile.label}-${tile.copy}`}
+                          onClick={() => setDevModeNotice(`${tile.label}: ${Number(tile.value || 0).toLocaleString()} tracked locally. ${tile.copy}`)}
+                        >
+                          <span>{tile.label}</span>
+                          <strong>{Number(tile.value || 0).toLocaleString()}</strong>
+                          <em>{tile.copy}</em>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {activeDeveloperDetailPanel.id === 'exchange' ? (
+                    <div className="developer-admin-grid">
+                      <div className="developer-admin-card">
+                        <div>
+                          <div className="eyebrow">Feature override</div>
+                          <div className="wealth-profile-storage-title">Enable all local onboarding and replay gates</div>
+                          <div className="muted">
+                            Writes completed guide, quiz, paper unlock, and admin override progress for the connected wallet. Onchain collectible minting still remains a real Sepolia action.
+                          </div>
+                        </div>
+                        <button className="primary-btn" onClick={handleDeveloperUnlockAll}>
+                          Enable all features
+                        </button>
+                      </div>
+                      <div className="developer-admin-card">
+                        <div>
+                          <div className="eyebrow">PT controls</div>
+                          <div className="wealth-profile-storage-title">Add or set paper PT for this wallet</div>
+                          <div className="muted">
+                            Updates the shared local profile plus Home and Paper cash stores, so the same wallet sees the balance across pages.
+                          </div>
+                        </div>
+                        <label className="developer-pt-control">
+                          PT amount
+                          <input type="number" min="0" step="1000" value={devModePtAmount} onChange={(event) => setDevModePtAmount(event.target.value)} />
+                        </label>
+                        <div className="toolbar">
+                          <button className="secondary-btn" onClick={handleDeveloperAddPt}>Add PT</button>
+                          <button className="ghost-btn compact" onClick={handleDeveloperSetPtBalance}>Set balance</button>
                         </div>
                       </div>
-                      <button className="primary-btn" onClick={handleDeveloperUnlockAll}>
-                        Enable all features
-                      </button>
                     </div>
-                    <div className="developer-admin-card">
-                      <div>
-                        <div className="eyebrow">PT controls</div>
-                        <div className="wealth-profile-storage-title">Add or set paper PT for this wallet</div>
-                        <div className="muted">
-                          Updates the shared local profile plus Home and Paper cash stores, so the same wallet sees the balance across pages.
-                        </div>
-                      </div>
-                      <label className="developer-pt-control">
-                        PT amount
-                        <input type="number" min="0" step="1000" value={devModePtAmount} onChange={(event) => setDevModePtAmount(event.target.value)} />
-                      </label>
-                      <div className="toolbar">
-                        <button className="secondary-btn" onClick={handleDeveloperAddPt}>Add PT</button>
-                        <button className="ghost-btn compact" onClick={handleDeveloperSetPtBalance}>Set balance</button>
-                      </div>
-                    </div>
-                  </div>
+                  ) : null}
                   {devModeNotice ? <div className="env-hint">{devModeNotice}</div> : null}
                   {devModeError ? <div className="env-hint quiz-error">{devModeError}</div> : null}
                   {developerExitPromptOpen ? (
