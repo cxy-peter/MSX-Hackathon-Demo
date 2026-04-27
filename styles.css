@@ -11074,6 +11074,11 @@ label {
   background: rgba(255,255,255,0.024);
 }
 
+.wealth-dual-overview-map {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
 .wealth-dual-window-panel {
   display: grid;
   gap: 14px;

@@ -2610,7 +2610,8 @@ function DualOutcomeSimulator({
   apr,
   settlementDays,
   settlementMovePct,
-  onSettlementMoveChange
+  onSettlementMoveChange,
+  className = ''
 }) {
   const quotePayout = roundNumber(1000 + 1000 * apr * (Math.max(1, Number(settlementDays || 1)) / 365), 2);
   const chartPoints = [-12, -8, -4, 0, 4, 8, 12].map((move) =>
@@ -2664,7 +2665,7 @@ function DualOutcomeSimulator({
   const targetX = xForMove(Number(targetPct || 0));
 
   return (
-    <div className="wealth-dual-simulator">
+    <div className={`wealth-dual-simulator ${className}`.trim()}>
       <div className="wealth-dual-simulator-head">
         <div>
           <div className="eyebrow">Profit / flat / loss map</div>
@@ -4551,6 +4552,12 @@ function WealthInner() {
   const selectedReturnMetricDisplay = getProductReturnMetricDisplay(selectedProduct, hideBalances);
   useEffect(() => {
     setWealthDiligencePageIndex(0);
+  }, [selectedProduct.id]);
+  useEffect(() => {
+    if (!isDualInvestmentProduct(selectedProduct)) return;
+    const productPair = getDualPairForProduct(selectedProduct, null);
+    if (!productPair?.id) return;
+    setDualCurrencyPairId((current) => (current === productPair.id ? current : productPair.id));
   }, [selectedProduct.id]);
   const activeDetailTopic = selectedDetailTopics[0] || '';
   const activeDetailTopicMeta = DETAIL_TOPIC_OPTIONS.find((topic) => topic.id === activeDetailTopic) || null;
@@ -6807,6 +6814,24 @@ function WealthInner() {
     return renderDualInvestmentOrderBook({ surface: 'shelf' });
   }
 
+  function renderDualOutcomeMap({ className = '' } = {}) {
+    if (!isDualInvestmentProduct(selectedProduct)) return null;
+
+    return (
+      <DualOutcomeSimulator
+        pair={dualCurrencyPair}
+        direction={dualCurrencyDirection}
+        targetPrice={dualCurrencyTargetPrice}
+        targetPct={dualCurrencyTargetPct}
+        apr={dualCurrencyApr}
+        settlementDays={settlementDays}
+        settlementMovePct={dualCurrencySettlementMovePct}
+        onSettlementMoveChange={setDualCurrencySettlementMovePct}
+        className={className}
+      />
+    );
+  }
+
   function renderDualInvestmentOrderBook({ surface = 'detail' } = {}) {
     const dualProducts = liveProducts.filter(isDualInvestmentProduct);
     const activeDualProduct = isDualInvestmentProduct(selectedProduct)
@@ -7074,19 +7099,6 @@ function WealthInner() {
             <strong>PT reward model.</strong> Bonus PT is APR x days x subscribed PT, capped by the modeled term reward {formatYieldPercent(dualCurrencyTermPremiumRate)}.
           </div>
         </div>
-
-        {surface === 'detail' ? (
-          <DualOutcomeSimulator
-            pair={activePair}
-            direction={dualCurrencyDirection}
-            targetPrice={dualCurrencyTargetPrice}
-            targetPct={dualCurrencyTargetPct}
-            apr={dualCurrencyApr}
-            settlementDays={settlementDays}
-            settlementMovePct={dualCurrencySettlementMovePct}
-            onSettlementMoveChange={setDualCurrencySettlementMovePct}
-          />
-        ) : null}
 
         {surface === 'detail' ? (
           <div className="wealth-dual-outcome-grid wealth-dual-outcome-grid-compact">
@@ -8106,9 +8118,10 @@ function WealthInner() {
             {selectedProductLocked ? <div className="wealth-inline-note">{selectedUnlockCopy}</div> : null}
 
             <div className="wealth-detail-stack">
-              {isDualInvestmentProduct(selectedProduct) ? renderDualInvestmentOrderBook({ surface: 'detail' }) : null}
+              {selectedDetailTopics.includes('flow') && isDualInvestmentProduct(selectedProduct) ? renderDualInvestmentOrderBook({ surface: 'detail' }) : null}
           {selectedDetailTopics.includes('snapshot') ? (
             <div className="paper-mode-card wealth-detail-section">
+              {isDualInvestmentProduct(selectedProduct) ? renderDualOutcomeMap({ className: 'wealth-dual-overview-map' }) : null}
               <div className="route-highlight wealth-detail-banner">
                 <strong>{selectedProduct.status}</strong> / {selectedProduct.liveTieIn}
               </div>
