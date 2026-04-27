@@ -786,6 +786,17 @@ const wealthVaultAbi = [
   },
   {
     type: 'function',
+    name: 'subscribeProductWithMetadata',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'productId', type: 'uint16' },
+      { name: 'assetAmount', type: 'uint256' },
+      { name: 'purchasedOn', type: 'string' }
+    ],
+    outputs: [{ name: 'shareAmount', type: 'uint256' }]
+  },
+  {
+    type: 'function',
     name: 'redeemProduct',
     stateMutability: 'nonpayable',
     inputs: [
@@ -826,6 +837,18 @@ const wealthVaultAbi = [
       { name: 'evidenceHash', type: 'bytes32' }
     ],
     outputs: []
+  },
+  {
+    type: 'function',
+    name: 'markWealthPledgeWithEvidence',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'productId', type: 'uint16' },
+      { name: 'supportAmount', type: 'uint256' },
+      { name: 'pledgedOn', type: 'string' },
+      { name: 'evidenceHash', type: 'bytes32' }
+    ],
+    outputs: [{ name: 'tokenId', type: 'uint256' }]
   }
 ];
 
@@ -1386,6 +1409,13 @@ function normalizeWealthState(value) {
             supportTokenId: Number(entry?.supportTokenId || 0),
             supportProofHash: String(entry?.supportProofHash || ''),
             supportMintedAt: String(entry?.supportMintedAt || entry?.updatedAt || ''),
+            collateralValue: roundNumber(Math.max(0, Number(entry?.collateralValue || 0)), 2),
+            supportMaxValue: roundNumber(Math.max(0, Number(entry?.supportMaxValue || 0)), 2),
+            supportHaircutRate: clamp(
+              Number(entry?.supportHaircutRate || entry?.advanceRate || DEFAULT_COLLATERAL_ADVANCE_RATE),
+              0,
+              1
+            ),
             updatedAt: entry?.updatedAt || '',
             supportOnly: Boolean(entry?.supportOnly)
           }
@@ -3672,6 +3702,34 @@ function formatWealthDateTime(timestamp) {
   });
 }
 
+function formatWealthCollectibleDate(timestamp) {
+  const time = timestamp ? new Date(timestamp).getTime() : Date.now();
+  return new Date(Number.isFinite(time) ? time : Date.now()).toISOString().slice(0, 10);
+}
+
+function WealthCollectibleCover({ accent = 'green', kicker, title, subtitle, footerLines = [], stamp = '' }) {
+  return (
+    <div className={`unlock-box-banner paper-reward-cover wealth-collectible-cover accent-${accent}`}>
+      <div className="unlock-box-banner-grid"></div>
+      <div className="unlock-box-banner-content">
+        <div className="unlock-box-banner-kicker">{kicker}</div>
+        <div className="unlock-box-banner-title">{title}</div>
+        <div className="unlock-box-banner-subtitle">{subtitle}</div>
+      </div>
+      {footerLines.length ? (
+        <div className="paper-reward-cover-footer">
+          {footerLines.map((line, index) => (
+            <div key={`${stamp || kicker}-${index}`} className="paper-reward-cover-meta">
+              {line}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {stamp ? <div className="paper-reward-cover-stamp">{stamp}</div> : null}
+    </div>
+  );
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -5054,6 +5112,20 @@ function WealthInner() {
   const wealthDualQuestDone = Boolean(
     wealthDualTaskClaimed || (isConnected && latestPositiveDualActivity)
   );
+  const latestReceiptCoverProduct =
+    getWealthActivityProduct(latestSubscribeActivity, liveProducts) ||
+    liveProducts.find((product) => !isDualInvestmentProduct(product)) ||
+    liveProducts[0];
+  const latestReceiptCoverPolicy = getSettlementPolicy(latestReceiptCoverProduct);
+  const latestPledgeCoverProduct =
+    getWealthActivityProduct(latestPledgeActivity, liveProducts) ||
+    latestReceiptCoverProduct ||
+    liveProducts[0];
+  const latestDualCoverProduct =
+    getWealthActivityProduct(latestPositiveDualActivity, liveProducts) ||
+    liveProducts.find((product) => isDualInvestmentProduct(product)) ||
+    liveProducts[0];
+  const latestPledgeSupportAmount = Math.max(0, Number(latestPledgeActivity?.amount || latestPledgeActivity?.supportDelta || 0));
   const wealthQuestRows = [
     {
       id: 'trade',
@@ -5066,7 +5138,19 @@ function WealthInner() {
       claimed: wealthTradeTaskClaimed,
       readyToClaim: Boolean(wealthTradeQuestDone && !wealthTradeTaskClaimed),
       statusLabel: wealthTradeTaskClaimed ? 'Minted' : wealthTradeQuestDone ? 'Wait to be minted' : 'To do',
-      statusTone: wealthTradeTaskClaimed ? 'done' : wealthTradeQuestDone ? 'ready' : 'todo'
+      statusTone: wealthTradeTaskClaimed ? 'done' : wealthTradeQuestDone ? 'ready' : 'todo',
+      coverAccent: 'green',
+      coverKicker: 'RiskLens Wealth Receipt',
+      coverTitle: 'RECEIPT PROOF',
+      coverSubtitle: latestReceiptCoverProduct?.name || 'Buy one Wealth receipt',
+      coverFooterLines: [
+        `Maturity: ${latestSubscribeActivity?.receiptProductDetail || latestReceiptCoverPolicy.timing}`,
+        `Type: ${getDisplayProductTypeLabel(latestReceiptCoverProduct)}`,
+        latestSubscribeActivity?.receiptPurchasedAt
+          ? `Purchased ${formatWealthCollectibleDate(latestSubscribeActivity.receiptPurchasedAt)}`
+          : 'Purchase date appears after buy'
+      ],
+      coverStamp: 'W1'
     },
     {
       id: 'pledge',
@@ -5079,7 +5163,21 @@ function WealthInner() {
       claimed: wealthPledgeTaskClaimed,
       readyToClaim: Boolean(wealthPledgeQuestDone && !wealthPledgeTaskClaimed),
       statusLabel: wealthPledgeTaskClaimed ? 'Minted' : wealthPledgeQuestDone ? 'Wait to be minted' : 'To do',
-      statusTone: wealthPledgeTaskClaimed ? 'done' : wealthPledgeQuestDone ? 'ready' : 'todo'
+      statusTone: wealthPledgeTaskClaimed ? 'done' : wealthPledgeQuestDone ? 'ready' : 'todo',
+      coverAccent: 'gold',
+      coverKicker: 'RiskLens Wealth Pledge',
+      coverTitle: 'PLEDGE SUPPORT',
+      coverSubtitle: latestPledgeCoverProduct?.name || 'Pledge one receipt',
+      coverFooterLines: [
+        `Product: ${latestPledgeCoverProduct?.shortName || latestPledgeCoverProduct?.name || 'Wealth receipt'}`,
+        latestPledgeActivity?.ts
+          ? `Pledge date: ${formatWealthCollectibleDate(latestPledgeActivity.ts)}`
+          : 'Pledge date appears after support mint',
+        latestPledgeSupportAmount > 0
+          ? `Pledged out: ${latestPledgeSupportAmount.toLocaleString()} PT`
+          : 'Pledged out: waiting for support amount'
+      ],
+      coverStamp: 'W2'
     },
     {
       id: 'dual',
@@ -5092,7 +5190,19 @@ function WealthInner() {
       claimed: wealthDualTaskClaimed,
       readyToClaim: Boolean(wealthDualQuestDone && !wealthDualTaskClaimed),
       statusLabel: wealthDualTaskClaimed ? 'Minted' : wealthDualQuestDone ? 'Wait to be minted' : 'To do',
-      statusTone: wealthDualTaskClaimed ? 'done' : wealthDualQuestDone ? 'ready' : 'todo'
+      statusTone: wealthDualTaskClaimed ? 'done' : wealthDualQuestDone ? 'ready' : 'todo',
+      coverAccent: 'teal',
+      coverKicker: 'RiskLens Wealth',
+      coverTitle: 'DUAL PROFIT',
+      coverSubtitle: latestDualCoverProduct?.name || 'Dual Investment lifecycle',
+      coverFooterLines: [
+        `Type: ${getDisplayProductTypeLabel(latestDualCoverProduct)}`,
+        latestPositiveDualActivity?.ts
+          ? `Settled ${formatWealthCollectibleDate(latestPositiveDualActivity.ts)}`
+          : 'Settlement date appears after profit',
+        latestPositiveDualActivity ? `PnL +${Number(getWealthActivityPnl(latestPositiveDualActivity)).toLocaleString()} PT` : 'Positive payoff pending'
+      ],
+      coverStamp: 'W3'
     }
   ];
   const wealthTaskCompletedCount = wealthQuestRows.filter((quest) => quest.done).length;
@@ -6717,13 +6827,26 @@ function WealthInner() {
       }
 
       setWealthClaimTaskId(taskId);
+      const pledgeCredentialProduct =
+        taskId === 'pledge'
+          ? getProductByIdFrom(liveProducts, evidenceActivity.productId) || latestPledgeCoverProduct || liveProducts[0]
+          : null;
+      const pledgeSupportAmount = Math.max(1, Math.round(Number(evidenceActivity.amount || latestPledgeSupportAmount || 0)));
       const claimHash = await writeWealthTaskContractAsync({
         address: WEALTH_VAULT_ADDRESS,
         abi: wealthVaultAbi,
-        functionName: 'markWealthTaskWithEvidence',
-        args: [WEALTH_TASK_TYPES[taskId], BigInt(realizedPnlNumber), evidenceHash],
+        functionName: taskId === 'pledge' ? 'markWealthPledgeWithEvidence' : 'markWealthTaskWithEvidence',
+        args:
+          taskId === 'pledge'
+            ? [
+                getWealthReceiptProductId(pledgeCredentialProduct),
+                BigInt(pledgeSupportAmount),
+                formatWealthCollectibleDate(evidenceActivity.ts || evidenceActivity.supportMintedAt || new Date().toISOString()),
+                evidenceHash
+              ]
+            : [WEALTH_TASK_TYPES[taskId], BigInt(realizedPnlNumber), evidenceHash],
         chainId: SEPOLIA_CHAIN_ID,
-        gas: 260000n
+        gas: taskId === 'pledge' ? 460000n : 260000n
       });
       setWealthTaskClaimHash(claimHash);
     } catch (claimError) {
@@ -7137,8 +7260,8 @@ function WealthInner() {
 
     const receiptMinted = wantsOnchainReceipt
       ? await submitWealthReceiptTransaction({
-          functionName: 'subscribeProduct',
-          args: [receiptProductId, receiptUnitAmount],
+          functionName: 'subscribeProductWithMetadata',
+          args: [receiptProductId, receiptUnitAmount, formatWealthCollectibleDate(receiptPurchasedAt)],
           pendingLabel: `Minting required Sepolia receipt #${receiptTokenId} and W1 badge for ${requestedAmount.toLocaleString()} PT.`,
           submittedLabel: `Receipt record submitted for ${selectedProduct.shortName || selectedProduct.name}`,
           confirmedLabel: `Sepolia receipt #${receiptTokenId} confirmed for ${selectedProduct.shortName || selectedProduct.name}.`
@@ -7171,8 +7294,7 @@ function WealthInner() {
         receiptUnitAmount: receiptUnitAmount.toString(),
         receiptProductDetail,
         receiptProductDetailCopy,
-        receiptPurchasedAt,
-        receiptLots: [nextReceiptLot]
+        receiptPurchasedAt
       });
       const currentReceiptLots = normalizeWealthReceiptLots(currentPosition.receiptLots, currentPosition, selectedProduct);
       const nextReceiptLots = [...currentReceiptLots, nextReceiptLot];
@@ -7322,6 +7444,9 @@ function WealthInner() {
             termMode: pledgeTermMode,
             apy: selectedCollateralApy,
             lockDays: pledgeTermMode === 'fixed' ? selectedPledgeLockStatus.lockDays : 0,
+            collateralValue,
+            supportMaxValue: maxBorrowable,
+            supportHaircutRate: selectedCollateralAdvanceRate,
             supportTokenId,
             supportProofHash,
             supportMintedAt,
@@ -7341,6 +7466,9 @@ function WealthInner() {
         supportTokenId,
         supportProofHash,
         supportMintedAt,
+        collateralValue,
+        supportMaxValue: maxBorrowable,
+        supportHaircutRate: selectedCollateralAdvanceRate,
         supportDelta: borrowDelta,
         isDualInvestment: isDualInvestmentProduct(selectedProduct)
       });
@@ -9112,7 +9240,7 @@ function WealthInner() {
                 </div>
                 <div className="reason-card">
                   <div className="entry-title">Haircut first</div>
-                  <div className="entry-copy">The line size is clipped by the advance rate, and higher LTV should be treated as a warning instead of free capacity.</div>
+                  <div className="entry-copy">The line starts from bought receipt notional, then applies the advance-rate haircut before Paper Trading can read it as route support.</div>
                 </div>
                 <div className="reason-card">
                   <div className="entry-title">Support, not new cash</div>
@@ -9919,7 +10047,7 @@ function WealthInner() {
                       <div className="value">{formatValue(selectedPotentialCollateralValue, hideBalances)}</div>
                     </div>
                     <div>
-                      <div className="label">Max borrow @ {(selectedCollateralAdvanceRate * 100).toFixed(0)}%</div>
+                      <div className="label">Max support @ {(selectedCollateralAdvanceRate * 100).toFixed(0)}%</div>
                       <div className="value">{formatValue(selectedPotentialMaxBorrowValue, hideBalances)}</div>
                     </div>
                     <div>
@@ -10301,6 +10429,14 @@ function WealthInner() {
                 className={`wealth-task-card ${quest.done ? 'done' : ''} ${quest.readyToClaim ? 'ready' : ''} ${selectedWealthTaskId === quest.id ? 'active' : ''}`}
                 onClick={() => setSelectedWealthTaskId((current) => (current === quest.id ? null : quest.id))}
               >
+                <WealthCollectibleCover
+                  accent={quest.coverAccent}
+                  kicker={quest.coverKicker}
+                  title={quest.coverTitle}
+                  subtitle={quest.coverSubtitle}
+                  footerLines={quest.coverFooterLines}
+                  stamp={quest.coverStamp}
+                />
                 <div className="wealth-task-card-head">
                   <span className="wealth-task-badge">Task {quest.taskNumber}</span>
                   <span className={`wealth-task-status ${quest.statusTone === 'done' ? 'done' : quest.statusTone === 'ready' ? 'ready' : 'todo'}`}>
@@ -10351,6 +10487,14 @@ function WealthInner() {
                 </div>
               </div>
               <div className="wealth-task-detail-panel">
+                <WealthCollectibleCover
+                  accent={selectedWealthTask.coverAccent}
+                  kicker={selectedWealthTask.coverKicker}
+                  title={selectedWealthTask.coverTitle}
+                  subtitle={selectedWealthTask.coverSubtitle}
+                  footerLines={selectedWealthTask.coverFooterLines}
+                  stamp={selectedWealthTask.coverStamp}
+                />
                 <div className="quest-panel-title">Task collectible reward</div>
                 <div className={`quest-inline-status-card paper-task-checklist-summary ${selectedWealthTaskClaimStatus.tone}`}>
                   <div>

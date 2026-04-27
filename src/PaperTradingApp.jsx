@@ -82,6 +82,7 @@ const REPLAY_ACHIEVEMENT_IDS = Object.values(REPLAY_BADGE_TYPES);
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_REPLAY_PLAYBACK_MS = 700;
 const REPLAY_SCORE_DAILY_LIMIT = 3;
+const LEADERBOARD_CREDENTIAL_DAILY_LIMIT = 3;
 const REPLAY_DEVELOPER_MODE =
   import.meta.env.DEV || String(import.meta.env.VITE_REPLAY_DEVELOPER_MODE || '').toLowerCase() === 'true';
 const DEV_MODE_USERNAME = 'msxadmin';
@@ -108,6 +109,15 @@ const PAPER_LEFT_COLUMN_GAP = 18;
 const PAPER_TUTORIAL_PATH_MIN_HEIGHT = 180;
 const PRODUCT_LEADERBOARD_FLOAT_STORAGE_KEY = 'msx.paperProductLeaderboardFloat';
 const STRATEGY_TEMPLATE_LEADERBOARD_STORAGE_KEY = 'msx.paperStrategyTemplateLeaderboard.v1';
+const LEADERBOARD_CREDENTIAL_STORAGE_KEY = 'msx.paperLeaderboardCredentials.v1';
+const LEADERBOARD_CREDENTIAL_BOARD_IDS = {
+  replayReturn: 'replay-return',
+  strategyCombo: 'strategy-combo'
+};
+const LEADERBOARD_CREDENTIAL_BOARD_LABELS = {
+  [LEADERBOARD_CREDENTIAL_BOARD_IDS.replayReturn]: 'Replay return leaderboard',
+  [LEADERBOARD_CREDENTIAL_BOARD_IDS.strategyCombo]: 'AI strategy / combo leaderboard'
+};
 const AUTO_SELL_DOCK_STORAGE_KEY = 'msx.paperAutoSellDockOpen';
 const AUTO_SELL_DOCK_FLOAT_STORAGE_KEY = 'msx.paperAutoSellDockFloat';
 const PRODUCT_LEADERBOARD_FLOAT_EDGE_GAP = 18;
@@ -475,6 +485,19 @@ const replayAchievementAbi = [
   },
   {
     type: 'function',
+    name: 'mintPaperLeaderboardCredential',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'category', type: 'string' },
+      { name: 'submittedOn', type: 'string' },
+      { name: 'returnBps', type: 'int256' },
+      { name: 'winRateBps', type: 'uint256' },
+      { name: 'maxDrawdownBps', type: 'uint256' }
+    ],
+    outputs: [{ name: 'tokenId', type: 'uint256' }]
+  },
+  {
+    type: 'function',
     name: 'hasSubmittedScore',
     stateMutability: 'view',
     inputs: [{ name: 'account', type: 'address' }],
@@ -633,15 +656,19 @@ function buildFlashLiquidityQuoteRows({
   const safeBaseNotional = Math.max(0, Number(routeBaseNotional || 0));
   const wealthCash = Math.max(0, Number(wealthDeskState?.wealthCash || 0));
   const pledgedProducts = Math.max(0, Number(wealthDeskState?.pledgedProducts || 0));
-  const collateralBorrowed = Math.max(0, Number(wealthDeskState?.collateralBorrowed || 0));
+  const collateralSupportAvailable = Math.max(
+    0,
+    Number(wealthDeskState?.collateralSupportAvailable ?? wealthDeskState?.collateralBorrowed ?? 0)
+  );
+  const legacyPledgeFallbackSupport = collateralSupportAvailable > 0 ? 0 : pledgedProducts * FLASH_COLLATERAL_PLEDGE_SUPPORT;
   const collateralSupport = roundNumber(
     Math.max(
       0,
       Number(availableCash || 0) +
         Number(extraCollateralSupport || 0) +
         wealthCash * 0.12 +
-        pledgedProducts * FLASH_COLLATERAL_PLEDGE_SUPPORT -
-        collateralBorrowed * FLASH_COLLATERAL_BORROW_HAIRCUT
+        legacyPledgeFallbackSupport +
+        collateralSupportAvailable
     ),
     2
   );
@@ -1637,98 +1664,6 @@ function ProductLearnMoreModal({ open, product, productGuide, onClose }) {
   );
 }
 
-function AutoSellPreviewModal({
-  open,
-  product,
-  anchorLabel,
-  targetLabel,
-  sellUnits,
-  sellSizeLabel = '',
-  holdingDays,
-  estimatedValue,
-  estimatedPnl,
-  venueNotes,
-  closeMode = false,
-  onClose,
-  onConfirm
-}) {
-  if (!open || !product) return null;
-
-  const actionLabel = closeMode ? 'Auto-close' : 'Auto-sell';
-  const actionLabelLower = closeMode ? 'auto-close' : 'auto-sell';
-  const plannedSizeLabel = closeMode ? 'Planned close size' : 'Planned sell size';
-  const targetBarLabel = closeMode ? 'Auto-close bar' : 'Auto-sell bar';
-
-  return (
-    <div className="paper-float-modal-backdrop" onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="paper-float-modal-card paper-float-modal-card-autosell">
-        <button type="button" className="paper-float-modal-close" onClick={onClose} aria-label="Close timed exit preview modal">
-          X
-        </button>
-        <div className="section-head wealth-modal-head">
-          <div>
-            <div className="eyebrow">{closeMode ? 'Confirm close' : 'Timed exit preview'}</div>
-            <h2>{actionLabel} {product.ticker}</h2>
-            <div className="paper-float-modal-copy">
-              Review the {closeMode ? 'close' : 'sell'} size, target bar, and venue mechanics before the replay jumps forward and confirms this closing action.
-            </div>
-          </div>
-          <div className="paper-float-modal-actions">
-            <button type="button" className="ghost-btn compact" onClick={onClose}>
-              Cancel
-            </button>
-            <button type="button" className="primary-btn" onClick={onConfirm}>
-              Confirm {actionLabelLower}
-            </button>
-          </div>
-        </div>
-
-        <div className="paper-float-modal-stat-grid">
-          <div className="paper-inline-desk-metric tall">
-            <div className="k">Entry anchor</div>
-            <div className="v">{anchorLabel}</div>
-          </div>
-          <div className="paper-inline-desk-metric tall">
-            <div className="k">{targetBarLabel}</div>
-            <div className="v">{targetLabel}</div>
-          </div>
-          <div className="paper-inline-desk-metric tall">
-            <div className="k">{plannedSizeLabel}</div>
-            <div className="v">{sellSizeLabel || `${formatUnits(sellUnits)} units`}</div>
-          </div>
-          <div className="paper-inline-desk-metric tall">
-            <div className="k">Hold period</div>
-            <div className="v">{holdingDays}D</div>
-          </div>
-          <div className="paper-inline-desk-metric tall">
-            <div className="k">Est. take-home value</div>
-            <div className="v">{formatNotional(estimatedValue)} PT</div>
-          </div>
-          <div className="paper-inline-desk-metric tall">
-            <div className="k">Est. take-home PnL</div>
-            <div className={`v ${estimatedPnl >= 0 ? 'risk-low' : 'risk-high'}`}>{formatSigned(estimatedPnl)} PT</div>
-          </div>
-        </div>
-
-        <div className="paper-float-modal-note-grid">
-          {venueNotes.map((note) => (
-            <div key={note.title} className="paper-inline-support-card">
-              <div className="paper-inline-support-head">
-                <div className="entry-title">{note.title}</div>
-              </div>
-              <div className="paper-inline-support-list">
-                <div className="paper-inline-support-row paper-inline-support-row-full">
-                  <span>{note.copy}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function TradeOutcomeModal({ open, outcome, onClose }) {
   if (!open || !outcome) return null;
 
@@ -2298,6 +2233,127 @@ function defaultReplayScoreLog() {
   };
 }
 
+function defaultLeaderboardCredentialLog() {
+  return {
+    credentials: []
+  };
+}
+
+function getLeaderboardCredentialBoardLabel(boardId) {
+  return LEADERBOARD_CREDENTIAL_BOARD_LABELS[boardId] || 'Leaderboard';
+}
+
+function getLeaderboardCredentialSourceKey(source = {}) {
+  return String(source.sourceId || source.id || source.txHash || source.submittedAt || '').trim();
+}
+
+function normalizeLeaderboardCredential(record) {
+  if (!record || typeof record !== 'object') return null;
+
+  const boardId = LEADERBOARD_CREDENTIAL_BOARD_LABELS[record.boardId]
+    ? record.boardId
+    : LEADERBOARD_CREDENTIAL_BOARD_IDS.replayReturn;
+  const mintedAtTimestamp = new Date(record.mintedAt || record.submittedAt || Date.now()).getTime();
+  const mintedAt = Number.isFinite(mintedAtTimestamp)
+    ? new Date(mintedAtTimestamp).toISOString()
+    : new Date().toISOString();
+  const walletAddress = getWalletCacheAddress(record.walletAddress);
+  const sourceId = getLeaderboardCredentialSourceKey(record) || `${boardId}-${walletAddress}-${mintedAt}`;
+  const id = String(record.id || `${boardId}-${walletAddress}-${sourceId}-${mintedAt}`)
+    .replace(/[^a-zA-Z0-9._:-]+/g, '-')
+    .slice(0, 160);
+
+  return {
+    id,
+    boardId,
+    walletAddress,
+    walletDisplayName: String(record.walletDisplayName || '').trim(),
+    sourceId,
+    sourceType: String(record.sourceType || boardId).trim(),
+    sourceTitle: String(record.sourceTitle || getLeaderboardCredentialBoardLabel(boardId)).trim(),
+    scoreLabel: String(record.scoreLabel || '').trim(),
+    detailLabel: String(record.detailLabel || '').trim(),
+    winRatePct: normalizeCredentialPercent(record.winRatePct),
+    returnPct: normalizeCredentialPercent(record.returnPct),
+    maxDrawdownPct: Math.max(0, normalizeCredentialPercent(record.maxDrawdownPct)),
+    dateLabel: String(record.dateLabel || formatLeaderboardCredentialDate(mintedAt)).trim(),
+    categoryLabel: String(record.categoryLabel || record.sourceType || getLeaderboardCredentialBoardLabel(boardId)).trim(),
+    txHash: String(record.txHash || '').trim(),
+    mintedAt,
+    status: record.status === 'pending' ? 'pending' : 'minted',
+    cid: String(record.cid || `local-credential-${id}`).trim()
+  };
+}
+
+function normalizeLeaderboardCredentialLog(payload) {
+  const seen = new Set();
+  const credentials = Array.isArray(payload?.credentials)
+    ? payload.credentials
+        .map((record) => normalizeLeaderboardCredential(record))
+        .filter(Boolean)
+        .filter((record) => {
+          if (seen.has(record.id)) return false;
+          seen.add(record.id);
+          return true;
+        })
+        .sort((left, right) => new Date(right.mintedAt).getTime() - new Date(left.mintedAt).getTime())
+        .slice(0, 90)
+    : [];
+
+  return {
+    credentials
+  };
+}
+
+function readStoredLeaderboardCredentialLog() {
+  return normalizeLeaderboardCredentialLog(
+    readStorageJson(LEADERBOARD_CREDENTIAL_STORAGE_KEY, defaultLeaderboardCredentialLog())
+  );
+}
+
+function getLeaderboardCredentialDailyCount(credentials = [], boardId, walletAddress, dayKey = getReplayDayKey(new Date().toISOString())) {
+  const walletKey = getWalletCacheAddress(walletAddress);
+  return (Array.isArray(credentials) ? credentials : []).filter(
+    (record) =>
+      record.boardId === boardId &&
+      record.walletAddress === walletKey &&
+      getReplayDayKey(record.mintedAt) === dayKey
+  ).length;
+}
+
+function hasLeaderboardCredentialForSource(credentials = [], boardId, walletAddress, sourceId) {
+  const walletKey = getWalletCacheAddress(walletAddress);
+  const sourceKey = String(sourceId || '').trim();
+  if (!sourceKey) return false;
+
+  return (Array.isArray(credentials) ? credentials : []).some(
+    (record) => record.boardId === boardId && record.walletAddress === walletKey && record.sourceId === sourceKey
+  );
+}
+
+function buildLeaderboardCredentialRecord({ boardId, walletAddress, walletDisplayName, source }) {
+  const mintedAt = new Date().toISOString();
+  const sourceId = getLeaderboardCredentialSourceKey(source);
+  return normalizeLeaderboardCredential({
+    id: `${boardId}-${getWalletCacheAddress(walletAddress)}-${sourceId}-${mintedAt}`,
+    boardId,
+    walletAddress,
+    walletDisplayName,
+    sourceId,
+    sourceType: source?.sourceType || boardId,
+    sourceTitle: source?.sourceTitle || getLeaderboardCredentialBoardLabel(boardId),
+    scoreLabel: source?.scoreLabel || '',
+    detailLabel: source?.detailLabel || '',
+    winRatePct: source?.winRatePct,
+    returnPct: source?.returnPct,
+    maxDrawdownPct: source?.maxDrawdownPct,
+    dateLabel: source?.dateLabel,
+    categoryLabel: source?.categoryLabel,
+    txHash: source?.txHash || '',
+    mintedAt
+  });
+}
+
 function getWalletCacheAddress(address) {
   return address ? String(address).toLowerCase() : 'guest';
 }
@@ -2640,6 +2696,50 @@ function buildReplayScoreSnapshot({ trades, netPnl, accountValue, walletAddress,
     productLabel: tradeSummary.productLabel,
     status,
     txHash
+  };
+}
+
+function formatLeaderboardCredentialDate(value) {
+  const time = value ? new Date(value).getTime() : Date.now();
+  const date = new Date(Number.isFinite(time) ? time : Date.now());
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeCredentialPercent(value, fallback = 0) {
+  const numeric = Number(value);
+  return roundNumber(Number.isFinite(numeric) ? numeric : fallback, 2);
+}
+
+function percentToContractBps(value) {
+  const numeric = Number(value);
+  return BigInt(Math.round((Number.isFinite(numeric) ? numeric : 0) * 100));
+}
+
+function buildReplayCredentialMetrics({ tradeOutcomeEntries = [], pnlPercent = 0 } = {}) {
+  const closedEntries = [...(Array.isArray(tradeOutcomeEntries) ? tradeOutcomeEntries : [])]
+    .filter((entry) => Number.isFinite(Number(entry?.pnl)))
+    .sort((left, right) => new Date(left.ts || 0).getTime() - new Date(right.ts || 0).getTime());
+  const wins = closedEntries.filter((entry) => Number(entry.pnl || 0) > 0).length;
+  const winRatePct = closedEntries.length
+    ? roundNumber((wins / closedEntries.length) * 100, 1)
+    : Number(pnlPercent || 0) > 0
+      ? 100
+      : 0;
+  let equity = STARTING_PAPER_TOKENS;
+  let peak = STARTING_PAPER_TOKENS;
+  let maxDrawdownPct = 0;
+  closedEntries.forEach((entry) => {
+    equity = Math.max(0, equity + Number(entry.pnl || 0));
+    peak = Math.max(peak, equity);
+    if (peak > 0) {
+      maxDrawdownPct = Math.max(maxDrawdownPct, ((peak - equity) / peak) * 100);
+    }
+  });
+
+  return {
+    winRatePct,
+    returnPct: normalizeCredentialPercent(pnlPercent),
+    maxDrawdownPct: roundNumber(maxDrawdownPct, 1)
   };
 }
 
@@ -3029,6 +3129,8 @@ function buildDefaultWealthDeskState() {
     paperCash: 0,
     wealthCash: 0,
     collateralBorrowed: 0,
+    collateralSupportAvailable: 0,
+    collateralNotional: 0,
     pledgedProducts: 0,
     collateralAnnualCarry: 0,
     collateralAverageApy: 0,
@@ -3045,9 +3147,19 @@ function readStoredWealthDeskState(address) {
     collateral: {}
   });
   const collateralEntries = Object.values(wealthState?.collateral || {});
-  const collateralBorrowed = collateralEntries.reduce((sum, entry) => sum + Number(entry?.borrowedAmount || 0), 0);
+  const collateralSupportAvailable = collateralEntries.reduce((sum, entry) => {
+    const explicitSupport = Number(entry?.borrowedAmount || 0);
+    const supportMax = Number(entry?.supportMaxValue || 0);
+    return sum + Math.max(0, Math.min(explicitSupport, supportMax > 0 ? supportMax : explicitSupport));
+  }, 0);
+  const collateralNotional = collateralEntries.reduce((sum, entry) => sum + Number(entry?.collateralValue || 0), 0);
   const collateralAnnualCarry = collateralEntries.reduce(
-    (sum, entry) => sum + Number(entry?.borrowedAmount || 0) * Number(entry?.apy || 0),
+    (sum, entry) => {
+      const explicitSupport = Number(entry?.borrowedAmount || 0);
+      const supportMax = Number(entry?.supportMaxValue || 0);
+      const supportAmount = Math.max(0, Math.min(explicitSupport, supportMax > 0 ? supportMax : explicitSupport));
+      return sum + supportAmount * Number(entry?.apy || 0);
+    },
     0
   );
   const fixedPledgeProducts = collateralEntries.filter((entry) => entry?.termMode === 'fixed').length;
@@ -3056,10 +3168,12 @@ function readStoredWealthDeskState(address) {
   return {
     paperCash: 0,
     wealthCash: getWealthSpendableCash(wealthState),
-    collateralBorrowed: roundNumber(collateralBorrowed, 2),
+    collateralBorrowed: roundNumber(collateralSupportAvailable, 2),
+    collateralSupportAvailable: roundNumber(collateralSupportAvailable, 2),
+    collateralNotional: roundNumber(collateralNotional, 2),
     pledgedProducts: collateralEntries.length,
     collateralAnnualCarry: roundNumber(collateralAnnualCarry, 2),
-    collateralAverageApy: collateralBorrowed > 0 ? collateralAnnualCarry / collateralBorrowed : 0,
+    collateralAverageApy: collateralSupportAvailable > 0 ? collateralAnnualCarry / collateralSupportAvailable : 0,
     fixedPledgeProducts,
     flexiblePledgeProducts
   };
@@ -3717,7 +3831,7 @@ function buildRouteStructureOptions(product, guide, routeId = 'spot') {
 }
 
 function buildFundingBreakdown(availableCash, rewardCredit, wealthDeskState) {
-  const wealthReceiptSupport = Number(wealthDeskState?.collateralBorrowed || 0);
+  const wealthReceiptSupport = Number(wealthDeskState?.collateralSupportAvailable ?? wealthDeskState?.collateralBorrowed ?? 0);
   const wealthReceiptSupportAnnualCarry = Number(wealthDeskState?.collateralAnnualCarry || 0);
   const corePaperCash = Math.max(0, Number(availableCash || 0) - Number(rewardCredit || 0));
   return {
@@ -5564,17 +5678,75 @@ function normalizeStrategyTemplateLeaderboardEntry(entry) {
   };
 }
 
+function normalizeStrategyLeaderboardKeyPart(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function getStrategyTemplateAllocationKey(allocation = []) {
+  return (Array.isArray(allocation) ? allocation : [])
+    .map((row) => ({
+      productId: normalizeStrategyLeaderboardKeyPart(row?.productId || row?.ticker || ''),
+      weightPct: roundNumber(Number(row?.weightPct || 0), 1)
+    }))
+    .filter((row) => row.productId && row.weightPct > 0)
+    .sort((left, right) => left.productId.localeCompare(right.productId))
+    .map((row) => `${row.productId}:${row.weightPct}`)
+    .join('|');
+}
+
+function getStrategyTemplateLeaderboardEntryKey(entry = {}) {
+  const entryType = normalizeStrategyLeaderboardKeyPart(entry.entryType || 'ai-template') || 'ai-template';
+  const parsedRange = parseStrategyDateRange(entry.dateRange);
+  const dateKey =
+    parsedRange.startDate || parsedRange.endDate
+      ? `${parsedRange.startDate || 'open'}->${parsedRange.endDate || 'open'}`
+      : normalizeStrategyLeaderboardKeyPart(entry.dateRange || 'no-window');
+
+  if (entryType === 'portfolio-combo') {
+    return [
+      entryType,
+      dateKey,
+      getStrategyTemplateAllocationKey(entry.allocation) || normalizeStrategyLeaderboardKeyPart(entry.title || entry.prompt),
+      normalizeStrategyLeaderboardKeyPart(entry.strategyLabel || entry.variantLabel)
+    ].join('|');
+  }
+
+  return [
+    entryType,
+    normalizeStrategyLeaderboardKeyPart(entry.productLabel),
+    normalizeStrategyLeaderboardKeyPart(entry.strategyLabel),
+    normalizeStrategyLeaderboardKeyPart(entry.variantId || entry.variantLabel),
+    dateKey
+  ].join('|');
+}
+
+function isPreferredStrategyLeaderboardEntry(nextEntry, currentEntry) {
+  if (!currentEntry) return true;
+  if (nextEntry.templateScore !== currentEntry.templateScore) return nextEntry.templateScore > currentEntry.templateScore;
+  if (nextEntry.expectedReturnPct !== currentEntry.expectedReturnPct) return nextEntry.expectedReturnPct > currentEntry.expectedReturnPct;
+  if (nextEntry.maxDrawdownPct !== currentEntry.maxDrawdownPct) return nextEntry.maxDrawdownPct < currentEntry.maxDrawdownPct;
+  return new Date(nextEntry.submittedAt).getTime() > new Date(currentEntry.submittedAt).getTime();
+}
+
 function normalizeStrategyTemplateLeaderboard(payload) {
-  const byId = new Map();
+  const byEntryKey = new Map();
   const rawEntries = Array.isArray(payload?.entries) ? payload.entries : [];
   rawEntries.forEach((entry) => {
     const normalized = normalizeStrategyTemplateLeaderboardEntry(entry);
     if (!normalized) return;
-    byId.set(normalized.id, normalized);
+    const entryKey = getStrategyTemplateLeaderboardEntryKey(normalized);
+    const existing = byEntryKey.get(entryKey);
+    if (isPreferredStrategyLeaderboardEntry(normalized, existing)) {
+      byEntryKey.set(entryKey, normalized);
+    }
   });
 
   return {
-    entries: [...byId.values()]
+    duplicateCount: Math.max(0, rawEntries.length - byEntryKey.size),
+    entries: [...byEntryKey.values()]
       .sort((left, right) => {
         if (right.templateScore !== left.templateScore) return right.templateScore - left.templateScore;
         if (right.expectedReturnPct !== left.expectedReturnPct) return right.expectedReturnPct - left.expectedReturnPct;
@@ -5586,7 +5758,12 @@ function normalizeStrategyTemplateLeaderboard(payload) {
 }
 
 function readStoredStrategyTemplateLeaderboard() {
-  return normalizeStrategyTemplateLeaderboard(readStorageJson(STRATEGY_TEMPLATE_LEADERBOARD_STORAGE_KEY, { entries: [] }));
+  const stored = readStorageJson(STRATEGY_TEMPLATE_LEADERBOARD_STORAGE_KEY, { entries: [] });
+  const normalized = normalizeStrategyTemplateLeaderboard(stored);
+  if (Array.isArray(stored?.entries) && stored.entries.length !== normalized.entries.length) {
+    writeStorageJson(STRATEGY_TEMPLATE_LEADERBOARD_STORAGE_KEY, normalized);
+  }
+  return normalized;
 }
 
 function getOptionStrategyDefaults(templateId = 'collar') {
@@ -7989,10 +8166,7 @@ function PaperTradingInner() {
   const [pendingPerpRiskConfirm, setPendingPerpRiskConfirm] = useState(null);
   const [tradeOutcomeModal, setTradeOutcomeModal] = useState(null);
   const [tradeOutcomeBursts, setTradeOutcomeBursts] = useState([]);
-  const [autoSellPreviewOpen, setAutoSellPreviewOpen] = useState(false);
   const [autoSellTargetProductId, setAutoSellTargetProductId] = useState('');
-  const [autoSellPreviewProductId, setAutoSellPreviewProductId] = useState('');
-  const [autoSellPreviewMode, setAutoSellPreviewMode] = useState('spot');
   const [flashLoanTicketConfirmOpen, setFlashLoanTicketConfirmOpen] = useState(false);
   const [flashLoanQuoteOpen, setFlashLoanQuoteOpen] = useState(false);
   const [flashLoanDraftQuotes, setFlashLoanDraftQuotes] = useState({});
@@ -8098,6 +8272,7 @@ function PaperTradingInner() {
   const [productViews, setProductViews] = useState(() => readStoredReplaySession(address));
   const [replayClaimCache, setReplayClaimCache] = useState(() => defaultReplayClaimCache(address));
   const [scoreSubmissionLog, setScoreSubmissionLog] = useState(defaultReplayScoreLog());
+  const [leaderboardCredentialLog, setLeaderboardCredentialLog] = useState(() => readStoredLeaderboardCredentialLog());
   const [replayLeaderboardArchive, setReplayLeaderboardArchive] = useState(defaultReplayLeaderboardArchive());
   const [paperBackendLeaderboards, setPaperBackendLeaderboards] = useState(() => emptyPaperBackendLeaderboards());
   const [paperBackendStatus, setPaperBackendStatus] = useState('Backend sync: local preview until API responds.');
@@ -8111,6 +8286,7 @@ function PaperTradingInner() {
   const paperShelfScrollAreaRef = useRef(null);
   const leaderboardRouteRef = useRef(null);
   const pendingScoreSnapshotRef = useRef(null);
+  const pendingLeaderboardCredentialRef = useRef(null);
   const tradeOutcomeHistoryRef = useRef(readStoredTradeOutcomeHistory(address));
   const tradeOutcomeBurstTimerRef = useRef(null);
   const [progressState, setProgressState] = useState({
@@ -8493,6 +8669,13 @@ function PaperTradingInner() {
     writeContract: writeReplayScore
   } = useWriteContract();
 
+  const {
+    data: leaderboardCredentialHash,
+    error: leaderboardCredentialWriteError,
+    isPending: isLeaderboardCredentialSubmitting,
+    writeContract: writeLeaderboardCredential
+  } = useWriteContract();
+
   const { isLoading: isClaimConfirming, isSuccess: isClaimConfirmed } = useWaitForTransactionReceipt({
     hash: claimHash,
     chainId: SEPOLIA_CHAIN_ID,
@@ -8506,6 +8689,14 @@ function PaperTradingInner() {
     chainId: SEPOLIA_CHAIN_ID,
     query: {
       enabled: Boolean(scoreHash)
+    }
+  });
+
+  const { isLoading: isLeaderboardCredentialConfirming, isSuccess: isLeaderboardCredentialConfirmed } = useWaitForTransactionReceipt({
+    hash: leaderboardCredentialHash,
+    chainId: SEPOLIA_CHAIN_ID,
+    query: {
+      enabled: Boolean(leaderboardCredentialHash)
     }
   });
 
@@ -8743,6 +8934,10 @@ function PaperTradingInner() {
   useEffect(() => {
     writeStorageJson(replayScoreLogKey, scoreSubmissionLog);
   }, [replayScoreLogKey, scoreSubmissionLog]);
+
+  useEffect(() => {
+    writeStorageJson(LEADERBOARD_CREDENTIAL_STORAGE_KEY, normalizeLeaderboardCredentialLog(leaderboardCredentialLog));
+  }, [leaderboardCredentialLog]);
 
   useEffect(() => {
     const confirmedSubmissions = scoreSubmissionLog.submissions
@@ -9139,10 +9334,45 @@ function PaperTradingInner() {
   const leaderboardUsedLocally = Boolean(hasSubmittedReplayScoreOnchain) || isScoreConfirmed;
   const firstReplayTrade = paperState.trades[paperState.trades.length - 1] || null;
   const latestScoreSubmission = scoreSubmissionLog.submissions?.[0] || null;
+  const replayCredentialMetrics = buildReplayCredentialMetrics({
+    tradeOutcomeEntries: tradeOutcomeHistory.entries,
+    pnlPercent: latestScoreSubmission?.pnlPercent ?? replayScorePercent
+  });
   const scoreSubmissionsToday = scoreSubmissionLog.submissions.filter(
     (submission) => getReplayDayKey(submission.submittedAt) === getReplayDayKey(new Date().toISOString())
   ).length;
   const scoreSubmissionSlotsLeft = Math.max(0, REPLAY_SCORE_DAILY_LIMIT - scoreSubmissionsToday);
+  const leaderboardCredentialWallet = getWalletCacheAddress(address);
+  const leaderboardCredentialDayKey = getReplayDayKey(new Date().toISOString());
+  const leaderboardCredentials = leaderboardCredentialLog.credentials || [];
+  const replayCredentialMintsToday = getLeaderboardCredentialDailyCount(
+    leaderboardCredentials,
+    LEADERBOARD_CREDENTIAL_BOARD_IDS.replayReturn,
+    leaderboardCredentialWallet,
+    leaderboardCredentialDayKey
+  );
+  const replayCredentialSlotsLeft = Math.max(0, LEADERBOARD_CREDENTIAL_DAILY_LIMIT - replayCredentialMintsToday);
+  const latestReplayCredentialSource = latestScoreSubmission
+    ? {
+        sourceId: `replay-${latestScoreSubmission.walletAddress || leaderboardCredentialWallet}-${latestScoreSubmission.submittedAt}-${latestScoreSubmission.txHash || latestScoreSubmission.pnlPercent}`,
+        sourceType: 'replay-score',
+        sourceTitle: latestScoreSubmission.tradeShortLabel || latestScoreSubmission.tradeLabel || 'Replay score upload',
+        scoreLabel: `${replayCredentialMetrics.winRatePct.toFixed(1)}% win / ${formatSignedPercent(latestScoreSubmission.pnlPercent)} return`,
+        detailLabel: `DD -${replayCredentialMetrics.maxDrawdownPct.toFixed(1)}% / ${formatLeaderboardCredentialDate(latestScoreSubmission.submittedAt)} / ${latestScoreSubmission.productLabel || 'Replay return'}`,
+        winRatePct: replayCredentialMetrics.winRatePct,
+        returnPct: latestScoreSubmission.pnlPercent,
+        maxDrawdownPct: replayCredentialMetrics.maxDrawdownPct,
+        dateLabel: formatLeaderboardCredentialDate(latestScoreSubmission.submittedAt),
+        categoryLabel: latestScoreSubmission.productLabel || 'Replay return',
+        txHash: latestScoreSubmission.txHash || ''
+      }
+    : null;
+  const latestReplayCredentialMinted = hasLeaderboardCredentialForSource(
+    leaderboardCredentials,
+    LEADERBOARD_CREDENTIAL_BOARD_IDS.replayReturn,
+    leaderboardCredentialWallet,
+    latestReplayCredentialSource?.sourceId
+  );
   const onSepolia = chainId === SEPOLIA_CHAIN_ID;
   const hasSepoliaGas = Boolean(sepoliaBalance?.value && sepoliaBalance.value > 0n);
   const replayOnchainStateById = useMemo(() => {
@@ -11766,12 +11996,6 @@ function PaperTradingInner() {
   }, [isConnected]);
 
   useEffect(() => {
-    setAutoSellPreviewOpen(false);
-    setAutoSellPreviewProductId('');
-    setAutoSellPreviewMode('spot');
-  }, [selectedProductId, selectedView?.cursor]);
-
-  useEffect(() => {
     if (!error) return;
 
     const message = String(error.message || '');
@@ -11807,6 +12031,20 @@ function PaperTradingInner() {
   }, [scoreWriteError]);
 
   useEffect(() => {
+    if (!leaderboardCredentialWriteError) return;
+
+    const pendingCredential = pendingLeaderboardCredentialRef.current;
+    const sendFeedback =
+      pendingCredential?.boardId === LEADERBOARD_CREDENTIAL_BOARD_IDS.replayReturn ? setScoreFeedback : setFeedback;
+    sendFeedback(
+      leaderboardCredentialWriteError.shortMessage ||
+        leaderboardCredentialWriteError.message ||
+        'Leaderboard collectible credential mint failed.'
+    );
+    pendingLeaderboardCredentialRef.current = null;
+  }, [leaderboardCredentialWriteError]);
+
+  useEffect(() => {
     if (!claimHash || claimingAchievementId == null) return;
 
     const activeAchievement = replayAchievements.find((achievement) => achievement.id === claimingAchievementId);
@@ -11831,6 +12069,29 @@ function PaperTradingInner() {
       };
     });
   }, [scoreHash]);
+
+  useEffect(() => {
+    if (!leaderboardCredentialHash || !pendingLeaderboardCredentialRef.current) return;
+
+    const pendingCredential = normalizeLeaderboardCredential({
+      ...pendingLeaderboardCredentialRef.current,
+      txHash: leaderboardCredentialHash,
+      status: 'pending'
+    });
+    if (!pendingCredential) return;
+
+    const sendFeedback =
+      pendingCredential.boardId === LEADERBOARD_CREDENTIAL_BOARD_IDS.replayReturn ? setScoreFeedback : setFeedback;
+    setLeaderboardCredentialLog((current) =>
+      normalizeLeaderboardCredentialLog({
+        credentials: [
+          pendingCredential,
+          ...(current.credentials || []).filter((record) => record.id !== pendingCredential.id)
+        ]
+      })
+    );
+    sendFeedback('Leaderboard credential submitted. Waiting for Sepolia confirmation.');
+  }, [leaderboardCredentialHash]);
 
   useEffect(() => {
     if (!isClaimConfirmed || claimingAchievementId == null) return;
@@ -11866,6 +12127,34 @@ function PaperTradingInner() {
     }
     void refetchReplayScoreState();
   }, [address, isScoreConfirmed, refetchReplayScoreState]);
+
+  useEffect(() => {
+    if (!isLeaderboardCredentialConfirmed || !pendingLeaderboardCredentialRef.current) return;
+
+    const confirmedCredential = normalizeLeaderboardCredential({
+      ...pendingLeaderboardCredentialRef.current,
+      txHash: leaderboardCredentialHash,
+      status: 'minted'
+    });
+    if (!confirmedCredential) return;
+
+    const sendFeedback =
+      confirmedCredential.boardId === LEADERBOARD_CREDENTIAL_BOARD_IDS.replayReturn ? setScoreFeedback : setFeedback;
+    setLeaderboardCredentialLog((current) =>
+      normalizeLeaderboardCredentialLog({
+        credentials: [
+          confirmedCredential,
+          ...(current.credentials || []).filter((record) => record.id !== confirmedCredential.id)
+        ]
+      })
+    );
+    pendingLeaderboardCredentialRef.current = null;
+    sendFeedback(
+      `${getLeaderboardCredentialBoardLabel(confirmedCredential.boardId)} collectible credential confirmed with ${confirmedCredential.winRatePct.toFixed(
+        1
+      )}% win, ${formatSignedPercent(confirmedCredential.returnPct, 1)} return, and -${confirmedCredential.maxDrawdownPct.toFixed(1)}% DD.`
+    );
+  }, [isLeaderboardCredentialConfirmed, leaderboardCredentialHash]);
 
   function handleConnect() {
     if (!hasMetaMaskInstalled) {
@@ -12134,6 +12423,84 @@ function PaperTradingInner() {
     }
   }
 
+  function handleMintLeaderboardCredential(boardId, source) {
+    const boardLabel = getLeaderboardCredentialBoardLabel(boardId);
+    const sendFeedback = boardId === LEADERBOARD_CREDENTIAL_BOARD_IDS.replayReturn ? setScoreFeedback : setFeedback;
+    const sourceId = getLeaderboardCredentialSourceKey(source);
+
+    if (!sourceId) {
+      sendFeedback(`Upload to the ${boardLabel} first, then mint the optional collectible credential for that upload.`);
+      return;
+    }
+
+    if (!isConnected || !address) {
+      sendFeedback('Connect MetaMask first so the collectible credential stays tied to the same wallet.');
+      return;
+    }
+
+    const walletAddress = getWalletCacheAddress(address);
+    const mintedToday = getLeaderboardCredentialDailyCount(leaderboardCredentials, boardId, walletAddress);
+    if (mintedToday >= LEADERBOARD_CREDENTIAL_DAILY_LIMIT) {
+      sendFeedback(`This wallet already minted all ${LEADERBOARD_CREDENTIAL_DAILY_LIMIT} ${boardLabel} credentials for today.`);
+      return;
+    }
+
+    if (hasLeaderboardCredentialForSource(leaderboardCredentials, boardId, walletAddress, sourceId)) {
+      sendFeedback(`This ${boardLabel} upload already has a collectible credential.`);
+      return;
+    }
+
+    const credential = buildLeaderboardCredentialRecord({
+      boardId,
+      walletAddress,
+      walletDisplayName,
+      source
+    });
+    if (!credential) {
+      sendFeedback('Credential mint failed before it could be saved locally.');
+      return;
+    }
+
+    if (replayBadgeContractConfigured) {
+      if (!onSepolia) {
+        sendFeedback('Switch MetaMask to Sepolia before minting this leaderboard collectible credential.');
+        return;
+      }
+
+      pendingLeaderboardCredentialRef.current = credential;
+      sendFeedback(
+        `Opening MetaMask to mint ${credential.categoryLabel}: ${credential.winRatePct.toFixed(1)}% win, ${formatSignedPercent(
+          credential.returnPct,
+          1
+        )} return, -${credential.maxDrawdownPct.toFixed(1)}% DD.`
+      );
+      writeLeaderboardCredential({
+        address: REPLAY_BADGE_CONTRACT_ADDRESS,
+        abi: replayAchievementAbi,
+        functionName: 'mintPaperLeaderboardCredential',
+        args: [
+          credential.categoryLabel,
+          credential.dateLabel,
+          percentToContractBps(credential.returnPct),
+          BigInt(Math.round(Math.max(0, Number(credential.winRatePct || 0)) * 100)),
+          BigInt(Math.round(Math.max(0, Number(credential.maxDrawdownPct || 0)) * 100))
+        ],
+        chainId: SEPOLIA_CHAIN_ID,
+        gas: 420000n
+      });
+      return;
+    }
+
+    setLeaderboardCredentialLog((current) =>
+      normalizeLeaderboardCredentialLog({
+        credentials: [credential, ...(current.credentials || [])]
+      })
+    );
+    sendFeedback(
+      `${boardLabel} collectible credential minted for this upload. Daily mint usage: ${mintedToday + 1}/${LEADERBOARD_CREDENTIAL_DAILY_LIMIT}.`
+    );
+  }
+
   function handleSubmitReplayScore() {
     if (!isConnected || !address) {
       setScoreFeedback('Connect MetaMask first so the replay score stays tied to the same wallet.');
@@ -12167,12 +12534,12 @@ function PaperTradingInner() {
         submissions: [backendOnlySnapshot, ...current.submissions].slice(0, 12)
       }));
       void syncReplayScoreToBackend(backendOnlySnapshot);
-      setScoreFeedback('Replay score saved to the backend leaderboard. Onchain score contract is not configured, so this row uses the signed profile CID pointer instead.');
+      setScoreFeedback('Replay score saved to the backend leaderboard. The collectible credential mint is optional and ready for this upload.');
       return;
     }
 
     pendingScoreSnapshotRef.current = scoreSnapshot;
-    setScoreFeedback('Opening MetaMask to submit the current replay score on Sepolia...');
+    setScoreFeedback('Opening MetaMask to submit the current replay score on Sepolia. The collectible credential mint stays optional after the upload lands.');
     writeReplayScore({
       address: REPLAY_BADGE_CONTRACT_ADDRESS,
       abi: replayAchievementAbi,
@@ -15086,20 +15453,52 @@ function PaperTradingInner() {
     comboFocusActive && Boolean(portfolioComboManualMetrics?.allocation?.length) && portfolioComboManualWeightValidation.isValid;
   const portfolioComboManualAllocationLabel =
     portfolioComboManualMetrics?.allocation?.map((row) => `${row.ticker} ${row.weightPct.toFixed(0)}%`).join(' / ') || '';
-  const strategyTemplateLeaderboardRows = normalizeStrategyTemplateLeaderboard({
+  const strategyTemplateLeaderboardModel = normalizeStrategyTemplateLeaderboard({
     entries: [
       ...(strategyTemplateLeaderboard.entries || []),
       ...(paperBackendLeaderboards.strategy?.entries || [])
     ]
-  }).entries;
+  });
+  const strategyTemplateLeaderboardRows = strategyTemplateLeaderboardModel.entries;
+  const strategyTemplateLeaderboardDuplicateCount = strategyTemplateLeaderboardModel.duplicateCount || 0;
+  const strategyCredentialMintsToday = getLeaderboardCredentialDailyCount(
+    leaderboardCredentials,
+    LEADERBOARD_CREDENTIAL_BOARD_IDS.strategyCombo,
+    leaderboardCredentialWallet,
+    leaderboardCredentialDayKey
+  );
+  const strategyCredentialSlotsLeft = Math.max(0, LEADERBOARD_CREDENTIAL_DAILY_LIMIT - strategyCredentialMintsToday);
+  const latestStrategyCredentialEntry =
+    strategyTemplateLeaderboardRows.find((entry) => entry.walletAddress === leaderboardCredentialWallet) || null;
+  const latestStrategyCredentialSource = latestStrategyCredentialEntry
+    ? {
+        sourceId: latestStrategyCredentialEntry.id,
+        sourceType: latestStrategyCredentialEntry.entryType,
+        sourceTitle: latestStrategyCredentialEntry.title,
+        scoreLabel: `${Math.round(latestStrategyCredentialEntry.templateScore)}/100 score`,
+        detailLabel: `${latestStrategyCredentialEntry.winRate}% win / ${formatSignedPercent(latestStrategyCredentialEntry.expectedReturnPct, 1)} return / -${latestStrategyCredentialEntry.maxDrawdownPct.toFixed(1)}% DD`,
+        winRatePct: latestStrategyCredentialEntry.winRate,
+        returnPct: latestStrategyCredentialEntry.expectedReturnPct,
+        maxDrawdownPct: latestStrategyCredentialEntry.maxDrawdownPct,
+        dateLabel: formatLeaderboardCredentialDate(latestStrategyCredentialEntry.submittedAt),
+        categoryLabel: latestStrategyCredentialEntry.entryType === 'portfolio-combo' ? 'Portfolio combo' : 'AI strategy'
+      }
+    : null;
+  const latestStrategyCredentialMinted = hasLeaderboardCredentialForSource(
+    leaderboardCredentials,
+    LEADERBOARD_CREDENTIAL_BOARD_IDS.strategyCombo,
+    leaderboardCredentialWallet,
+    latestStrategyCredentialSource?.sourceId
+  );
   const strategyAiCurrentDateRange = strategyAiWindow.ready ? `${strategyAiWindow.startDate} -> ${strategyAiWindow.endDate}` : '';
+  const currentStrategyAiLeaderboardKey = getStrategyTemplateLeaderboardEntryKey({
+    ...strategyAiTemplate,
+    entryType: 'ai-template',
+    dateRange: strategyAiCurrentDateRange,
+    walletAddress: address || 'guest'
+  });
   const strategyTemplateUploadedForCurrentPrompt = strategyTemplateLeaderboardRows.some(
-    (entry) =>
-      entry.prompt === strategyAiTemplate.prompt &&
-      entry.productLabel === strategyAiTemplate.productLabel &&
-      entry.strategyLabel === strategyAiTemplate.strategyLabel &&
-      entry.variantId === strategyAiTemplate.variantId &&
-      (entry.entryType !== 'ai-template' || entry.dateRange === strategyAiCurrentDateRange)
+    (entry) => getStrategyTemplateLeaderboardEntryKey(entry) === currentStrategyAiLeaderboardKey
   );
 
   function getLeaderboardStrategyTemplateId(strategyLabel = '') {
@@ -15153,9 +15552,23 @@ function PaperTradingInner() {
         return;
       }
 
+      const entryDateRange = parseStrategyDateRange(entry.dateRange);
+      if (entryDateRange.startDate) setPortfolioComboStartDate(entryDateRange.startDate);
+      if (entryDateRange.endDate) setPortfolioComboEndDate(entryDateRange.endDate);
+      if (availableReplayRoutes.some((route) => route.id === 'perp')) {
+        setSelectedAdvancedRoute('perp');
+        setSelectedRouteFocusByRoute((current) => ({
+          ...current,
+          perp: 'combo'
+        }));
+      }
       setPortfolioComboSelectedIds(Array.from(new Set(nextSelectedIds)));
       setPortfolioComboWeights(nextWeights);
-      setFeedback(`Applied "${entry.title || 'portfolio combo'}" to combo manual weights.`);
+      setFeedback(
+        `Applied "${entry.title || 'portfolio combo'}" to combo manual weights${
+          entryDateRange.startDate && entryDateRange.endDate ? ` for ${entryDateRange.startDate} -> ${entryDateRange.endDate}` : ''
+        }.`
+      );
       return;
     }
 
@@ -15182,7 +15595,7 @@ function PaperTradingInner() {
     setStrategyAiPrompt(safePrompt);
     setSelectedStrategyAiVariantId(safeVariantId);
     setStrategyAiTemplateGenerated(true);
-    setFeedback(`Copied "${entry.title || 'AI template'}" into the AI strategy template controls.`);
+    setFeedback(`Copied "${entry.title || 'AI template'}" into the AI strategy template controls. Press Apply strategy to settle the window and see PnL.`);
   }
 
   function handleSetStrategyAiWindowPoint(point) {
@@ -15216,9 +15629,21 @@ function PaperTradingInner() {
     }
 
     setStrategyAiTemplateGenerated(true);
-    mergeProgressUpdate({ strategyAiTemplateCompleted: true });
+    mergeProgressUpdate({
+      strategyLessonCompleted: true,
+      strategyExampleCompleted: true,
+      strategyAiTemplateCompleted: true
+    });
+    finalizeTradeOutcome({
+      product: selectedProduct,
+      routeId: 'strategy-ai',
+      actionLabel: `Settle ${strategyAiTemplate.variantLabel || 'AI strategy'}`,
+      tradeTs: strategyAiWindow.endBar?.ts || new Date().toISOString(),
+      pnl: optionStrategyPreview.netPnl,
+      exitValue: optionStrategyPreview.exitValue
+    });
     setFeedback(
-      `Applied ${strategyAiTemplate.variantLabel || 'AI strategy'} to ${strategyAiWindow.startDate} -> ${strategyAiWindow.endDate}. Actual payoff is ${formatSigned(
+      `Settled ${strategyAiTemplate.variantLabel || 'AI strategy'} for ${strategyAiWindow.startDate} -> ${strategyAiWindow.endDate}. Actual payoff is ${formatSigned(
         optionStrategyPreview.netPnl
       )} PT over ${optionStrategyPreview.holdingDays || strategyAiWindow.holdingDays}D.`
     );
@@ -15247,6 +15672,16 @@ function PaperTradingInner() {
     });
     if (!entry) return;
 
+    const duplicateEntry = strategyTemplateLeaderboardRows.some(
+      (row) => getStrategyTemplateLeaderboardEntryKey(row) === getStrategyTemplateLeaderboardEntryKey(entry)
+    );
+    if (duplicateEntry) {
+      setStrategyAiTemplateGenerated(true);
+      mergeProgressUpdate({ strategyAiTemplateCompleted: true });
+      setFeedback('Same strategy and time window already exists; no need to upload again.');
+      return;
+    }
+
     setStrategyAiTemplateGenerated(true);
     setStrategyTemplateLeaderboard((current) => {
       const next = normalizeStrategyTemplateLeaderboard({
@@ -15268,7 +15703,7 @@ function PaperTradingInner() {
       `Uploaded "${entry.title}" to the local strategy / combo leaderboard with ${entry.winRate}% paper win rate, ${formatSignedPercent(
         entry.expectedReturnPct,
         1
-      )} expected return, and -${entry.maxDrawdownPct.toFixed(1)}% max drawdown.`
+      )} expected return, and -${entry.maxDrawdownPct.toFixed(1)}% max drawdown. Optional collectible credential mint is ready on the board.`
     );
   }
 
@@ -15380,6 +15815,14 @@ function PaperTradingInner() {
     });
     if (!entry) return;
 
+    const duplicateEntry = strategyTemplateLeaderboardRows.some(
+      (row) => getStrategyTemplateLeaderboardEntryKey(row) === getStrategyTemplateLeaderboardEntryKey(entry)
+    );
+    if (duplicateEntry) {
+      setFeedback('Same combo strategy and time window already exists; no need to upload again.');
+      return;
+    }
+
     setStrategyTemplateLeaderboard((current) => {
       const next = normalizeStrategyTemplateLeaderboard({
         entries: [entry, ...(current.entries || [])]
@@ -15398,7 +15841,7 @@ function PaperTradingInner() {
       `Uploaded ${suggestion?.label || 'manual portfolio combo'} to the strategy / combo leaderboard: ${formatSignedPercent(
         metrics.totalReturnPct,
         1
-      )} return, -${metrics.maxDrawdownPct.toFixed(1)}% max drawdown, ${metrics.winRate.toFixed(1)}% winning days.`
+      )} return, -${metrics.maxDrawdownPct.toFixed(1)}% max drawdown, ${metrics.winRate.toFixed(1)}% winning days. Optional collectible credential mint is ready on the board.`
     );
   }
   const timedExitSpotSnapshot =
@@ -15568,7 +16011,74 @@ function PaperTradingInner() {
           ].filter(Boolean)
         : [];
   const routeLearningFeeRows =
-    selectedAdvancedRoute === 'perp'
+    comboFocusActive
+      ? [
+          {
+            label: 'Manual return',
+            value: portfolioComboManualMetrics?.totalReturnPct || 0,
+            valueLabel: portfolioComboManualMetrics ? formatSignedPercent(portfolioComboManualMetrics.totalReturnPct, 1) : 'Waiting',
+            isCost: false,
+            copy: 'Same manual basket result used by the Settle combo window.'
+          },
+          {
+            label: 'Max drawdown',
+            value: -(portfolioComboManualMetrics?.maxDrawdownPct || 0),
+            valueLabel: portfolioComboManualMetrics ? `-${portfolioComboManualMetrics.maxDrawdownPct.toFixed(1)}%` : 'Waiting',
+            isCost: true,
+            copy: 'Worst peak-to-trough drawdown inside the selected combo window.'
+          },
+          {
+            label: 'Winning days',
+            value: portfolioComboManualMetrics?.winRate || 0,
+            valueLabel: portfolioComboManualMetrics ? `${portfolioComboManualMetrics.winRate.toFixed(1)}%` : 'Waiting',
+            isCost: false,
+            copy: 'Daily hit rate for the weighted basket over the selected start/end dates.'
+          },
+          {
+            label: 'Combo assets',
+            value: portfolioComboManualMetrics?.allocation?.length || 0,
+            valueLabel: portfolioComboManualMetrics ? `${portfolioComboManualMetrics.allocation.length} assets` : 'Waiting',
+            isCost: false,
+            copy: portfolioComboManualWeightValidation.isValid
+              ? 'Manual weights total 100% and can settle to the strategy board.'
+              : `Manual weights total ${portfolioComboManualWeightValidation.totalPercent.toFixed(1)}%; fix to 100% before settlement.`
+          }
+        ]
+      : strategyWorkspaceRouteActive
+        ? [
+            {
+              label: 'Historical move',
+              value: optionStrategyPreview ? Number(optionStrategyPreview.grossMoveRate || 0) * 100 : 0,
+              valueLabel: optionStrategyPreview
+                ? formatSignedPercent(Number(optionStrategyPreview.grossMoveRate || 0) * 100, 1)
+                : 'Waiting',
+              isCost: false,
+              copy: 'Underlying move between the selected strategy start and settlement bars.'
+            },
+            {
+              label: 'Management fee',
+              value: optionStrategyPreview?.managementFee || 0,
+              isCost: true,
+              copy: 'Strategy route management fee deducted before the final payoff is shown.'
+            },
+            {
+              label: 'Strategy payoff',
+              value: optionStrategyPreview?.netPnl || 0,
+              valueLabel: optionStrategyPreview ? `${formatSigned(optionStrategyPreview.netPnl)} PT` : 'Waiting',
+              isCost: false,
+              copy: optionStrategyPreview
+                ? `${OPTION_STRATEGY_LABELS[selectedStrategyTemplateId] || 'Strategy'} payoff after the selected floor, cap, premium, and hold window.`
+                : 'Pick a valid strategy window before settlement.'
+            },
+            {
+              label: 'Settle take-home',
+              value: optionStrategyPreview?.exitValue || 0,
+              valueLabel: optionStrategyPreview ? `${formatNotional(optionStrategyPreview.exitValue)} PT` : 'Waiting',
+              isCost: false,
+              copy: 'Value shown in the PnL settlement modal when Apply strategy is pressed.'
+            }
+          ]
+        : selectedAdvancedRoute === 'perp'
       ? [
           {
             label: hedgeFocusActive ? 'Hedge open fee' : 'Open fee',
@@ -15661,13 +16171,22 @@ function PaperTradingInner() {
             copy: `Net preview after the current timed exit path, around ${formatNotional(timedExitEstimatedValue)} PT value.`
           }
         ];
+  const routeLearningFeeTitle = comboFocusActive
+    ? 'Combo settlement result'
+    : strategyAiRouteActive
+      ? 'AI strategy settlement'
+      : selectedAdvancedRoute === 'borrow'
+        ? 'Fees to settle strategy'
+        : hedgeFocusActive || leverageRouteActive
+          ? 'Fees to auto-close'
+          : 'Fees to auto-sell';
   const routeLearningSummaryCopy =
     selectedAdvancedRoute === 'perp'
       ? hedgeFocusActive
         ? activeRouteFocusConfig?.feeSummary ||
           'Use hedge mode to ask whether the leg actually softens downside after funding and close drag, not whether it produces the highest gross directional PnL.'
         : comboFocusActive
-          ? 'Combo mode should explain which part is the active view and which part is the protection layer before it tries to sell extra complexity.'
+          ? 'Combo mode now settles the manual weighted basket from the right rail while the lab keeps allocation, cached results, suggestions, and leaderboard reuse in the desk.'
           : flashLoanAppliedTicketNotional > 0
             ? `Flash is adding ${formatNotional(flashLoanAppliedTicketNotional)} PT of route-bound exposure on top of the wallet-backed leg. The preview now moves with that flash amount, after premium and reserve drag.`
             : `If flash quote is 0, the current paper notional is wallet-backed or the route has no attachable flash yet. With only ${formatNotional(
@@ -15872,6 +16391,51 @@ function PaperTradingInner() {
     selectedRouteFocusConfig?.id
   ]);
 
+  function renderLeaderboardCredentialMintBox({
+    boardId,
+    source,
+    mintedToday,
+    slotsLeft,
+    alreadyMinted,
+    className = ''
+  }) {
+    const boardLabel = getLeaderboardCredentialBoardLabel(boardId);
+    const credentialBusy = isLeaderboardCredentialSubmitting || isLeaderboardCredentialConfirming;
+    const canMint = Boolean(source) && !alreadyMinted && slotsLeft > 0 && !credentialBusy;
+
+    return (
+      <div className={`paper-leaderboard-credential-box ${alreadyMinted ? 'minted' : ''} ${className}`.trim()}>
+        <div className="paper-leaderboard-credential-copy">
+          <div className="paper-leaderboard-credential-title">Optional collectible credential</div>
+          <div className="muted">
+            {source ? source.sourceTitle : `Upload to the ${boardLabel} first.`}
+          </div>
+          <div className="paper-leaderboard-credential-meta">
+            <span>Daily mint usage: {mintedToday}/{LEADERBOARD_CREDENTIAL_DAILY_LIMIT}</span>
+            {source?.scoreLabel ? <span>{source.scoreLabel}</span> : null}
+            {source?.detailLabel ? <span>{source.detailLabel}</span> : null}
+            {source?.dateLabel ? <span>Date {source.dateLabel}</span> : null}
+            {source?.categoryLabel ? <span>{source.categoryLabel}</span> : null}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="ghost-btn compact paper-leaderboard-credential-btn"
+          onClick={() => handleMintLeaderboardCredential(boardId, source)}
+          disabled={!canMint}
+        >
+          {alreadyMinted
+            ? 'Credential minted'
+            : credentialBusy
+              ? 'Minting credential...'
+              : slotsLeft <= 0
+                ? 'Daily mint limit reached'
+                : 'Mint credential'}
+        </button>
+      </div>
+    );
+  }
+
   function renderStrategyTemplateLeaderboardCard({
     className = '',
     title = 'Strategy / combo leaderboard',
@@ -15886,6 +16450,19 @@ function PaperTradingInner() {
             <strong>{strategyTemplateLeaderboardRows.length} entr{strategyTemplateLeaderboardRows.length === 1 ? 'y' : 'ies'}</strong>
           </div>
           <div className="paper-backend-sync-note compact">{paperBackendStatus}</div>
+          {strategyTemplateLeaderboardDuplicateCount > 0 ? (
+            <div className="paper-backend-sync-note compact">
+              Same strategy and time window already existed; duplicate uploads are hidden from this board.
+            </div>
+          ) : null}
+          {renderLeaderboardCredentialMintBox({
+            boardId: LEADERBOARD_CREDENTIAL_BOARD_IDS.strategyCombo,
+            source: latestStrategyCredentialSource,
+            mintedToday: strategyCredentialMintsToday,
+            slotsLeft: strategyCredentialSlotsLeft,
+            alreadyMinted: latestStrategyCredentialMinted,
+            className: 'paper-strategy-credential-box'
+          })}
           {strategyTemplateLeaderboardRows.length ? (
             <div className="paper-strategy-board-list">
               {strategyTemplateLeaderboardRows.slice(0, limit).map((entry, index) => (
@@ -16035,7 +16612,10 @@ function PaperTradingInner() {
           </div>
           <div>
             <span>Window</span>
-            <strong>{`${strategyAiWindow.startDate || '-'} -> ${strategyAiWindow.endDate || '-'}`}</strong>
+            <strong className="paper-window-date-stack">
+              <span>{strategyAiWindow.startDate || '-'}</span>
+              <span>{strategyAiWindow.endDate || '-'}</span>
+            </strong>
           </div>
         </div>
       </div>
@@ -16531,12 +17111,10 @@ function PaperTradingInner() {
       const topDelta = roundNumber(timedExitPortfolioDelta + activeLeverageCloseContribution, 2);
       const topValue = roundNumber(timedExitPortfolioNetExitValue + activeLeverageCloseValue, 2);
       const autoSellDockAvailable = true;
-      const openAutoSellPreviewForProduct = (productId) => {
+      const settleAutoSellProduct = (productId) => {
         if (!productId) return;
         setAutoSellTargetProductId(productId);
-        setAutoSellPreviewProductId(productId);
-        setAutoSellPreviewMode('spot');
-        setAutoSellPreviewOpen(true);
+        handleTimedExitReplay(productId);
       };
 
       if (!autoSellDockAvailable) return null;
@@ -16692,7 +17270,7 @@ function PaperTradingInner() {
                         onClick={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
-                          openAutoSellPreviewForProduct(row.id);
+                          settleAutoSellProduct(row.id);
                         }}
                       >
                         {row.ready ? 'Settle' : 'Locked'}
@@ -16710,7 +17288,7 @@ function PaperTradingInner() {
             <button
               type="button"
               className="primary-btn paper-floating-auto-sell-action"
-              onClick={() => openAutoSellPreviewForProduct(selectedAutoSellProductId)}
+              onClick={() => settleAutoSellProduct(selectedAutoSellProductId)}
               disabled={!selectedAutoSellReady}
             >
               {selectedAutoSellReady && selectedAutoSellRow ? `Settle ${selectedAutoSellRow.ticker || selectedAutoSellRow.name}` : 'Select a ready position'}
@@ -16758,7 +17336,7 @@ function PaperTradingInner() {
             ? 'No hedge leg'
             : 'No open leg'
       : `${formatUnits(selectedPosition.units)} units`;
-  const focusedTradeModeCopy =
+    const focusedTradeModeCopy =
       replayFocus.hoverActive
         ? hedgeFocusActive
           ? 'The white-dot bar is now the hedge anchor. Use this date to stage protection for the selected sleeve rather than to chase a second speculative punt.'
@@ -16767,37 +17345,6 @@ function PaperTradingInner() {
           ? 'The locked replay cursor is now the combo anchor. Treat the live leg as the active side of a leverage + hedge template until you move the white dot again.'
           : 'Buy or Sell currently uses the locked replay cursor. Move the white dot to another bar if you want a different trade date.';
     const fundingBreakdown = deskSimulation.fundingBreakdown;
-    const autoSellPreviewResolvedProductId = autoSellPreviewProductId || selectedProductId;
-    const autoSellPreviewProduct = productMap[autoSellPreviewResolvedProductId] || selectedProduct;
-    const autoSellPreviewRow = timedExitPortfolioRows.find((row) => row.id === autoSellPreviewResolvedProductId) || null;
-    const autoSellPreviewView = productViews[autoSellPreviewResolvedProductId];
-    const autoSellPreviewIsLeverage =
-      leverageRouteActive &&
-      activePerpLeg &&
-      autoSellPreviewResolvedProductId === selectedProductId &&
-      (autoSellPreviewMode === 'leverage' || !autoSellPreviewRow);
-    const autoSellPreviewAnchorLabel = autoSellPreviewIsLeverage
-      ? formatReplayDate(timedExitAnchorBar?.ts, selectedView?.interval)
-      : formatReplayDate(autoSellPreviewRow?.anchorBar?.ts || timedExitAnchorBar?.ts, autoSellPreviewView?.interval || selectedView?.interval);
-    const autoSellPreviewTargetLabel = autoSellPreviewIsLeverage
-      ? formatReplayDate(timedExitTargetBar?.ts, selectedView?.interval)
-      : formatReplayDate(autoSellPreviewRow?.targetBar?.ts || timedExitTargetBar?.ts, autoSellPreviewView?.interval || selectedView?.interval);
-    const autoSellPreviewSellUnits = autoSellPreviewIsLeverage && timedExitLeveragedSnapshot
-      ? timedExitLeveragedSnapshot.exposureNotional
-      : autoSellPreviewRow?.units ?? selectedPosition.units;
-    const autoSellPreviewSellSizeLabel =
-      autoSellPreviewIsLeverage && timedExitLeveragedSnapshot
-        ? `Close ${leverageDirection} ${formatNotional(timedExitLeveragedSnapshot.exposureNotional)} PT notional (${routeLeverageMultiple}x)`
-        : '';
-    const autoSellPreviewHoldingDays = autoSellPreviewIsLeverage
-      ? timedExitActualHoldingDays
-      : autoSellPreviewRow?.actualHoldingDays || timedExitActualHoldingDays;
-    const autoSellPreviewEstimatedValue = autoSellPreviewIsLeverage
-      ? timedExitEstimatedValue
-      : autoSellPreviewRow?.projectedValue ?? timedExitEstimatedValue;
-    const autoSellPreviewEstimatedPnl = autoSellPreviewIsLeverage
-      ? timedExitEstimatedPnl
-      : autoSellPreviewRow?.projectedPnl ?? timedExitEstimatedPnl;
 
     return (
       <div
@@ -16875,15 +17422,7 @@ function PaperTradingInner() {
               </div>
             ) : null}
 
-            {comboFocusActive || strategyAiRouteActive
-              ? renderStrategyTemplateLeaderboardCard({
-                  className: 'paper-desk-practice-case-card-inline',
-                  title: comboFocusActive ? 'Combo / AI leaderboard' : 'Strategy / combo leaderboard',
-                  emptyCopy: comboFocusActive
-                    ? 'Upload a suggested combo or AI template to start the board.'
-                    : 'Generate an AI template or upload a portfolio combo to rank by score, expected return, and drawdown.'
-                })
-              : renderRoutePracticeCaseCard('paper-desk-practice-case-card-inline')}
+            {comboFocusActive || strategyAiRouteActive ? null : renderRoutePracticeCaseCard('paper-desk-practice-case-card-inline')}
             {strategyAiRouteActive ? renderStrategyAiWindowLab('paper-strategy-ai-window-card-desk') : null}
             {comboFocusActive ? renderPortfolioComboLab('paper-portfolio-combo-card paper-portfolio-combo-card-desk') : null}
           </div>
@@ -17281,7 +17820,7 @@ function PaperTradingInner() {
                   </div>
                 ) : null}
 
-                {!hedgeFocusActive && !strategyAiRouteActive ? (
+                {!hedgeFocusActive && !strategyAiRouteActive && !comboFocusActive ? (
                   <div
                     className={`paper-inline-action-card paper-inline-action-card-compact paper-inline-timed-exit-card ${
                       timedExitReady ? 'ready' : 'locked'
@@ -17422,12 +17961,7 @@ function PaperTradingInner() {
                               ? handleSettleOptionStrategy
                               : comboFocusActive
                                 ? () => handleUploadPortfolioComboToStrategyBoard()
-                              : () => {
-                                  setAutoSellPreviewProductId(selectedProductId);
-                                  setAutoSellTargetProductId(selectedProductId);
-                                  setAutoSellPreviewMode(leverageRouteActive ? 'leverage' : 'spot');
-                                  setAutoSellPreviewOpen(true);
-                                }
+                              : () => handleTimedExitReplay(selectedProductId)
                           }
                           disabled={!timedExitReady}
                         >
@@ -17468,15 +18002,56 @@ function PaperTradingInner() {
 
           <div className="paper-inline-preview-panel paper-inline-trade-panel">
             {comboFocusActive ? (
-              <div className="paper-inline-action-card paper-inline-action-card-compact paper-combo-side-note">
+              <div
+                className={`paper-inline-action-card paper-inline-action-card-compact paper-inline-timed-exit-card paper-combo-side-note ${
+                  timedExitReady ? 'ready' : 'locked'
+                }`.trim()}
+              >
                 <div className="paper-inline-action-head">
-                  <div>
-                    <div className="k">Combo lab moved</div>
-                    <div className="muted">
-                      Allocation, cached results, suggestions, and the combo leaderboard now sit inside the Replay desk so this rail no longer shows a hedge ticket.
-                    </div>
+                  <div className="k">{timedExitCardTitle}</div>
+                  <span className={`pill ${timedExitStatus.tone}`}>{timedExitStatus.label}</span>
+                </div>
+                <div className="paper-inline-muted-help">
+                  The combo lab's start and end dates define the window. Settle the manual basket result instead of creating a separate auto-close leg.
+                </div>
+                <div className="paper-inline-muted-help">
+                  {portfolioComboManualWeightValidation.isValid
+                    ? `Manual weights total 100%; ${portfolioComboManualAllocationLabel || 'the selected basket'} is ready to settle to the board.`
+                    : `Manual weights total ${portfolioComboManualWeightValidation.totalPercent.toFixed(1)}%; fix them to 100% before settling.`}
+                </div>
+                <div className="paper-inline-action-metric-grid">
+                  <div className="paper-inline-action-metric">
+                    <span>Start date</span>
+                    <strong>{portfolioComboManualMetrics?.startDate || portfolioComboStartDate}</strong>
                   </div>
-                  <span className="pill risk-low">Desk first</span>
+                  <div className="paper-inline-action-metric">
+                    <span>End date</span>
+                    <strong>{portfolioComboManualMetrics?.endDate || portfolioComboEndDate}</strong>
+                  </div>
+                  <div className="paper-inline-action-metric">
+                    <span>Combo assets</span>
+                    <strong>{portfolioComboManualMetrics ? `${portfolioComboManualMetrics.allocation.length} assets` : 'Loading'}</strong>
+                  </div>
+                  <div className="paper-inline-action-metric">
+                    <span>Manual return</span>
+                    <strong className={(portfolioComboManualMetrics?.totalReturnPct || 0) >= 0 ? 'risk-low' : 'risk-high'}>
+                      {portfolioComboManualMetrics ? formatSignedPercent(portfolioComboManualMetrics.totalReturnPct, 1) : 'Waiting'}
+                    </strong>
+                  </div>
+                </div>
+                <div className="paper-inline-action-row paper-inline-action-row-stacked paper-inline-action-row-inline paper-inline-action-row-popover-host">
+                  <button
+                    type="button"
+                    className="ghost-btn compact paper-inline-action-button"
+                    onClick={() => handleUploadPortfolioComboToStrategyBoard()}
+                    disabled={!timedExitReady}
+                  >
+                    {timedExitActionLabel}
+                  </button>
+                  <div className="paper-inline-help-pill paper-inline-help-pill-left paper-inline-help-pill-wide paper-inline-help-pill-anchor-row">
+                    <span>What happens?</span>
+                    <div className="paper-inline-cash-tooltip paper-inline-cash-tooltip-row">{timedExitSummary}</div>
+                  </div>
                 </div>
               </div>
             ) : null}
@@ -17619,12 +18194,7 @@ function PaperTradingInner() {
                         <button
                           type="button"
                           className="ghost-btn compact paper-inline-action-button"
-                          onClick={() => {
-                            setAutoSellPreviewProductId(selectedProductId);
-                            setAutoSellTargetProductId(selectedProductId);
-                            setAutoSellPreviewMode('leverage');
-                            setAutoSellPreviewOpen(true);
-                          }}
+                          onClick={() => handleTimedExitReplay(selectedProductId)}
                           disabled={!timedExitReady}
                         >
                           {timedExitActionLabel}
@@ -17724,7 +18294,10 @@ function PaperTradingInner() {
                 <div className="paper-strategy-ai-metric-grid paper-strategy-ai-actual-grid">
                   <div>
                     <span>Actual window</span>
-                    <strong>{`${strategyAiWindow.startDate || '-'} -> ${strategyAiWindow.endDate || '-'}`}</strong>
+                    <strong className="paper-window-date-stack">
+                      <span>{strategyAiWindow.startDate || '-'}</span>
+                      <span>{strategyAiWindow.endDate || '-'}</span>
+                    </strong>
                   </div>
                   <div>
                     <span>Actual PnL</span>
@@ -17752,7 +18325,7 @@ function PaperTradingInner() {
                     onClick={handleUploadStrategyTemplate}
                     disabled={!strategyAiPrompt.trim()}
                   >
-                    {strategyTemplateUploadedForCurrentPrompt ? 'Upload again' : 'Upload to strategy board'}
+                    {strategyTemplateUploadedForCurrentPrompt ? 'Already on board' : 'Upload to strategy board'}
                   </button>
                 </div>
               </div>
@@ -18022,32 +18595,6 @@ function PaperTradingInner() {
         />
 
         {renderAutoSellTimelineDock()}
-
-        <AutoSellPreviewModal
-          open={autoSellPreviewOpen}
-          product={autoSellPreviewProduct}
-          anchorLabel={autoSellPreviewAnchorLabel}
-          targetLabel={autoSellPreviewTargetLabel}
-          sellUnits={autoSellPreviewSellUnits}
-          sellSizeLabel={autoSellPreviewSellSizeLabel}
-          holdingDays={autoSellPreviewHoldingDays}
-          estimatedValue={autoSellPreviewEstimatedValue}
-          estimatedPnl={autoSellPreviewEstimatedPnl}
-          venueNotes={autoSellVenueNotes}
-          closeMode={autoSellPreviewIsLeverage}
-          onClose={() => {
-            setAutoSellPreviewOpen(false);
-            setAutoSellPreviewProductId('');
-            setAutoSellPreviewMode('spot');
-          }}
-          onConfirm={() => {
-            setAutoSellPreviewOpen(false);
-            const productIdToSettle = autoSellPreviewResolvedProductId;
-            setAutoSellPreviewProductId('');
-            setAutoSellPreviewMode('spot');
-            handleTimedExitReplay(productIdToSettle);
-          }}
-        />
 
         {selectedView?.error ? <div className="env-hint">{selectedView.error}</div> : null}
         {feedback ? <div className="env-hint">{feedback}</div> : null}
@@ -18489,6 +19036,14 @@ function PaperTradingInner() {
             </button>
           </div>
         </div>
+        {renderLeaderboardCredentialMintBox({
+          boardId: LEADERBOARD_CREDENTIAL_BOARD_IDS.replayReturn,
+          source: latestReplayCredentialSource,
+          mintedToday: replayCredentialMintsToday,
+          slotsLeft: replayCredentialSlotsLeft,
+          alreadyMinted: latestReplayCredentialMinted,
+          className: 'paper-replay-credential-box'
+        })}
 
         {scoreFeedback ? <div className="env-hint paper-claim-hint">{scoreFeedback}</div> : null}
       </>
@@ -18697,27 +19252,6 @@ function PaperTradingInner() {
           <span className="pill risk-low">{selectedRouteUi.actionTag}</span>
         </div>
 
-        {backendRoutePreview?.metrics ? (
-              <div className="paper-backend-route-strip">
-            <div>
-              <span>{backendRoutePreview.source === 'local-fallback' ? 'Local route calc' : 'API route calc'}</span>
-              <strong>{backendRoutePreview.routeLabel}</strong>
-            </div>
-            <div>
-              <span>Net PnL</span>
-              <strong>{formatSigned(backendRoutePreview.metrics.netPnl)} PT</strong>
-            </div>
-            <div>
-              <span>Reward preview</span>
-              <strong>{formatNotional(backendRoutePreview.metrics.rewardPT)} PT</strong>
-            </div>
-            <div>
-              <span>Storage</span>
-              <strong>stateless</strong>
-            </div>
-          </div>
-        ) : null}
-
         <div className="paper-shelf-learning-case-plan paper-shelf-learning-case-plan-sidebar">
           {(routeLearningStepRows.length
             ? routeLearningStepRows
@@ -18802,7 +19336,7 @@ function PaperTradingInner() {
 
         <div className="paper-shelf-learning-costs">
           <div className="paper-shelf-learning-subhead">
-            {hedgeFocusActive ? 'Fees to auto-close' : leverageRouteActive ? 'Fees to auto-close' : 'Fees to auto-sell'}
+            {routeLearningFeeTitle}
           </div>
           {routeLearningFeeRows.map((row) => (
             <div key={row.label} className="paper-shelf-learning-cost-row">
@@ -18811,7 +19345,7 @@ function PaperTradingInner() {
                 <div className="paper-shelf-learning-cost-copy">{row.copy}</div>
               </div>
               <strong className={row.isCost || row.value < 0 ? 'risk-high' : ''}>
-                {row.isCost ? `-${formatNotional(row.value)} PT` : formatSigned(row.value)}
+                {row.valueLabel || (row.isCost ? `-${formatNotional(row.value)} PT` : formatSigned(row.value))}
               </strong>
             </div>
           ))}
@@ -19003,6 +19537,14 @@ function PaperTradingInner() {
                     onClick={() => handleToggleRewardTask(achievement.id)}
                   >
                 <div className="learn-quest-ribbon">Task {achievement.taskNumber}</div>
+                <ReplayCollectibleCover
+                  accent={achievement.coverAccent}
+                  kicker={achievement.coverKicker}
+                  title={achievement.coverTitle}
+                  subtitle={achievement.coverSubtitle}
+                  footerLines={achievement.coverFooterLines}
+                  stamp={achievement.coverStamp}
+                />
                 <div className="quest-inline-status-card paper-task-cover-summary">
                   <span className={`checklist-status-badge ${achievementTileStatus.tone === 'done' ? 'done' : achievementTileStatus.tone === 'ready' ? 'ready' : 'todo'}`}>
                     {achievementTileStatus.text}
@@ -19034,6 +19576,14 @@ function PaperTradingInner() {
 
                 <div className="quest-detail-panel">
                   <div className="quest-side-panel">
+                    <ReplayCollectibleCover
+                      accent={selectedRewardTask.coverAccent}
+                      kicker={selectedRewardTask.coverKicker}
+                      title={selectedRewardTask.coverTitle}
+                      subtitle={selectedRewardTask.coverSubtitle}
+                      footerLines={selectedRewardTask.coverFooterLines}
+                      stamp={selectedRewardTask.coverStamp}
+                    />
                     <div className="quest-panel-title">Why this task exists</div>
                     <div className="muted">{selectedRewardTask.detail}</div>
 
@@ -19147,6 +19697,13 @@ function PaperTradingInner() {
 
         <section className="card paper-replay-leaderboard-section">
           {renderReplayLeaderboardCard(false)}
+          {renderLeaderboardScoreRouteCard()}
+          {renderStrategyTemplateLeaderboardCard({
+            className: 'paper-main-strategy-leaderboard-card',
+            title: 'AI strategy / combo leaderboard',
+            limit: 6,
+            emptyCopy: 'Upload an AI strategy template or portfolio combo to start this board.'
+          })}
         </section>
 
         <section className="card" ref={productLanesRef}>

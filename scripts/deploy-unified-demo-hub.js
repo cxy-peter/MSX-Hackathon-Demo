@@ -135,6 +135,16 @@ async function main() {
   const address = await hub.getAddress();
   console.log(`MSXUnifiedDemoHub deployed to: ${address}`);
 
+  const Renderer = await ethers.getContractFactory('MSXCollectibleRenderer');
+  const renderer = await Renderer.deploy(address);
+  await renderer.waitForDeployment();
+  const rendererAddress = await renderer.getAddress();
+  console.log(`MSXCollectibleRenderer deployed to: ${rendererAddress}`);
+
+  const rendererTx = await hub.setMetadataRenderer(rendererAddress);
+  await rendererTx.wait();
+  console.log('Metadata renderer connected to hub.');
+
   for (let index = 0; index < WEALTH_RECEIPT_LABELS.length; index += 1) {
     const productId = index + 1;
     const tx = await hub.setProductReceiptLabel(productId, WEALTH_RECEIPT_LABELS[index]);
@@ -156,6 +166,7 @@ async function main() {
   console.log(`VITE_REPLAY_BADGE_CONTRACT_ADDRESS=${address}`);
   console.log(`VITE_WEALTH_VAULT_ADDRESS=${address}`);
   console.log(`WEALTH_VAULT_ADDRESS=${address}`);
+  console.log(`MSX_COLLECTIBLE_RENDERER_ADDRESS=${rendererAddress}`);
 }
 
 main().catch((error) => {

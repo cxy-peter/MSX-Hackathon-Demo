@@ -1089,7 +1089,7 @@ function OnboardingBadge({ kicker, title, subtitle, accent = 'default' }) {
   );
 }
 
-function HomeQuestCover({ kicker, title, subtitle, accent = 'green', footerLines = [] }) {
+function HomeQuestCover({ kicker, title, subtitle, accent = 'green', footerLines = [], stamp = '' }) {
   return (
     <div className="paper-reward-cover home-quest-cover">
       <OnboardingBadge kicker={kicker} title={title} subtitle={subtitle} accent={accent} />
@@ -1102,6 +1102,7 @@ function HomeQuestCover({ kicker, title, subtitle, accent = 'green', footerLines
           ))}
         </div>
       ) : null}
+      {stamp ? <div className="paper-reward-cover-stamp">{stamp}</div> : null}
     </div>
   );
 }
@@ -2098,8 +2099,10 @@ export default function App() {
   const selectedDeveloperTaskCount = selectedDeveloperWalletSummary?.completedMilestones || 0;
   const selectedDeveloperPaperUnlocked = Boolean(
     selectedDeveloperProgress.paperUnlocked ||
+      selectedDeveloperProgress.homeOnboardingCompleted ||
+      selectedDeveloperProgress.adminUnlocked ||
       selectedDeveloperProgress.paperTradesCompleted > 0 ||
-      selectedDeveloperTaskCount > 0
+      selectedDeveloperWalletAddress
   );
   const selectedDeveloperOrigin =
     selectedDeveloperWalletProfile?.home?.userOrigin || selectedDeveloperProgress.userOrigin || 'unknown';
@@ -2158,7 +2161,9 @@ export default function App() {
     quizTaskBadgeMinted,
     paperTaskBadgeMinted
   ].filter(Boolean).length;
-  const paperTradingUnlocked = completedTaskCount > 0 || fastTrackPaper;
+  const walletTaskAccessUnlocked = walletQuestDone || adminUnlockedForCurrentAccount;
+  const wealthHubUnlocked = walletTaskAccessUnlocked;
+  const paperTradingUnlocked = walletTaskAccessUnlocked;
   const paperTradingLockedByTutorial = !paperTradingUnlocked;
   const walletLearningProfile = !isConnected
     ? {
@@ -2262,7 +2267,7 @@ export default function App() {
         { label: 'Arrival mindset', value: selectedDeveloperOrigin === 'unknown' ? 'Unknown' : selectedDeveloperOrigin.toUpperCase(), copy: `Stored intent: ${selectedDeveloperIntent || 'not set'}.` },
         { label: 'Most common action', value: selectedDeveloperTopBehavior ? selectedDeveloperTopBehavior.label : 'No behavior yet', copy: selectedDeveloperTopBehavior ? `${selectedDeveloperTopBehavior.count} clicks in ${selectedDeveloperTopBehavior.section}.` : 'Actions will appear here after this wallet uses Home routes.' },
         { label: 'Recommended product', value: selectedDeveloperRecommendedProduct.name, copy: selectedDeveloperRecommendationCopy },
-        { label: 'Replay stance', value: selectedDeveloperPaperUnlocked ? 'Open replay' : 'Guide first', copy: selectedDeveloperPaperUnlocked ? 'Paper trading can open because at least one task is complete.' : 'Route through a first task before replay.' },
+        { label: 'Replay stance', value: selectedDeveloperPaperUnlocked ? 'Open replay' : 'Guide first', copy: selectedDeveloperPaperUnlocked ? 'Paper trading can open because the wallet task or admin unlock is present.' : 'Route through the wallet task before replay.' },
         { label: 'Storage read form', value: selectedDeveloperStorageMode, copy: selectedDeveloperWalletSummary?.contentHash ? `Readable profile pointer ${selectedDeveloperWalletSummary.contentHash.slice(0, 12)}...` : selectedDeveloperBehaviorPointer ? `Readable behavior snapshot ${selectedDeveloperBehaviorPointer.slice(0, 12)}...` : 'No storage pointer yet; use this wallet once or sign a profile backup to create a readable record.' },
         { label: 'Feature override', value: adminUnlockedForCurrentAccount ? 'Already on' : 'Ready', copy: 'Enable onboarding, quiz, paper unlock, and admin override for the connected wallet.' },
         { label: 'PT amount box', value: `${Number(devModePtAmount || 0).toLocaleString()} PT`, copy: 'Add to or set the Home and Paper cash stores for the connected account.' }
@@ -2291,30 +2296,32 @@ export default function App() {
     !isConfirmingMint &&
     !isSwitchingChain;
   const remainingPaperPrereqs = [
-    completedTaskCount > 0 ? null : 'complete any wallet, briefing, quiz, or paper task'
+    walletTaskAccessUnlocked ? null : 'complete the wallet task first'
   ].filter(Boolean);
   const paperUnlockChecklist = [
     {
       id: 'wallet',
-      label: 'Any wallet task completed',
-      done: walletQuestDone,
-      helper: walletQuestDone ? `Connected ${walletDisplayName}; paper trading can open without minting.` : 'Connect MetaMask, or complete any other task below.'
+      label: 'Wallet task completed',
+      done: walletTaskAccessUnlocked,
+      helper: walletTaskAccessUnlocked
+        ? `Connected ${walletDisplayName}; Wealth and Replay can now open.`
+        : 'Connect MetaMask from the wallet task first; Wealth and Replay stay preview-only until then.'
     },
     {
       id: 'learn',
-      label: 'Any learning task completed',
+      label: 'Learning tasks optional',
       done: riskTaskDone || quizTaskDone,
       helper: riskTaskDone || quizTaskDone
-        ? 'A briefing or quiz task is complete, so simulation is unlocked.'
-        : 'Review product briefings or pass the quiz to unlock paper trading.'
+        ? 'Briefing or quiz progress improves recommendations, but it no longer opens Replay by itself.'
+        : 'Review product briefings or pass the quiz after the wallet task for better recommendations.'
     },
     {
       id: 'mint',
-      label: 'Mint optional',
+      label: 'Collectible mint optional',
       done: badgeMintCompleted || walletTaskBadgeMinted || riskTaskBadgeMinted || quizTaskBadgeMinted || paperTaskBadgeMinted,
       helper: badgeMintCompleted || walletTaskBadgeMinted || riskTaskBadgeMinted || quizTaskBadgeMinted || paperTaskBadgeMinted
-        ? 'A collectible exists for this wallet, but it is no longer required for paper access.'
-        : 'Minting remains optional; paper trading opens after any completed task.'
+        ? 'A collectible exists for this wallet, but access is still keyed to the wallet task.'
+        : 'Minting remains a reward step after the wallet task, not the Wealth or Replay gate.'
     }
   ];
   const mintChecklist = [
@@ -2367,6 +2374,26 @@ export default function App() {
     return status;
   }
 
+  const mintStatusText = !isConnected
+    ? 'Connect MetaMask first'
+      : !onSepolia
+        ? 'Switch to Sepolia'
+      : !badgeContractConfigured
+        ? 'Collectible contract not connected'
+        : badgeMintCompleted
+          ? 'Welcome collectible minted'
+        : activeMintTaskKey === 'welcome' && mintConfirmed
+          ? 'Refreshing collectible status'
+        : welcomeBadgeChecking
+          ? 'Checking this wallet account'
+        : isSwitchingChain
+          ? 'Switching network...'
+          : isMinting
+            ? 'Confirm mint in MetaMask'
+            : isConfirmingMint
+              ? 'Waiting for Sepolia confirmation'
+              : 'Ready to mint on Sepolia';
+
   const learnQuestCards = [
     {
       id: 'wallet',
@@ -2378,7 +2405,9 @@ export default function App() {
       coverAccent: 'green',
       coverKicker: 'RiskLens Starter Task',
       coverTitle: walletTaskBadgeMinted ? 'Wallet task' : 'Connect wallet',
-      coverSubtitle: 'Open the guided wallet path first so every later collectible and PT reward stays tied to one account.'
+      coverSubtitle: 'Open the guided wallet path first so every later collectible and PT reward stays tied to one account.',
+      coverFooterLines: [walletDisplayName, walletTaskBadgeMinted ? 'Sepolia wallet collectible' : 'Connect MetaMask first'],
+      coverStamp: 'S'
     },
     {
       id: 'mint',
@@ -2412,7 +2441,9 @@ export default function App() {
       coverTitle: badgeContractConfigured ? 'Welcome collectible' : 'Demo gate',
       coverSubtitle: badgeContractConfigured
         ? 'Mint one Sepolia welcome collectible so the first reward feels onchain instead of purely local.'
-        : 'This deployment keeps the welcome gate in demo mode, but the same wallet still carries the unlock state.'
+        : 'This deployment keeps the welcome gate in demo mode, but the same wallet still carries the unlock state.',
+      coverFooterLines: [badgeMintCompleted ? 'Welcome collectible minted' : mintStatusText, `Reward +${BADGE_REWARD_TOKENS} PT`],
+      coverStamp: 'S'
     },
     {
       id: 'risk',
@@ -2424,7 +2455,9 @@ export default function App() {
       coverAccent: 'gold',
       coverKicker: 'RiskLens Briefing Task',
       coverTitle: 'Product briefings',
-      coverSubtitle: 'Use four product lanes to explain ownership, return source, and first disclosure before any trade-style action.'
+      coverSubtitle: 'Use four product lanes to explain ownership, return source, and first disclosure before any trade-style action.',
+      coverFooterLines: [`Reviewed ${riskReviewProgress}/${RISK_REVIEW_REQUIRED}`, riskTaskBadgeMinted ? 'Risk review collectible' : 'Briefing task'],
+      coverStamp: 'S'
     },
     {
       id: 'quiz',
@@ -2436,21 +2469,25 @@ export default function App() {
       coverAccent: 'teal',
       coverKicker: 'RiskLens Quiz Task',
       coverTitle: 'Question quiz',
-      coverSubtitle: 'Turn one product briefing into a short ownership-and-risk check before the user opens any simulated route.'
+      coverSubtitle: 'Turn one product briefing into a short ownership-and-risk check before the user opens any simulated route.',
+      coverFooterLines: [quizTaskDone ? 'Quiz passed' : `${quizQuestionRows.length} checks`, quizTaskBadgeMinted ? 'Product quiz collectible' : 'Ownership + downside'],
+      coverStamp: 'S'
     },
     {
       id: 'paper',
       title: paperTaskBadgeMinted ? 'Paper trading preview completed' : paperTradingUnlocked ? 'Paper trading preview ready' : 'Paper trading preview',
-      status: paperTaskDone ? 'Completed' : paperTradingUnlocked ? 'Done' : paperBadgeChecking ? 'Checking' : 'Complete any task',
+      status: paperTaskDone ? 'Completed' : paperTradingUnlocked ? 'Done' : paperBadgeChecking ? 'Checking' : 'Wallet task first',
       reward: '+1000 PT',
       label: quests[4].reward,
       hint: paperTradingUnlocked
-        ? 'Unlocked because this wallet has at least one completed task. Minting is optional.'
-        : 'Complete any wallet, briefing, quiz, or paper task to unlock simulation. Minting is optional.',
+        ? 'Unlocked because this wallet completed the wallet task. Minting is optional.'
+        : 'Complete the wallet task first. Briefings and quiz can improve fit, but they do not open Replay alone.',
       coverAccent: 'green',
       coverKicker: 'RiskLens Replay Task',
       coverTitle: 'Paper trading',
-      coverSubtitle: 'Practice with replay mode after any task is complete; collectibles can still be minted afterward.'
+      coverSubtitle: 'Practice with replay mode after the wallet task is complete; collectibles can still be minted afterward.',
+      coverFooterLines: [paperTradingUnlocked ? 'Replay mode unlocked' : 'Wallet task first', paperTaskBadgeMinted ? 'Paper preview collectible' : `Reward +${BADGE_REWARD_TOKENS} PT`],
+      coverStamp: 'S'
     }
   ];
   const coreLearnQuestCards = learnQuestCards.filter((quest) => quest.id === 'wallet' || quest.id === 'mint');
@@ -2545,26 +2582,6 @@ export default function App() {
     setActiveOptionalQuest(questId);
     scrollQuestDetailIntoView('learnOptionalQuestDetail');
   }
-
-  const mintStatusText = !isConnected
-    ? 'Connect MetaMask first'
-      : !onSepolia
-        ? 'Switch to Sepolia'
-      : !badgeContractConfigured
-        ? 'Collectible contract not connected'
-        : badgeMintCompleted
-          ? 'Welcome collectible minted'
-        : activeMintTaskKey === 'welcome' && mintConfirmed
-          ? 'Refreshing collectible status'
-        : welcomeBadgeChecking
-          ? 'Checking this wallet account'
-        : isSwitchingChain
-          ? 'Switching network...'
-          : isMinting
-            ? 'Confirm mint in MetaMask'
-            : isConfirmingMint
-              ? 'Waiting for Sepolia confirmation'
-              : 'Ready to mint on Sepolia';
 
   function recordAnalytics(eventName) {
     setAnalyticsSnapshot(trackAnalytics(eventName, address));
@@ -3558,6 +3575,14 @@ export default function App() {
                     className={`learn-quest-tile core ${activeCoreQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' ? 'done' : ''} ${quest.status === 'Done' || quest.status === 'Unlocked' ? 'ready' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}
                     onClick={() => openLearnQuest(quest.id)}
                   >
+                    <HomeQuestCover
+                      kicker={quest.coverKicker}
+                      title={quest.coverTitle}
+                      subtitle={quest.coverSubtitle}
+                      accent={quest.coverAccent}
+                      footerLines={quest.coverFooterLines}
+                      stamp={quest.coverStamp}
+                    />
                     <div className="home-quest-task-summary">
                       <div>
                         <div className="quest-panel-title">{quest.title}</div>
@@ -3784,9 +3809,17 @@ export default function App() {
               {optionalLearnQuestCards.map((quest) => (
                 <button
                   key={quest.id}
-                className={`learn-quest-tile ${activeOptionalQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' ? 'done' : ''} ${quest.status === 'Done' || quest.status === 'Unlocked' ? 'ready' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}
+                  className={`learn-quest-tile ${activeOptionalQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' ? 'done' : ''} ${quest.status === 'Done' || quest.status === 'Unlocked' ? 'ready' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}
                   onClick={() => openLearnQuest(quest.id)}
                 >
+                  <HomeQuestCover
+                    kicker={quest.coverKicker}
+                    title={quest.coverTitle}
+                    subtitle={quest.coverSubtitle}
+                    accent={quest.coverAccent}
+                    footerLines={quest.coverFooterLines}
+                    stamp={quest.coverStamp}
+                  />
                   <div className="home-quest-task-summary">
                     <div>
                       <div className="quest-panel-title">{quest.title}</div>
@@ -3999,11 +4032,11 @@ export default function App() {
                     <div>
                       <div className="product-title">Paper trading preview</div>
                       <div className="muted">
-                        This module opens after any task is complete. Minting remains a collectible reward, not the paper-trading gate.
+                        This module opens after the wallet task is complete. Before that, the page stays preview-only.
                       </div>
                     </div>
                     <span className={`pill ${paperTaskBadgeMinted ? 'risk-low' : paperTradingUnlocked ? 'risk-low' : 'risk-medium'}`}>
-                      {paperTaskBadgeMinted ? 'Completed' : paperTradingUnlocked ? 'Wait to be minted' : 'Complete any task'}
+                      {paperTaskBadgeMinted ? 'Completed' : paperTradingUnlocked ? 'Wait to be minted' : 'Wallet task first'}
                     </span>
                   </div>
 
@@ -4013,24 +4046,26 @@ export default function App() {
                       {
                         id: 'wallet',
                         label: 'Wallet task',
-                        done: walletQuestDone,
-                        helper: walletQuestDone ? 'Wallet connection is complete, so paper trading is open.' : 'Connect MetaMask, or complete another task.'
+                        done: walletTaskAccessUnlocked,
+                        helper: walletTaskAccessUnlocked
+                          ? 'Wallet connection is complete, so paper trading can open.'
+                          : 'Connect MetaMask from the wallet task first.'
                       },
                       {
                         id: 'learn',
                         label: 'Learning task',
                         done: riskTaskDone || quizTaskDone,
                         helper: riskTaskDone || quizTaskDone
-                          ? 'A briefing or quiz task is complete, so paper trading is open.'
-                          : 'Review briefings or pass the quiz as another way to unlock paper trading.'
+                          ? 'Briefing or quiz progress is saved, but Replay access still follows the wallet task.'
+                          : 'Review briefings or pass the quiz for better recommendations after wallet access.'
                       },
                       {
                         id: 'mint',
                         label: 'Collectible mint',
                         done: welcomeGateCompleted || walletTaskBadgeMinted || riskTaskBadgeMinted || quizTaskBadgeMinted || paperTaskBadgeMinted,
                         helper: welcomeGateCompleted || walletTaskBadgeMinted || riskTaskBadgeMinted || quizTaskBadgeMinted || paperTaskBadgeMinted
-                          ? 'Collectible proof exists, but paper access did not require it.'
-                          : 'Optional after a task is done; no longer required before opening replay.'
+                          ? 'Collectible proof exists, but the open gate is still the wallet task.'
+                          : 'Optional reward after wallet access; not a separate replay gate.'
                       }
                     ].map((item) => (
                       <div className={`checklist-item ${item.done ? 'done' : ''}`} key={item.id}>
@@ -4052,8 +4087,8 @@ export default function App() {
                           {paperTaskBadgeMinted
                             ? 'This wallet already minted the paper trading preview collectible.'
                             : paperTradingUnlocked
-                              ? 'At least one task is locally complete. Wait to be minted for this wallet to complete the paper trading preview collectible.'
-                              : 'Complete any task first, then mint the paper trading preview collectible if you want the onchain reward.'}
+                              ? 'The wallet task is complete. Wait to be minted for this wallet to complete the paper trading preview collectible.'
+                              : 'Complete the wallet task first, then mint the paper trading preview collectible if you want the onchain reward.'}
                       </div>
                     </div>
                     <div className="mint-status-stack">
@@ -4068,7 +4103,7 @@ export default function App() {
                             ? getMintTaskStatus('paper') || 'Finish current mint first'
                             : paperTradingUnlocked
                               ? 'Wait to be minted'
-                              : 'Complete any task first'}
+                              : 'Wallet task first'}
                       </button>
                     </div>
                   </div>
@@ -4078,7 +4113,7 @@ export default function App() {
                       <div>
                         <div className="product-title">Open paper trading</div>
                         <div className="muted">
-                          At least one task is complete, so the simulation page is now unlocked for this wallet.
+                          The wallet task is complete, so the simulation page is now unlocked for this wallet.
                         </div>
                       </div>
                       <div className="mint-status-stack">
@@ -4164,7 +4199,13 @@ export default function App() {
               </div>
             </div>
             <div className="toolbar" style={{ marginTop: 14 }}>
-              <a className="primary-btn" href="./wealth.html" onClick={() => recordAnalytics('wealth_hub_open')}>Open wealth hub</a>
+              <a
+                className={wealthHubUnlocked ? 'primary-btn' : 'secondary-btn'}
+                href="./wealth.html"
+                onClick={() => recordAnalytics('wealth_hub_open')}
+              >
+                {wealthHubUnlocked ? 'Open wealth hub' : 'Preview wealth hub'}
+              </a>
             </div>
           </section>
 
@@ -4182,8 +4223,8 @@ export default function App() {
                     <div className="product-title">Paper trading unlock</div>
                     <div className="muted">
                       {paperTradingUnlocked
-                        ? 'The user can now enter simulation mode and test products before any live-style action.'
-                        : 'This module is visible now as a replay-first practice layer under discovery.'}
+                        ? 'The wallet task is complete, so the user can now enter simulation mode and test products before any live-style action.'
+                        : 'This module is visible as a replay-first practice preview until the wallet task is complete.'}
                     </div>
                   </div>
                   <span className={`pill ${paperTradingUnlocked ? 'risk-low' : 'risk-medium'}`}>
@@ -4216,8 +4257,8 @@ export default function App() {
                     <div className="entry-title">{riskTaskDone ? 'Product briefings already reviewed' : 'Product briefings still open'}</div>
                     <div className="entry-copy">
                       {riskTaskDone
-                        ? 'This wallet already completed a product-briefing task, so paper trading can focus on actual simulation instead of first-pass education.'
-                        : `Finish ${RISK_REVIEW_REQUIRED} product briefings on the homepage first so paper mode opens with product context instead of raw route mechanics.`}
+                        ? 'This wallet already completed a product-briefing task, so recommendations can use that context after wallet access.'
+                        : `Finish ${RISK_REVIEW_REQUIRED} product briefings for product context; the open gate itself remains the wallet task.`}
                     </div>
                   </div>
                 </div>
@@ -4234,7 +4275,7 @@ export default function App() {
                     <div>
                       <div className="product-title">Mint paper trading collectible</div>
                       <div className="muted">
-                        After any task is locally complete, this paper trading preview waits to be minted for the current wallet.
+                        After the wallet task is complete, this paper trading preview waits to be minted for the current wallet.
                       </div>
                     </div>
                     <div className="mint-status-stack">
@@ -4249,13 +4290,13 @@ export default function App() {
                             ? getMintTaskStatus('paper') || 'Finish current mint first'
                             : paperTradingUnlocked
                               ? 'Wait to be minted'
-                              : 'Complete any task first'}
+                              : 'Wallet task first'}
                       </button>
                     </div>
                   </div>
                 {paperTradingLockedByTutorial ? (
                   <div className="paper-lock-note">
-                    Complete any task first. Skip? <a href="./paper-trading.html">Open the preview page</a>.
+                    Complete the wallet task first. Until then, <a href="./paper-trading.html">open the preview page</a>.
                   </div>
                 ) : null}
               </div>
