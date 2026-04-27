@@ -10,7 +10,7 @@
   --green: #a4ff2f;
   --green-2: #97f028;
   --teal: #3cae68;
-  --yellow: #f4cf6b;
+  --yellow: #fff200;
   --red: #ff7c96;
   --shadow: 0 18px 55px rgba(0, 0, 0, 0.35);
 }
@@ -11616,6 +11616,10 @@ label {
   margin-right: auto;
 }
 
+.header-admin-row .github-project-link {
+  text-decoration: none;
+}
+
 /* Unified task status placement and completion states */
 .learn-quest-tile,
 .wealth-task-card {
@@ -11756,6 +11760,90 @@ label {
   100% {
     opacity: 0;
     transform: scale(1.045);
+  }
+}
+
+/* Brighter pending / action-needed task treatment */
+.risk-medium,
+.pill.risk-medium,
+.quest-status-badge.todo,
+.tile-status-badge.todo,
+.tile-status-badge.ready,
+.checklist-status-badge.todo,
+.checklist-status-badge.ready,
+.wealth-task-status.todo,
+.wealth-task-status.ready,
+.wealth-check-badge.todo,
+[class*='action-needed'],
+[class*='actionneeded'] {
+  color: #fff200 !important;
+  border-color: rgba(255, 242, 0, 0.68) !important;
+  background: rgba(255, 242, 0, 0.14) !important;
+}
+
+.tile-status-badge.todo::before,
+.tile-status-badge.ready::before,
+.checklist-status-badge.todo::before,
+.checklist-status-badge.ready::before,
+.quest-status-badge.todo::before {
+  background: #fff200 !important;
+  box-shadow: 0 0 0 rgba(255, 242, 0, 0.72) !important;
+}
+
+.learn-quest-tile:not(.done),
+.wealth-task-card:not(.done) {
+  border-color: rgba(255, 242, 0, 0.82) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 242, 0, 0.28),
+    0 0 0 1px rgba(255, 242, 0, 0.16),
+    0 0 24px rgba(255, 242, 0, 0.18),
+    0 16px 34px rgba(0, 0, 0, 0.18) !important;
+}
+
+.learn-quest-tile:not(.done)::after,
+.wealth-task-card:not(.done)::after {
+  border-color: rgba(255, 242, 0, 0.58) !important;
+}
+
+.learn-quest-tile.active:not(.done),
+.learn-quest-tile.active:not(.done):hover,
+.wealth-task-card.active:not(.done) {
+  border-color: rgba(255, 242, 0, 0.95) !important;
+  background:
+    radial-gradient(circle at top right, rgba(255, 242, 0, 0.18), transparent 42%),
+    linear-gradient(180deg, rgba(17, 26, 41, 0.98), rgba(11, 20, 34, 0.98)) !important;
+}
+
+@keyframes taskCardYellowBorderPulse {
+  0%,
+  100% {
+    border-color: rgba(255, 242, 0, 0.58);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 242, 0, 0.18),
+      0 0 0 1px rgba(255, 242, 0, 0.1),
+      0 16px 34px rgba(0, 0, 0, 0.18);
+  }
+  50% {
+    border-color: rgba(255, 252, 82, 1);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 252, 82, 0.42),
+      0 0 28px rgba(255, 242, 0, 0.36),
+      0 16px 34px rgba(0, 0, 0, 0.18);
+  }
+}
+
+@keyframes todoBadgePulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 242, 0, 0.72);
+    transform: scale(1);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(255, 242, 0, 0);
+    transform: scale(1.06);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 242, 0, 0);
+    transform: scale(1);
   }
 }
 
@@ -11901,7 +11989,7 @@ label {
 
 .wealth-dual-order-card {
   display: grid;
-  gap: 24px;
+  gap: 16px;
 }
 
 .wealth-dual-order-card .section-head {
@@ -11917,27 +12005,34 @@ label {
 .wealth-dual-direction-panel,
 .wealth-dual-filter-panel,
 .wealth-dual-control-panel {
-  padding: 26px;
+  padding: 16px 18px;
 }
 
 .wealth-dual-control-panel {
   display: grid;
-  gap: 24px;
+  gap: 12px;
 }
 
 .wealth-dual-control-block {
   display: grid;
-  gap: 12px;
+  gap: 8px;
+}
+
+.wealth-dual-control-panel .product-title {
+  font-size: 1.02rem;
+  line-height: 1.15;
 }
 
 .wealth-dual-control-label {
   color: var(--text-primary, var(--text));
-  font-size: 0.98rem;
+  font-size: 0.82rem;
   font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .wealth-dual-direction-row {
-  gap: 18px;
+  gap: 10px;
 }
 
 .wealth-dual-filter-panel {
@@ -11946,7 +12041,7 @@ label {
 }
 
 .wealth-dual-filter-row {
-  gap: 18px;
+  gap: 10px;
 }
 
 .wealth-dual-price-row {
@@ -11957,34 +12052,34 @@ label {
 
 .wealth-dual-current-price {
   margin-left: 0;
-  font-size: 1rem;
+  font-size: 0.82rem;
 }
 
 .wealth-dual-current-price .wealth-dual-coin {
-  width: 34px;
-  height: 34px;
-  font-size: 0.82rem;
+  width: 26px;
+  height: 26px;
+  font-size: 0.68rem;
 }
 
 .wealth-dual-direction-chip,
 .wealth-dual-filter-chip {
-  min-height: 54px;
-  padding: 14px 26px;
-  border-radius: 18px;
-  font-size: 1rem;
+  min-height: 40px;
+  padding: 9px 16px;
+  border-radius: 13px;
+  font-size: 0.84rem;
 }
 
 .wealth-dual-filter-chip {
-  min-height: 48px;
-  padding: 12px 20px;
-  font-size: 0.9rem;
+  min-height: 38px;
+  padding: 8px 14px;
+  font-size: 0.8rem;
 }
 
 .wealth-dual-pt-quote-card {
   position: relative;
   display: grid;
-  gap: 22px;
-  padding: 26px;
+  gap: 16px;
+  padding: 22px;
   overflow: hidden;
 }
 
@@ -11994,23 +12089,47 @@ label {
 
 .wealth-dual-pt-quote-title {
   align-items: start;
+  padding-right: 250px;
 }
 
 .wealth-dual-pt-quote-title h3 {
   margin: 0;
   line-height: 1.2;
+  font-size: 1.1rem;
+}
+
+.wealth-dual-pt-quote-title .wealth-dual-coin-stack i {
+  width: 24px;
+  height: 24px;
+  font-size: 0.64rem;
 }
 
 .wealth-dual-preview-price {
-  justify-self: start;
-  padding: 8px 10px;
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  justify-self: auto;
+  padding: 7px 9px;
   border: 1px solid rgba(164, 255, 47, 0.14);
   border-radius: 999px;
   background: rgba(5, 10, 18, 0.44);
+  font-size: 0.74rem;
+  white-space: nowrap;
 }
 
 .wealth-dual-quote-metrics {
+  width: min(360px, 100%);
   margin-top: 0;
+  gap: 10px;
+}
+
+.wealth-dual-quote-metrics span {
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.wealth-dual-quote-metrics strong {
+  font-size: 1.02rem;
 }
 
 .wealth-dual-subscribe-field {
@@ -12041,6 +12160,10 @@ label {
 
 .wealth-dual-amount-preset-row {
   margin-top: -8px;
+}
+
+.wealth-dual-receipt-direction-row {
+  margin-top: -4px;
 }
 
 .wealth-dual-return-preview {
@@ -12197,6 +12320,16 @@ label {
 
   .wealth-dual-price-row {
     justify-content: flex-start;
+  }
+
+  .wealth-dual-pt-quote-title {
+    padding-right: 0;
+  }
+
+  .wealth-dual-preview-price {
+    position: static;
+    justify-self: start;
+    white-space: normal;
   }
 }
 

@@ -1470,8 +1470,8 @@ export default function App() {
   const [quizAnswers, setQuizAnswers] = useState(createEmptyQuizAnswers);
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [hasMetaMaskInstalled, setHasMetaMaskInstalled] = useState(false);
-  const [activeCoreQuest, setActiveCoreQuest] = useState('wallet');
-  const [activeOptionalQuest, setActiveOptionalQuest] = useState('risk');
+  const [activeCoreQuest, setActiveCoreQuest] = useState(null);
+  const [activeOptionalQuest, setActiveOptionalQuest] = useState(null);
   const [optionalQuestNotice, setOptionalQuestNotice] = useState('');
   const [taskCompletionNotice, setTaskCompletionNotice] = useState('');
   const [taskCompletionNoticeTarget, setTaskCompletionNoticeTarget] = useState('core');
@@ -3302,6 +3302,14 @@ export default function App() {
               </div>
             </div>
             <div className="header-admin-row">
+              <a
+                className="ghost-btn compact github-project-link"
+                href="https://github.com/cxy-peter/MSX-Hackathon-Demo"
+                target="_blank"
+                rel="noreferrer"
+              >
+                GitHub: cxy-peter/MSX-Hackathon-Demo
+              </a>
               <button className="ghost-btn compact wallet-nickname-top-btn" onClick={openWalletModal}>
                 {walletNickname ? `Nickname: ${walletNickname}` : 'Wallet nickname'}
               </button>

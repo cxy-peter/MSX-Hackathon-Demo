@@ -2823,12 +2823,12 @@ function DualOutcomeSimulator({
           <div className="value">{(pair.referencePrice * (1 + Number(settlementMovePct || 0) / 100)).toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
         </div>
         <div className="paper-balance-box">
-          <div className="label">Take-home</div>
-          <div className={`value ${simulated.tone}`}>{formatValue(simulated.quoteEquivalent)}</div>
+          <div className="label">Take-home x1000</div>
+          <div className={`value ${simulated.tone}`}>{formatValue(simulated.quoteEquivalent * DUAL_PT_REWARD_MULTIPLIER)}</div>
         </div>
         <div className="paper-balance-box">
-          <div className="label">PnL</div>
-          <div className={`value ${simulated.tone}`}>{formatSignedValue(simulated.pnl)}</div>
+          <div className="label">PnL x1000</div>
+          <div className={`value ${simulated.tone}`}>{formatSignedValue(simulated.pnl * DUAL_PT_REWARD_MULTIPLIER)}</div>
         </div>
       </div>
 
@@ -2838,8 +2838,8 @@ function DualOutcomeSimulator({
             <div className="entry-title">{row.title}</div>
             <div className="entry-copy">{row.subtitle}</div>
             <div className="wealth-dual-sample-value">
-              <strong className={row.tone}>{formatValue(row.quoteEquivalent)}</strong>
-              <span>{formatSignedValue(row.pnl)} / settle move {row.settlementMovePct >= 0 ? '+' : ''}{row.settlementMovePct}%</span>
+              <strong className={row.tone}>{formatValue(row.quoteEquivalent * DUAL_PT_REWARD_MULTIPLIER)}</strong>
+              <span>{formatSignedValue(row.pnl * DUAL_PT_REWARD_MULTIPLIER)} / settle move {row.settlementMovePct >= 0 ? '+' : ''}{row.settlementMovePct}%</span>
             </div>
           </div>
         ))}
@@ -3862,7 +3862,7 @@ function WealthInner() {
   const [comparePickerValue, setComparePickerValue] = useState('');
   const [selectedDetailTopics, setSelectedDetailTopics] = useState(['flow']);
   const [activeWalletProfilePanel, setActiveWalletProfilePanel] = useState('profile');
-  const [selectedWealthTaskId, setSelectedWealthTaskId] = useState('subscribe');
+  const [selectedWealthTaskId, setSelectedWealthTaskId] = useState(null);
   const [wealthClaimTaskId, setWealthClaimTaskId] = useState('');
   const [wealthDiligencePageIndex, setWealthDiligencePageIndex] = useState(0);
   const [fastForwardTarget, setFastForwardTarget] = useState('90d');
@@ -4612,7 +4612,9 @@ function WealthInner() {
   ];
   const wealthTaskCompletedCount = wealthQuestRows.filter((quest) => quest.done).length;
   const nextWealthTask = wealthQuestRows.find((quest) => !quest.done) || wealthQuestRows[wealthQuestRows.length - 1];
-  const selectedWealthTask = wealthQuestRows.find((quest) => quest.id === selectedWealthTaskId) || nextWealthTask;
+  const selectedWealthTaskDirect = wealthQuestRows.find((quest) => quest.id === selectedWealthTaskId) || null;
+  const selectedWealthTask = selectedWealthTaskDirect || nextWealthTask;
+  const wealthTaskDetailOpen = Boolean(selectedWealthTaskDirect);
   const selectedCategoryMeta = wealthCategoryOptions.find((category) => category.id === selectedCategory) || wealthCategoryOptions[0];
   const selectedShelfTitle = hasActiveProductFilter
     ? activeProductFilterLabel
@@ -4716,8 +4718,9 @@ function WealthInner() {
   }, [expandedProductId, shelfProducts]);
 
   useEffect(() => {
+    if (!selectedWealthTaskId) return;
     if (!wealthQuestRows.some((quest) => quest.id === selectedWealthTaskId)) {
-      setSelectedWealthTaskId(nextWealthTask.id);
+      setSelectedWealthTaskId(null);
     }
   }, [nextWealthTask.id, selectedWealthTaskId, wealthQuestRows]);
 
@@ -7091,7 +7094,7 @@ function WealthInner() {
     const termFilters = [
       { id: 'all', label: 'Suggested', days: suggestedDualTermDays },
       { id: '2d', label: '2D', days: 2 },
-      { id: '6d', label: '6D', days: 6 },
+      { id: '7d', label: '7D', days: 7 },
       { id: '14d', label: '14D', days: 14 },
       { id: '45d', label: '45D', days: 45 },
       { id: '90d', label: '90D', days: 90 }
@@ -7123,13 +7126,6 @@ function WealthInner() {
       minimumFractionDigits: priceDigits,
       maximumFractionDigits: priceDigits
     });
-    const targetPriceLabel = formatPairPrice(ptSettlementPreview.targetPrice);
-    const activeTriggerCopy = dualCurrencyDirection === 'buy-low'
-      ? `${activePair.base} <= ${targetPriceLabel}`
-      : `${activePair.base} >= ${targetPriceLabel}`;
-    const triggerSideCopy = ptSettlementPreview.triggered
-      ? 'Target crossed; the PT result now includes a conversion adjustment.'
-      : 'Target not crossed; the PT result keeps principal plus base premium.';
 
     return (
       <section className={`card wealth-dual-guide-card wealth-dual-order-card ${surface === 'detail' ? 'detail' : 'shelf'}`}>
@@ -7148,24 +7144,6 @@ function WealthInner() {
         <div className="wealth-dual-control-panel">
           <div className="wealth-dual-control-block">
             <div className="product-title">{activePair.id}</div>
-            <div className="wealth-dual-direction-row">
-              {DUAL_CURRENCY_DIRECTION_OPTIONS.map((option) => (
-                <button
-                  type="button"
-                  key={option.id}
-                  className={`wealth-dual-direction-chip ${dualCurrencyDirection === option.id ? 'active' : ''}`}
-                  onClick={() => {
-                    setDualCurrencyDirection(option.id);
-                    setDualCurrencyTargetPct(option.id === 'buy-low' ? -4 : 5);
-                  }}
-                >
-                  {option.id === 'buy-low' ? 'Buy low' : 'Sell high'}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="wealth-dual-control-block">
             <div className="wealth-dual-control-label">Term</div>
             <div className="wealth-dual-filter-row">
               {termFilters.map((filter) => (
@@ -7196,7 +7174,7 @@ function WealthInner() {
             </div>
             <div className="wealth-dual-current-price wealth-dual-preview-price">
               <span className="wealth-dual-coin">{activePair.base.slice(0, 1)}</span>
-              <span>{activePair.id} current price:</span>
+              <span>{activePair.id} reference price:</span>
               <strong>{formatPairPrice(activePair.referencePrice)}</strong>
             </div>
 
@@ -7243,6 +7221,22 @@ function WealthInner() {
                   disabled={availableCash > 0 && preset > availableCash}
                 >
                   {preset.toLocaleString()}
+                </button>
+              ))}
+            </div>
+
+            <div className="wealth-dual-direction-row wealth-dual-receipt-direction-row" aria-label="Dual Investment direction">
+              {DUAL_CURRENCY_DIRECTION_OPTIONS.map((option) => (
+                <button
+                  type="button"
+                  key={`receipt-${option.id}`}
+                  className={`wealth-dual-direction-chip ${dualCurrencyDirection === option.id ? 'active' : ''}`}
+                  onClick={() => {
+                    setDualCurrencyDirection(option.id);
+                    setDualCurrencyTargetPct(option.id === 'buy-low' ? -4 : 5);
+                  }}
+                >
+                  {option.id === 'buy-low' ? 'Buy low' : 'Sell high'}
                 </button>
               ))}
             </div>
@@ -7315,68 +7309,6 @@ function WealthInner() {
                     {formatSignedValue(ptSettlementPreview.outcomeAdjustmentPt, false, 0)}
                   </strong>
                 </div>
-              </div>
-            </div>
-
-            <div className="wealth-dual-return-preview">
-              <div className="product-title">Reward overview</div>
-              <p>Choose the path for this PT reward preview. The demo keeps rewards in PT while the target rule teaches conversion risk.</p>
-              <div className="wealth-dual-condition-row wealth-dual-reward-direction-row">
-                {DUAL_CURRENCY_DIRECTION_OPTIONS.map((option) => (
-                  <button
-                    type="button"
-                    key={`reward-${option.id}`}
-                    className={dualCurrencyDirection === option.id ? 'active' : ''}
-                    onClick={() => {
-                      setDualCurrencyDirection(option.id);
-                      const nextPct = option.id === 'buy-low'
-                        ? -Math.max(1, Math.abs(Number(dualCurrencyTargetPct || 4)))
-                        : Math.max(1, Math.abs(Number(dualCurrencyTargetPct || 5)));
-                      setDualCurrencyTargetPct(clamp(nextPct, option.id === 'buy-low' ? -12 : 1, option.id === 'buy-low' ? -1 : 12));
-                    }}
-                  >
-                    {option.id === 'buy-low' ? 'Buy low' : 'Sell high'}
-                  </button>
-                ))}
-              </div>
-              <div className="wealth-dual-receive-card">
-                <span>Modeled final PT score</span>
-                <strong>{Math.max(0, Math.round(ptSettlementPreview.finalPt)).toLocaleString()} PT</strong>
-                <em>
-                  Principal {ptSettlementPreview.principalPt.toLocaleString()} PT + base premium {formatSignedValue(ptSettlementPreview.basePremiumPt, false, 0)} + outcome adjustment {formatSignedValue(ptSettlementPreview.outcomeAdjustmentPt, false, 0)}. Trigger rule: {activeTriggerCopy}. {triggerSideCopy}
-                </em>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="wealth-dual-board-note">
-          <div>
-            <strong>Not a stablecoin deposit.</strong> {activeDirectionMeta.copy}
-          </div>
-          <div>
-            <strong>PT reward model.</strong> Final PT = subscribed PT + base premium + outcome adjustment, displayed at x{DUAL_PT_REWARD_MULTIPLIER.toLocaleString()} for demo readability.
-          </div>
-        </div>
-
-        {surface === 'detail' ? (
-          <div className="wealth-dual-outcome-grid wealth-dual-outcome-grid-compact">
-            <div className="reason-card">
-              <div className="entry-title">If target is not triggered</div>
-              <div className="entry-copy">
-                The receipt keeps principal and earns the base premium for waiting through the target-price observation window.
-              </div>
-            </div>
-            <div className="reason-card">
-              <div className="entry-title">If target is triggered</div>
-              <div className="entry-copy">
-                Trigger condition: {activeTriggerCopy}. The demo does not deliver real {activePair.base} or {activePair.quote}; adverse settlement can reduce the final PT score.
-              </div>
-            </div>
-            <div className="reason-card">
-              <div className="entry-title">AI fit for this shelf</div>
-              <div className="entry-copy">
-                {selectedDualCurrencyFit.copy}
               </div>
             </div>
           </div>
@@ -9431,8 +9363,8 @@ function WealthInner() {
               <button
                 type="button"
                 key={quest.id}
-                className={`wealth-task-card ${quest.done ? 'done' : ''} ${quest.readyToClaim ? 'ready' : ''} ${selectedWealthTask.id === quest.id ? 'active' : ''}`}
-                onClick={() => setSelectedWealthTaskId(quest.id)}
+                className={`wealth-task-card ${quest.done ? 'done' : ''} ${quest.readyToClaim ? 'ready' : ''} ${selectedWealthTaskId === quest.id ? 'active' : ''}`}
+                onClick={() => setSelectedWealthTaskId((current) => (current === quest.id ? null : quest.id))}
               >
                 <div className="wealth-task-card-head">
                   <span className="wealth-task-badge">Task {quest.taskNumber}</span>
@@ -9447,6 +9379,7 @@ function WealthInner() {
             ))}
           </div>
 
+          {wealthTaskDetailOpen ? (
           <div className="wealth-task-detail-card">
             <div className="section-head compact">
               <div>
@@ -9540,6 +9473,7 @@ function WealthInner() {
               </div>
             </div>
           </div>
+          ) : null}
         </section>
 
         <section className="card wealth-discovery-card">

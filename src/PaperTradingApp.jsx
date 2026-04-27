@@ -7781,7 +7781,7 @@ function PaperTradingInner() {
   const [hedgePreviewSleeveInput, setHedgePreviewSleeveInput] = useState('2500');
   const [hedgeDiligencePulse, setHedgeDiligencePulse] = useState(false);
   const [learnMoreProductId, setLearnMoreProductId] = useState(null);
-  const [selectedRewardTaskId, setSelectedRewardTaskId] = useState(REPLAY_BADGE_TYPES.baseCheck);
+  const [selectedRewardTaskId, setSelectedRewardTaskId] = useState(null);
   const [claimingAchievementId, setClaimingAchievementId] = useState(null);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [walletError, setWalletError] = useState('');
