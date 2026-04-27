@@ -28,6 +28,34 @@ const WEALTH_RECEIPT_LABELS = [
   'RiskLens Index Auto-Call Yield'
 ];
 
+const WEALTH_RECEIPT_DETAILS = [
+  'Market-day liquidity; T+1-style fund settlement window',
+  'Market-day liquidity; tokenized cash equivalent route',
+  'Market fund wrapper; broker or transfer-agent style settlement',
+  'Tokenized Treasury fund; subscription and redemption windows apply',
+  '24/7 USDC route for onboarded users',
+  'Treasury bill receipt; settlement depends on issuer window',
+  'Qualified-investor fund share; gated subscription route',
+  'Yield and carry receipt; settlement depends on fund terms',
+  'Private credit interval fund; queue and eligibility controls apply',
+  'Private credit receipt; term and redemption constraints apply',
+  'Quant sleeve receipt; manager execution and pause controls apply',
+  'Quant sleeve receipt; term and rebalance constraints apply',
+  'Public wrapper basket; market-day settlement',
+  'Private SPV access receipt; eligibility and transfer restrictions apply',
+  'Secondary window receipt; transfer restrictions and pricing windows apply',
+  'Pre-IPO secondary window; transfer restrictions apply',
+  'Private growth receipt; NAV and transfer windows apply',
+  'Secondary window receipt; eligibility and transfer restrictions apply',
+  'Private growth receipt; NAV and transfer windows apply',
+  'Defined-outcome ETH receipt; observation and maturity rules apply',
+  'Monthly premium-income BTC receipt; option cycle settlement applies',
+  'BTC/USDC dual investment; target-price settlement applies',
+  'ETH/USDC dual investment; target-price settlement applies',
+  'SOL/USDT dual investment; target-price settlement applies',
+  'Auto-call receipt; observation dates and coupon barriers apply'
+];
+
 async function main() {
   const connection = await hre.network.connect('sepolia');
   const { ethers } = connection;
@@ -51,8 +79,10 @@ async function main() {
     const productId = index + 1;
     const tx = await hub.setProductReceiptLabel(productId, WEALTH_RECEIPT_LABELS[index]);
     await tx.wait();
+    const detailTx = await hub.setProductReceiptDetail(productId, WEALTH_RECEIPT_DETAILS[index] || 'RiskLens Wealth receipt detail');
+    await detailTx.wait();
   }
-  console.log(`Configured ${WEALTH_RECEIPT_LABELS.length} Wealth receipt labels.`);
+  console.log(`Configured ${WEALTH_RECEIPT_LABELS.length} Wealth receipt labels and details.`);
 
   console.log('');
   console.log('Use the same address for the public Vite env vars:');

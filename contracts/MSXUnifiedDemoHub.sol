@@ -34,7 +34,7 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
 
     uint256 public nextHomeTokenId = 1;
     uint256 public navBps = BPS;
-    uint256 public minSubscription = 500 * 10 ** ASSET_DECIMALS;
+    uint256 public minSubscription = 500;
     uint256 public lastAttestedAt;
     bool public subscriptionsPaused;
     bytes32 public latestAttestationRoot;
@@ -52,6 +52,7 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
     mapping(address => bool) public hasSubmittedScore;
     mapping(address => mapping(uint16 => uint256)) public wealthReceiptShares;
     mapping(uint16 => string) public productReceiptLabel;
+    mapping(uint16 => string) public productReceiptDetail;
     address[] private scoredAccounts;
 
     struct ReplayScore {
@@ -63,6 +64,15 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
         uint256 submissionDay;
         uint256 submissionsToday;
     }
+
+    struct WealthReceiptProof {
+        uint256 lastAssetAmount;
+        uint256 lastShareAmount;
+        uint256 purchasedAt;
+        string productDetail;
+    }
+
+    mapping(address => mapping(uint16 => WealthReceiptProof)) public wealthReceiptProofOf;
 
     event TaskBadgeMinted(address indexed recipient, uint8 indexed badgeType, uint256 indexed tokenId);
     event AchievementClaimed(address indexed account, uint256 indexed achievementId);
@@ -86,7 +96,9 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
         uint16 indexed productId,
         uint256 indexed tokenId,
         uint256 assetAmount,
-        uint256 shareAmount
+        uint256 shareAmount,
+        uint256 purchasedAt,
+        string productDetail
     );
     event ProductReceiptRedeemed(
         address indexed investor,
@@ -103,6 +115,7 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
         uint256 mintAmount
     );
     event ProductReceiptLabelUpdated(uint16 indexed productId, string label);
+    event ProductReceiptDetailUpdated(uint16 indexed productId, string detail);
 
     constructor(string memory baseUri) ERC1155(baseUri) Ownable() {
         vaultLabel = "RiskLens Unified Demo Vault";
@@ -214,6 +227,12 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
         emit ProductReceiptLabelUpdated(productId, label);
     }
 
+    function setProductReceiptDetail(uint16 productId, string calldata detail) external onlyOwner {
+        require(productId > 0, "Invalid product");
+        productReceiptDetail[productId] = detail;
+        emit ProductReceiptDetailUpdated(productId, detail);
+    }
+
     function setInvestorEligibility(address investor, bool allowed, uint8 tier) external onlyOwner {
         eligibleInvestor[investor] = allowed;
         riskTier[investor] = tier;
@@ -315,10 +334,16 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
         uint256 tokenId = receiptTokenId(productId);
         _mint(investor, tokenId, shareAmount, "");
         wealthReceiptShares[investor][productId] += shareAmount;
+        wealthReceiptProofOf[investor][productId] = WealthReceiptProof({
+            lastAssetAmount: assetAmount,
+            lastShareAmount: shareAmount,
+            purchasedAt: block.timestamp,
+            productDetail: _receiptDetail(productId)
+        });
         _completeWealthTask(investor, WEALTH_BUY_RECEIPT);
 
         emit Subscribed(investor, assetAmount, shareAmount);
-        emit ProductReceiptSubscribed(investor, productId, tokenId, assetAmount, shareAmount);
+        emit ProductReceiptSubscribed(investor, productId, tokenId, assetAmount, shareAmount, block.timestamp, _receiptDetail(productId));
     }
 
     function _redeemProduct(
@@ -362,7 +387,9 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
             _tokenSurface(tokenId),
             '"},{"trait_type":"Network","value":"Sepolia"},{"trait_type":"Token ID","value":"',
             tokenId.toString(),
-            '"}]}'
+            '"}',
+            _tokenExtraAttributes(tokenId),
+            ']}'
         );
 
         return string(abi.encodePacked("data:application/json;base64,", Base64.encode(metadata)));
@@ -403,7 +430,9 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
                 abi.encodePacked(
                     "Sepolia Wealth receipt for ",
                     _receiptLabel(_receiptProductId(tokenId)),
-                    ". Settle or redeem burns matching units."
+                    ". Product detail: ",
+                    _receiptDetail(_receiptProductId(tokenId)),
+                    ". Purchase date is the block timestamp emitted by ProductReceiptSubscribed."
                 )
             );
         }
@@ -425,6 +454,23 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
         if (_isSupportedPaperAchievement(tokenId)) return "Paper Trading";
         if (_isSupportedWealthReceiptToken(tokenId)) return "Wealth Receipt";
         return "Demo";
+    }
+
+    function _tokenExtraAttributes(uint256 tokenId) internal view returns (string memory) {
+        if (_isSupportedWealthReceiptToken(tokenId)) {
+            uint16 productId = _receiptProductId(tokenId);
+            return string(
+                abi.encodePacked(
+                    ',{"trait_type":"Product","value":"',
+                    _receiptLabel(productId),
+                    '"},{"trait_type":"Product detail","value":"',
+                    _receiptDetail(productId),
+                    '"},{"trait_type":"Purchase date","value":"ProductReceiptSubscribed block timestamp"}'
+                )
+            );
+        }
+
+        return "";
     }
 
     function _buildTokenSvg(uint256 tokenId) internal pure returns (string memory) {
@@ -526,6 +572,12 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
         string memory label = productReceiptLabel[productId];
         if (bytes(label).length > 0) return label;
         return string(abi.encodePacked("Wealth Product #", uint256(productId).toString()));
+    }
+
+    function _receiptDetail(uint16 productId) internal view returns (string memory) {
+        string memory detail = productReceiptDetail[productId];
+        if (bytes(detail).length > 0) return detail;
+        return "Settlement terms recorded in the RiskLens Wealth detail page";
     }
 
     function _isSupportedHomeToken(uint256 tokenId) internal pure returns (bool) {

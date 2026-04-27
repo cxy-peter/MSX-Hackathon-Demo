@@ -95,7 +95,7 @@ const DEFAULT_COMPARE_PRODUCT_IDS_BY_CATEGORY = {
 const COMPARE_LINE_COLORS = ['#226d40', '#7aa6ff', '#f06a7f', '#ffd166'];
 const WEALTH_LIVE_CACHE_KEY = 'msx-wealth-live-products-cache-v1';
 const DAY1_BRIEF_CACHE_KEY = 'msx-day1-brief-cache-v1';
-const WEALTH_VAULT_ASSET_SCALE = 10 ** 6;
+const WEALTH_VAULT_LEGACY_ASSET_SCALE = 10 ** 6;
 const DEFAULT_COLLATERAL_ADVANCE_RATE = 0.55;
 const COLLATERAL_WARNING_LTV = 0.85;
 const WEALTH_ACTIVITY_LIMIT = 12;
@@ -819,7 +819,40 @@ function getWealthReceiptTokenId(product) {
 function toVaultUnitAmount(value) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue) || numericValue <= 0) return 0n;
-  return BigInt(Math.max(0, Math.round(numericValue * WEALTH_VAULT_ASSET_SCALE)));
+  return BigInt(Math.max(0, Math.round(numericValue)));
+}
+
+function fromVaultUnitAmount(value) {
+  const numericValue = Number(value || 0n);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return 0;
+  if (
+    numericValue >= WEALTH_VAULT_LEGACY_ASSET_SCALE &&
+    numericValue % WEALTH_VAULT_LEGACY_ASSET_SCALE === 0
+  ) {
+    return numericValue / WEALTH_VAULT_LEGACY_ASSET_SCALE;
+  }
+  return numericValue;
+}
+
+function buildLocalReceiptProof({ address, product, amount, shares, receiptMode, purchasedAt, productDetail }) {
+  const payload = JSON.stringify({
+    kind: 'risklens.wealth-receipt-proof.v1',
+    address: String(address || '').toLowerCase(),
+    productId: product?.id || '',
+    productName: product?.name || '',
+    shareToken: product?.shareToken || '',
+    amount: roundNumber(amount, 2),
+    shares: roundNumber(shares, 6),
+    receiptMode,
+    purchasedAt,
+    productDetail
+  });
+  let hash = 0;
+  for (let index = 0; index < payload.length; index += 1) {
+    hash = (hash << 5) - hash + payload.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(16).padStart(16, '0');
 }
 
 function formatOnchainTimestamp(value) {
@@ -2028,7 +2061,7 @@ function getSubscriptionError({
   if (isLocked) return unlockCopy;
 
   if (!Number.isFinite(requestedAmount) || requestedAmount < minimumTicket) {
-    return `Minimum subscription for this shelf is ${minimumTicket} PT.`;
+    return `Subscribe amount is below this product's min ticket. Enter at least ${minimumTicket.toLocaleString()} PT.`;
   }
 
   if (requestedAmount > availableCash) {
@@ -2248,21 +2281,10 @@ function getOnchainMechanics(product, context) {
       copy: `Future live flow should request ${formatValue(orderAmount, false)} once, not an unlimited allowance, before subscribe is enabled.`
     },
     {
-      title: '2. Subscribe mints receipt',
-      copy: `${formatShareBalance(context.estimatedShares, false)} ${product.shareToken} would mint against the current NAV instead of pretending the user holds cash.${vaultSnapshot?.configured ? ` The connected keeper ratio is ${vaultSnapshot.navLabel}.` : ''}`
-    },
-    {
-      title: '3. Eligibility and attestation stay visible',
+      title: '2. Eligibility and attestation stay visible',
       copy: vaultSnapshot?.configured
         ? `Risk tier, investor eligibility, and the attestation root are now readable from ${shortAddress(vaultSnapshot.address)}. Latest root: ${vaultSnapshot.attestationRootLabel}.`
         : 'Risk tier, investor eligibility, approved underlying hashes, and the latest attestation root belong in the same vault surface as the order preview.'
-    },
-    {
-      title: '4. Redeem or maturity burns the receipt',
-      copy:
-        isClosedEndProduct(product)
-          ? 'Term products keep the receipt in the wallet until maturity settlement resolves.'
-          : 'Flexible products burn shares on redemption and show the cash preview before the wallet state updates.'
     }
   ];
 }
@@ -2302,11 +2324,11 @@ function getFlowPreviewCards(product, context) {
     {
       step: 'Step 2',
       title: 'Subscribe preview',
-      statusLabel: canReviewSubscribe ? 'Ready to mint receipt' : 'Review requirements',
+      statusLabel: canReviewSubscribe ? 'Ready to record receipt' : 'Review requirements',
       tone: canReviewSubscribe ? 'pass' : 'review',
       primary: `${formatShareBalance(previewShares, context.hidden)} ${product.shareToken}`,
       secondary: `Cash after subscribe ${formatValue(postSubscribeCash, context.hidden)} / total receipt balance ${formatShareBalance(projectedShares, context.hidden)}`,
-      copy: `At NAV ${product.nav.toFixed(3)}, this order would mint wallet-linked receipt shares instead of pretending the user directly holds idle cash.`
+      copy: `At NAV ${product.nav.toFixed(3)}, this order would create wallet-linked receipt shares instead of pretending the user directly holds idle cash.`
     }
   ];
 
@@ -2337,16 +2359,16 @@ function getFlowPreviewCards(product, context) {
     cards.push({
       step: 'Step 3',
       title: 'Redeem preview',
-      statusLabel: context.existingShares > 0 ? 'Burn receipt for cash' : 'Subscribe first',
+      statusLabel: context.existingShares > 0 ? 'Receipt ready to settle' : 'Subscribe first',
       tone: context.existingShares > 0 ? 'pass' : 'review',
       primary: context.existingShares > 0 ? formatValue(redeemValue, context.hidden) : `${formatShareBalance(previewShares, context.hidden)} next receipt`,
       secondary: context.existingShares > 0
-        ? `${formatShareBalance(sharesToBurn, context.hidden)} burn / ${formatShareBalance(remainingShares, context.hidden)} remaining / cash after redeem ${formatValue(
+        ? `${formatShareBalance(sharesToBurn, context.hidden)} settle / ${formatShareBalance(remainingShares, context.hidden)} remaining / cash after redeem ${formatValue(
             cashAfterRedeem,
             context.hidden
           )}`
-        : 'Once shares exist in the wallet, redemption can burn the receipt and preview the cash leg before confirmation.',
-      copy: 'Flexible products should show the cash-out path before burning shares so the user sees settlement timing, route drag, and the post-redeem wallet state.'
+        : 'Once shares exist in the wallet, redemption can preview the cash leg before confirmation.',
+      copy: 'Flexible products should show the cash-out path before settlement so the user sees timing, route drag, and the post-redeem wallet state.'
     });
   }
 
@@ -2406,7 +2428,7 @@ function getModeledCallCards(product, context) {
         `preview shares: ${formatShareBalance(previewShares, context.hidden)} ${product.shareToken}`
       ],
       walletPrompt: 'This is the core vault interaction: the wallet signs one subscribe call after the approval succeeds.',
-      stateChange: `${product.shareToken} receipt balance mints and the funding asset leaves the wallet rail.`
+      stateChange: `${product.shareToken} receipt exposure is recorded and the funding asset leaves the wallet rail.`
     },
     !isRedeemableProduct(product)
       ? {
@@ -2434,8 +2456,8 @@ function getModeledCallCards(product, context) {
             `cash preview: ${context.existingShares > 0 ? formatValue(redeemValue, context.hidden) : 'Subscribe first'}`,
             `receiver: ${context.shortAddress}`
           ],
-          walletPrompt: 'Redeem should preview the burn amount and the expected cash leg before the user signs the transaction.',
-          stateChange: 'Receipt shares burn and the funding rail returns cash or stablecoin to the wallet.'
+          walletPrompt: 'Redeem should preview the settlement amount and the expected cash leg before the user signs the transaction.',
+          stateChange: 'Receipt shares settle and the funding rail returns cash or stablecoin to the wallet.'
         }
   ];
 }
@@ -2505,7 +2527,7 @@ function ReceiptLifecycleDiagram({ product, compact = false }) {
       <div className="wealth-lifecycle-node">
         <span>1</span>
         <strong>Buy one receipt</strong>
-        <small>PT subscription mints {product.shareToken}</small>
+        <small>PT subscription records {product.shareToken} exposure</small>
       </div>
       <div className="wealth-lifecycle-link">-&gt;</div>
       <div className="wealth-lifecycle-node">
@@ -3064,6 +3086,11 @@ function formatWealthDate(timestamp, pointCount) {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function formatSettlementTimelineDate(daysForward = 0) {
+  const days = Math.max(0, Number(daysForward || 0));
+  return formatWealthDate(new Date(Date.now() + days * DAY_MS).toISOString());
+}
+
 function formatWealthDateTime(timestamp) {
   if (!timestamp) return '--';
   return new Date(timestamp).toLocaleString('en-US', {
@@ -3445,11 +3472,20 @@ function SubscriptionPreviewModal({
   lifecycleNotes,
   onchainMechanics,
   vaultSnapshot,
+  receiptProofMode = 'local',
+  onReceiptProofModeChange,
+  receiptTokenId,
+  receiptUnitAmount = '0',
   isSigning = false,
   onClose,
   onConfirm
 }) {
   if (!open || !product) return null;
+  const onchainReceiptAvailable = Boolean(vaultSnapshot?.configured);
+  const wantsOnchainReceipt = receiptProofMode === 'onchain' && onchainReceiptAvailable;
+  const purchaseDateLabel = new Date().toLocaleString();
+  const productDetailLabel = getSettlementPolicy(product).timing;
+  const productDetailCopy = getSettlementPolicy(product).detail || product.redemption || productDetailLabel;
 
   return (
     <div className="wealth-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="wealth-subscribe-title">
@@ -3486,6 +3522,60 @@ function SubscriptionPreviewModal({
             <div className="label">Available PT</div>
             <div className="value">{formatValue(availableCash, false)}</div>
             <div className="muted">{product.redemption}</div>
+          </div>
+        </div>
+
+        <div className="paper-mode-card wealth-modal-panel wealth-receipt-proof-panel">
+          <div className="product-top">
+            <div>
+              <div className="product-title">Receipt proof</div>
+              <div className="muted">
+                The local Wealth ledger always records the position. Choose whether this buy also needs the onchain collectible proof.
+              </div>
+            </div>
+            <span className={`pill ${wantsOnchainReceipt ? 'risk-low' : 'risk-medium'}`}>
+              {wantsOnchainReceipt ? `Token #${receiptTokenId}` : 'Local proof'}
+            </span>
+          </div>
+
+          <div className="wealth-proof-choice-grid">
+            <button
+              type="button"
+              className={`wealth-proof-choice ${receiptProofMode === 'local' ? 'active' : ''}`}
+              onClick={() => onReceiptProofModeChange?.('local')}
+            >
+              <span>Local proof only</span>
+              <strong>No Sepolia mint</strong>
+              <em>Creates a wallet-linked receipt record and proof hash inside this demo. Best when you only want to test the purchase flow.</em>
+            </button>
+            <button
+              type="button"
+              className={`wealth-proof-choice ${wantsOnchainReceipt ? 'active' : ''}`}
+              onClick={() => onchainReceiptAvailable && onReceiptProofModeChange?.('onchain')}
+              disabled={!onchainReceiptAvailable}
+            >
+              <span>Need receipt proof</span>
+              <strong>{onchainReceiptAvailable ? `${Number(receiptUnitAmount || 0).toLocaleString()} receipt units` : 'Vault not configured'}</strong>
+              <em>
+                Requires Sepolia mint and W1 badge together. Token #{receiptTokenId} should show +5,000 for a 5,000 PT buy, not +5,000,000,000.
+              </em>
+            </button>
+          </div>
+
+          <div className="wealth-proof-detail-grid">
+            <div>
+              <span>Product</span>
+              <strong>{product.name}</strong>
+            </div>
+            <div>
+              <span>Purchase date</span>
+              <strong>{purchaseDateLabel}</strong>
+            </div>
+            <div>
+              <span>Product detail</span>
+              <strong>{productDetailLabel}</strong>
+              <em>{productDetailCopy}</em>
+            </div>
           </div>
         </div>
 
@@ -3531,9 +3621,9 @@ function SubscriptionPreviewModal({
         <div className="wealth-modal-footer">
           <div className="wealth-inline-note">
             {validationMessage ||
-              (vaultSnapshot?.configured
-                ? `This confirms the local PT subscription and mints a Sepolia receipt collectible for ${product.shareToken}.`
-                : `This confirms a simulated PT subscription and mints ${product.shareToken} in the local demo ledger only.`)}
+              (wantsOnchainReceipt
+                ? `This signs the subscription, records Sepolia receipt token #${receiptTokenId}, and records the W1 badge proof for ${product.name}.`
+                : `This signs the subscription and saves a local receipt proof. No Sepolia receipt or badge transaction will be submitted.`)}
           </div>
           <div className="toolbar">
             <button className="secondary-btn" onClick={onClose}>
@@ -3613,7 +3703,7 @@ function WealthInner() {
   const [wealthClaimTaskId, setWealthClaimTaskId] = useState('');
   const [wealthDiligencePageIndex, setWealthDiligencePageIndex] = useState(0);
   const [fastForwardTarget, setFastForwardTarget] = useState('90d');
-  const [settlementDays, setSettlementDays] = useState(180);
+  const [settlementDays, setSettlementDays] = useState(0);
   const [settlementAction, setSettlementAction] = useState('roll');
   const [settlementTransferProductId, setSettlementTransferProductId] = useState('');
   const [timelineDockOpen, setTimelineDockOpen] = useState(true);
@@ -3629,6 +3719,7 @@ function WealthInner() {
   const [pledgeTermMode, setPledgeTermMode] = useState('flex');
   const [collateralBorrowInput, setCollateralBorrowInput] = useState(0);
   const [isSubscribeModalOpen, setIsSubscribeModalOpen] = useState(false);
+  const [subscriptionReceiptProofMode, setSubscriptionReceiptProofMode] = useState('local');
   const [progressState, setProgressState] = useState({
     guideCompleted: false,
     quizCompleted: false,
@@ -3640,11 +3731,49 @@ function WealthInner() {
   const [wealthStateAddressKey, setWealthStateAddressKey] = useState('');
   const [paperProfileAddressKey, setPaperProfileAddressKey] = useState('');
   const [pendingScrollProductId, setPendingScrollProductId] = useState(null);
+  const [pendingScrollMode, setPendingScrollMode] = useState('detail');
   const [pendingFocusRequest, setPendingFocusRequest] = useState(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const productCardRefs = useRef(new Map());
   const productDetailRefs = useRef(new Map());
   const previousCompareCategoryRef = useRef('all');
+
+  function findProductScrollNode(productId, mode = 'detail') {
+    if (typeof document === 'undefined' || !productId) return null;
+    const attrName = mode === 'detail' ? 'data-wealth-product-detail' : 'data-wealth-product-card';
+    return Array.from(document.querySelectorAll(`[${attrName}]`)).find(
+      (node) => node.getAttribute(attrName) === productId
+    );
+  }
+
+  function scrollProductNodeIntoView(productId, mode = 'detail') {
+    if (typeof window === 'undefined') return false;
+    const targetNode = findProductScrollNode(productId, mode);
+    if (!targetNode) return false;
+    targetNode.scrollIntoView({ behavior: 'smooth', block: mode === 'detail' ? 'start' : 'nearest', inline: 'nearest' });
+    return true;
+  }
+
+  function queueProductScroll(productId, mode = 'detail') {
+    setPendingScrollMode(mode);
+    setPendingScrollProductId(productId);
+
+    if (typeof window === 'undefined') return;
+    let attempts = 0;
+
+    function tryScroll() {
+      if (scrollProductNodeIntoView(productId, mode)) {
+        setPendingScrollProductId(null);
+        return;
+      }
+      attempts += 1;
+      if (attempts < 18) {
+        window.requestAnimationFrame(tryScroll);
+      }
+    }
+
+    window.requestAnimationFrame(tryScroll);
+  }
 
   const metaMaskConnector = useMemo(
     () => connectors.find((connector) => connector.name.toLowerCase().includes('metamask')) || connectors[0],
@@ -3676,6 +3805,12 @@ function WealthInner() {
   useEffect(() => {
     setProfileBackupStatus('');
   }, [connectedAddressKey]);
+
+  useEffect(() => {
+    if (!wealthVaultConfigured && subscriptionReceiptProofMode !== 'local') {
+      setSubscriptionReceiptProofMode('local');
+    }
+  }, [subscriptionReceiptProofMode]);
 
   useEffect(() => {
     if (!profileBackupAccounts.length) {
@@ -4239,10 +4374,15 @@ function WealthInner() {
         .some((value) => String(value).toLowerCase().includes(normalizedShelfSearchQuery))
     );
   }, [baseShelfProducts, normalizedShelfSearchQuery]);
-  const shelfProducts = useMemo(
-    () => sortProductsWithOwnedFirst(searchableShelfProducts, displayWealthState.positions),
-    [searchableShelfProducts, displayWealthState.positions]
-  );
+  const shelfProducts = useMemo(() => {
+    const sortedProducts = sortProductsWithOwnedFirst(searchableShelfProducts, displayWealthState.positions);
+    if (!dualInvestmentShelfActive) {
+      return sortedProducts;
+    }
+    return [...sortedProducts].sort(
+      (leftProduct, rightProduct) => Number(!isDualInvestmentProduct(leftProduct)) - Number(!isDualInvestmentProduct(rightProduct))
+    );
+  }, [searchableShelfProducts, displayWealthState.positions, dualInvestmentShelfActive]);
 
   const wealthActivityTypes = getActivityTypeSet(displayWealthState);
   const latestSubscribeActivity = getLatestWealthActivity(displayWealthState, ['subscribe']);
@@ -4386,9 +4526,9 @@ function WealthInner() {
   }, [nextWealthTask.id, selectedWealthTaskId, wealthQuestRows]);
 
   useEffect(() => {
-    if (pendingFocusRequest) return;
+    if (pendingFocusRequest || pendingScrollProductId) return;
     setPendingScrollProductId(null);
-  }, [selectedGoal, selectedCategory, shelfSearchQuery, pendingFocusRequest]);
+  }, [selectedGoal, selectedCategory, shelfSearchQuery, pendingFocusRequest, pendingScrollProductId]);
 
   useEffect(() => {
     setCompareProductIds((current) => {
@@ -4601,10 +4741,16 @@ function WealthInner() {
   const selectedSettlementPolicy = getSettlementPolicy(selectedProduct);
   const selectedRedeemAllowed = isRedeemableProduct(selectedProduct);
   const selectedLockStatus = getWealthLockStatus(selectedProduct, selectedPosition, settlementDays);
+  const allocationAmountNumber = Number(allocationAmount);
+  const subscriptionAmountTooLow =
+    !Number.isFinite(allocationAmountNumber) || allocationAmountNumber < selectedMinimumTicket;
+  const subscriptionAmountWarning = subscriptionAmountTooLow
+    ? `Amount is below this product's min ticket. Enter at least ${selectedMinimumTicket.toLocaleString()} PT before review.`
+    : '';
   const subscriptionAmountPresets = getAmountPresetRows({
     minimumTicket: selectedMinimumTicket,
     availableCash,
-    currentAmount: Number(allocationAmount)
+    currentAmount: allocationAmountNumber
   });
 
   useEffect(() => {
@@ -4616,10 +4762,10 @@ function WealthInner() {
     setPledgeTermMode(selectedCollateralState.termMode);
   }, [selectedBorrowedAmount, selectedCollateralState.termMode, selectedProduct.id]);
 
-  const estimatedShares = Number.isFinite(Number(allocationAmount))
-    ? roundNumber(Number(allocationAmount) / selectedProduct.nav, 6)
+  const estimatedShares = Number.isFinite(allocationAmountNumber)
+    ? roundNumber(allocationAmountNumber / selectedProduct.nav, 6)
     : 0;
-  const simulatedTicketAmount = Number.isFinite(Number(allocationAmount)) && Number(allocationAmount) > 0 ? Number(allocationAmount) : selectedMinimumTicket;
+  const simulatedTicketAmount = Number.isFinite(allocationAmountNumber) && allocationAmountNumber > 0 ? allocationAmountNumber : selectedMinimumTicket;
   const selectedFastForwardOption = FAST_FORWARD_OPTIONS.find((option) => option.id === fastForwardTarget) || FAST_FORWARD_OPTIONS[2];
   const fastForwardProjectedNav = getForwardProjectedNav(selectedProduct, selectedFastForwardOption.days);
   const fastForwardPreviewShares = roundNumber(simulatedTicketAmount / selectedProduct.nav, 6);
@@ -4648,10 +4794,15 @@ function WealthInner() {
     settlementAction === 'transfer' && settlementTransferProduct?.nav
       ? roundNumber(settlementPreviewValue / settlementTransferProduct.nav, 6)
       : 0;
+  const settlementDaysNumber = Math.max(0, Number(settlementDays || 0));
+  const settlementStartDateLabel = formatSettlementTimelineDate(0);
+  const settlementTargetDateLabel = formatSettlementTimelineDate(settlementDaysNumber);
   const settlementWindowLabel =
-    Number(settlementDays || 0) <= 0
-      ? 'Current window'
-      : `${Number(settlementDays || 0)} days forward`;
+    settlementDaysNumber <= 0
+      ? `Today (${settlementStartDateLabel})`
+      : `${settlementDaysNumber}D forward (${settlementStartDateLabel} -> ${settlementTargetDateLabel})`;
+  const settlementPredictionCopy =
+    `Future value uses predicted NAV ${settlementProjectedNav.toFixed(3)} from ${settlementStartDateLabel} to ${settlementTargetDateLabel}.`;
   const suggestedSettlementDays = clamp(
     Math.max(30, selectedLockStatus.daysLeft > 0 ? selectedLockStatus.daysLeft : getWealthLockDays(selectedProduct) || 90),
     0,
@@ -5193,7 +5344,7 @@ function WealthInner() {
     const attestationAgeMs = attestedAtSeconds > 0 ? Date.now() - attestedAtSeconds * 1000 : Number.POSITIVE_INFINITY;
     const attestationFresh = Number.isFinite(attestationAgeMs) && attestationAgeMs <= 3 * DAY_MS;
     const navRatio = Number(vaultNavBps || 0n) / 10000;
-    const minimumOnchainTicket = Number(vaultMinSubscription || 0n) / WEALTH_VAULT_ASSET_SCALE;
+    const minimumOnchainTicket = fromVaultUnitAmount(vaultMinSubscription || 0n);
     const connectedWallet = Boolean(address);
     const riskTierValue = Number(vaultRiskTier || 0);
     const eligibleInvestor = Boolean(vaultEligibleInvestor);
@@ -5341,12 +5492,35 @@ function WealthInner() {
 
   useEffect(() => {
     if (!pendingScrollProductId) return;
-    const targetNode =
-      productDetailRefs.current.get(pendingScrollProductId) || productCardRefs.current.get(pendingScrollProductId);
-    if (!targetNode) return;
-    targetNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    setPendingScrollProductId(null);
-  }, [expandedProductId, pendingScrollProductId, shelfProducts]);
+    const shouldScrollToDetail = pendingScrollMode === 'detail';
+    let attempts = 0;
+    let frameId = 0;
+
+    const scrollWhenReady = () => {
+      if (scrollProductNodeIntoView(pendingScrollProductId, pendingScrollMode)) {
+        setPendingScrollProductId(null);
+        return;
+      }
+
+      const targetNode = shouldScrollToDetail
+        ? productDetailRefs.current.get(pendingScrollProductId)
+        : productCardRefs.current.get(pendingScrollProductId);
+
+      if (!targetNode) {
+        attempts += 1;
+        if (attempts < 12) {
+          frameId = window.requestAnimationFrame(scrollWhenReady);
+        }
+        return;
+      }
+
+      targetNode.scrollIntoView({ behavior: 'smooth', block: shouldScrollToDetail ? 'start' : 'nearest', inline: 'nearest' });
+      setPendingScrollProductId(null);
+    };
+
+    frameId = window.requestAnimationFrame(scrollWhenReady);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [expandedProductId, pendingScrollMode, pendingScrollProductId, shelfProducts]);
 
   useEffect(() => {
     if (!wealthTaskClaimError) return;
@@ -5678,7 +5852,7 @@ function WealthInner() {
       setSelectedProductId(productId);
       setExpandedProductId(productId);
       setSelectedDetailTopics(nextTopic ? [nextTopic] : []);
-      setPendingScrollProductId(productId);
+      queueProductScroll(productId, 'detail');
     });
   }
 
@@ -5775,7 +5949,7 @@ function WealthInner() {
     if (expandedProductId === productId && selectedProductId === productId) {
       startTransition(() => {
         setExpandedProductId(null);
-        setPendingScrollProductId(productId);
+        queueProductScroll(productId, 'card');
       });
       return;
     }
@@ -5841,17 +6015,14 @@ function WealthInner() {
   function handleOpenSubscribeModal(productOverride = selectedProduct, event) {
     event?.stopPropagation?.();
     const product = productOverride || selectedProduct;
-    const minimumTicket = Math.max(WEALTH_MIN_SUBSCRIPTION, product.minSubscription);
-    const requestedAmount = Number.isFinite(Number(allocationAmount)) && Number(allocationAmount) >= minimumTicket
-      ? Number(allocationAmount)
-      : minimumTicket;
+    const requestedAmount = Number(allocationAmount);
     const validationMessage = getProductSubscriptionValidation(product, requestedAmount);
 
     setSelectedProductId(product.id);
     setExpandedProductId(product.id);
     setSelectedDetailTopics(['flow']);
-    setPendingScrollProductId(product.id);
-    setAllocationAmount(requestedAmount);
+    queueProductScroll(product.id, 'detail');
+    setAllocationAmount(Number.isFinite(requestedAmount) ? requestedAmount : 0);
 
     if (validationMessage) {
       setFeedback(validationMessage);
@@ -5963,31 +6134,53 @@ function WealthInner() {
     }
 
     const sharesMinted = roundNumber(requestedAmount / selectedProduct.nav, 6);
+    const wantsOnchainReceipt = subscriptionReceiptProofMode === 'onchain' && wealthVaultConfigured;
+    const receiptProductId = getWealthReceiptProductId(selectedProduct);
+    const receiptTokenId = getWealthReceiptTokenId(selectedProduct);
+    const receiptUnitAmount = toVaultUnitAmount(requestedAmount);
+    const receiptPurchasedAt = new Date().toISOString();
+    const receiptProductDetail = selectedSettlementPolicy.timing;
+    const receiptProductDetailCopy = selectedSettlementPolicy.detail || selectedProduct.redemption || selectedSettlementPolicy.label;
+    const receiptProofHash = buildLocalReceiptProof({
+      address,
+      product: selectedProduct,
+      amount: requestedAmount,
+      shares: sharesMinted,
+      receiptMode: wantsOnchainReceipt ? 'sepolia-receipt-and-w1-badge' : 'local-proof',
+      purchasedAt: receiptPurchasedAt,
+      productDetail: receiptProductDetail
+    });
     const signed = await ensureWealthActionSignature({
       action: 'subscribe',
       amount: requestedAmount,
       shares: sharesMinted,
       extraLines: [
         `NAV: ${selectedProduct.nav.toFixed(3)}`,
-        `Funding rail: ${getFundingRailCopy(selectedProduct)}`
+        `Funding rail: ${getFundingRailCopy(selectedProduct)}`,
+        `Receipt proof mode: ${wantsOnchainReceipt ? `Sepolia ERC-1155 receipt #${receiptTokenId} + W1 badge` : 'Local receipt proof only'}`,
+        `Receipt display amount: ${requestedAmount.toLocaleString()} PT`,
+        `Receipt product: ${selectedProduct.name}`,
+        `Receipt purchase date: ${new Date(receiptPurchasedAt).toLocaleString()}`,
+        `Receipt product detail: ${receiptProductDetail} - ${receiptProductDetailCopy}`,
+        wantsOnchainReceipt ? `Onchain receipt units: ${receiptUnitAmount.toLocaleString()}` : `Local proof hash: ${receiptProofHash}`
       ]
     });
 
     if (!signed) return;
 
-    const receiptProductId = getWealthReceiptProductId(selectedProduct);
-    const receiptTokenId = getWealthReceiptTokenId(selectedProduct);
-    const receiptMinted = await submitWealthReceiptTransaction({
-      functionName: 'subscribeProduct',
-      args: [receiptProductId, toVaultUnitAmount(requestedAmount)],
-      pendingLabel: `Minting Wealth receipt collectible #${receiptTokenId}.`,
-      submittedLabel: `Receipt mint submitted for ${selectedProduct.shortName || selectedProduct.name}`,
-      confirmedLabel: `Sepolia receipt #${receiptTokenId} confirmed for ${selectedProduct.shortName || selectedProduct.name}.`
-    });
+    const receiptMinted = wantsOnchainReceipt
+      ? await submitWealthReceiptTransaction({
+          functionName: 'subscribeProduct',
+          args: [receiptProductId, receiptUnitAmount],
+          pendingLabel: `Minting required Sepolia receipt #${receiptTokenId} and W1 badge for ${requestedAmount.toLocaleString()} PT.`,
+          submittedLabel: `Receipt mint submitted for ${selectedProduct.shortName || selectedProduct.name}`,
+          confirmedLabel: `Sepolia receipt #${receiptTokenId} confirmed for ${selectedProduct.shortName || selectedProduct.name}.`
+        })
+      : true;
 
     if (!receiptMinted) return;
 
-    if (wealthVaultConfigured) {
+    if (wantsOnchainReceipt) {
       await Promise.allSettled([
         refetchWealthSubscribeTask?.(),
         refetchWealthSubscribeTaskCollectible?.()
@@ -6020,13 +6213,22 @@ function WealthInner() {
         productId: selectedProduct.id,
         productName: selectedProduct.name,
         amount: requestedAmount,
-        shares: sharesMinted
+        shares: sharesMinted,
+        receiptProofMode: wantsOnchainReceipt ? 'onchain' : 'local',
+        receiptProofHash,
+        receiptTokenId,
+        receiptUnitAmount: receiptUnitAmount.toString(),
+        receiptProductDetail,
+        receiptProductDetailCopy,
+        receiptPurchasedAt
       });
     });
 
     setFeedback(
       `Subscription placed: ${requestedAmount.toLocaleString()} PT into ${selectedProduct.name}. ${
-        wealthVaultConfigured ? `Sepolia receipt collectible #${receiptTokenId} minted and ` : ''
+        wantsOnchainReceipt
+          ? `Sepolia receipt #${receiptTokenId} and W1 badge are the proof for ${selectedProduct.name}, purchased ${new Date(receiptPurchasedAt).toLocaleString()}, detail ${receiptProductDetail}. `
+          : `Local receipt proof ${receiptProofHash.slice(0, 10)}... saved; no Sepolia receipt was minted. `
       }${sharesMinted.toLocaleString()} ${selectedProduct.shareToken} shares are now live in the demo wallet.`
     );
     setSettlementDays(0);
@@ -6293,7 +6495,7 @@ function WealthInner() {
     }
 
     if (!selectedPosition.shares) {
-      setFeedback(`Buy ${selectedProduct.shortName || selectedProduct.name} first, then use the time slider to settle the receipt.`);
+      setFeedback(`Buy ${selectedProduct.shortName || selectedProduct.name} first, then use the timeline presets to settle the receipt.`);
       return;
     }
 
@@ -6331,7 +6533,8 @@ function WealthInner() {
       extraLines: [
         `Days forward: ${settlementDays}`,
         `Settlement window: ${settlementWindowLabel}`,
-        `Projected NAV: ${settlementProjectedNav.toFixed(3)}`,
+        `Predicted NAV: ${settlementProjectedNav.toFixed(3)}`,
+        settlementPredictionCopy,
         settlementAction === 'transfer' && settlementTransferProduct
           ? `Transfer target: ${settlementTransferProduct.name}`
           : ''
@@ -6498,7 +6701,7 @@ function WealthInner() {
 
   function handlePreviewMaturity() {
     setFeedback(
-      `Scenario preview for ${selectedProduct.name}: move the time slider to ${selectedProduct.scenario.horizon.toLowerCase()}, then sign Roll, Transfer, or End settlement to update the wallet ledger.`
+      `Scenario preview for ${selectedProduct.name}: move the timeline to ${selectedProduct.scenario.horizon.toLowerCase()} with the presets, then sign Roll, Transfer, or End settlement to update the wallet ledger.`
     );
   }
 
@@ -6597,125 +6800,284 @@ function WealthInner() {
   function renderDualCurrencyGuideSection() {
     if (!dualInvestmentShelfActive) return null;
 
+    return renderDualInvestmentOrderBook({ surface: 'shelf' });
+  }
+
+  function renderDualInvestmentOrderBook({ surface = 'detail' } = {}) {
+    const dualProducts = liveProducts.filter(isDualInvestmentProduct);
+    const activeDualProduct = isDualInvestmentProduct(selectedProduct)
+      ? selectedProduct
+      : dualProducts[0] || selectedProduct;
+    if (!activeDualProduct) return null;
+
+    const activePair = dualCurrencyPair;
+    const activeDirectionMeta = dualCurrencyDirectionMeta;
+    const settlementDateFilters = [
+      { id: 'all', label: 'All settlement dates', days: suggestedSettlementDays },
+      { id: '3d', label: '< 3D', days: 2 },
+      { id: '7d', label: '< 7D', days: 6 },
+      { id: '30d', label: '7 - 30D', days: 14 },
+      { id: '60d', label: '30 - 60D', days: 45 },
+      { id: 'over60d', label: '> 60D', days: 90 }
+    ];
+    const targetDirection = dualCurrencyDirection === 'sell-high' ? 1 : -1;
+    const baseDistance = Math.max(0.006, Math.abs(Number(dualCurrencyTargetPct || 0)) / 100 || 0.04);
+    const orderRows = [1, 2, 1, 3, 2, 4].map((days, index) => {
+      const distance = baseDistance + index * 0.004;
+      const targetPrice = roundNumber(activePair.referencePrice * (1 + targetDirection * distance), activePair.referencePrice > 1000 ? 2 : 4);
+      const targetPct = roundNumber((targetPrice / activePair.referencePrice - 1) * 100, 2);
+      const apr = Math.min(2.2, Math.max(0.22, dualCurrencyApr * (1 + index * 0.08) * Math.max(0.55, 2 / Math.sqrt(days))));
+      const ptReward = Math.max(1, Math.round(dualCurrencyExamplePrincipal * apr * days / 365));
+      const settlementPt = dualCurrencyExamplePrincipal + ptReward;
+      return {
+        id: `${activePair.id}-${dualCurrencyDirection}-${days}-${index}`,
+        targetPrice,
+        targetPct,
+        apr,
+        days,
+        date: formatSettlementTimelineDate(days),
+        ptReward,
+        settlementPt
+      };
+    });
+    const highlightedQuote = orderRows[0];
+    const ptSubscribeAmount = dualCurrencyExamplePrincipal;
+    const targetPriceLabel = highlightedQuote.targetPrice.toLocaleString(undefined, {
+      minimumFractionDigits: activePair.referencePrice > 1000 ? 2 : 4,
+      maximumFractionDigits: activePair.referencePrice > 1000 ? 2 : 4
+    });
+    const targetConditionCopy = dualCurrencyDirection === 'sell-high'
+      ? `At or above ${targetPriceLabel}`
+      : `At or below ${targetPriceLabel}`;
+    const fallbackConditionCopy = dualCurrencyDirection === 'sell-high'
+      ? `Below ${targetPriceLabel}`
+      : `Above ${targetPriceLabel}`;
+
     return (
-      <section className="card wealth-dual-guide-card">
+      <section className={`card wealth-dual-guide-card wealth-dual-order-card ${surface === 'detail' ? 'detail' : 'shelf'}`}>
         <div className="section-head">
           <div>
-            <div className="eyebrow">Structured wealth / Dual Investment</div>
-            <h2>See the payoff range before setting a buy-low or sell-high order</h2>
+            <div className="eyebrow">{surface === 'detail' ? 'Dual Investment order board' : 'Structured wealth / Dual Investment'}</div>
+            <h2>{surface === 'detail' ? 'Choose pair, direction, target price, and settlement date' : 'Pick a target-price receipt before buying'}</h2>
           </div>
-          <span className="pill risk-medium">Not a stable deposit</span>
+          <span className="pill risk-medium">{activeDirectionMeta.label}</span>
         </div>
 
-        <div className="wealth-dual-guide-grid">
-          <div className="paper-mode-card wealth-subpanel-card">
-            <div className="product-title">Plain-English rule</div>
-            <div className="entry-copy">
-              Dual Investment is closer to a target-price order with premium than to savings. Pick a pair, choose buy-low or sell-high, then check what asset you may end up holding at settlement.
-            </div>
-            <div className="wealth-inline-note paper-inline-note" style={{ marginTop: 12 }}>
-              Good use case: you already want that conversion price. Bad use case: you expect guaranteed principal in the same currency.
-            </div>
-          </div>
-
-          <div className="paper-mode-card wealth-subpanel-card">
-            <div className="product-title">Try the structure</div>
-            <div className="wealth-compare-toolbar compact">
-              <label>
-                <div className="muted">Pair</div>
-                <select value={dualCurrencyPairId} onChange={(event) => setDualCurrencyPairId(event.target.value)}>
-                  {DUAL_CURRENCY_PAIR_OPTIONS.map((pair) => (
-                    <option key={pair.id} value={pair.id}>
-                      {pair.id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <div className="muted">Direction</div>
-                <select value={dualCurrencyDirection} onChange={(event) => setDualCurrencyDirection(event.target.value)}>
-                  {DUAL_CURRENCY_DIRECTION_OPTIONS.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <label className="wealth-field compact">
-              Target offset: {Number(dualCurrencyTargetPct || 0).toFixed(0)}%
-              <input
-                type="range"
-                min="-12"
-                max="12"
-                step="1"
-                value={dualCurrencyTargetPct}
-                onChange={(event) => setDualCurrencyTargetPct(Number(event.target.value))}
-              />
-              <div className="paper-range-suggestion-row">
-                <span className="paper-range-suggestion-marker" style={{ left: `${((dualCurrencyDirection === 'buy-low' ? -4 : 5) + 12) / 24 * 100}%` }} />
-                <span>Suggested {dualCurrencyDirection === 'buy-low' ? '-4%' : '+5%'}</span>
-              </div>
-            </label>
-            <div className="wealth-amount-preset-row compact">
+        <div className="wealth-dual-pair-panel">
+          <div className="product-title">Choose trading pair</div>
+          <div className="wealth-dual-pair-row">
+            {DUAL_CURRENCY_PAIR_OPTIONS.slice(0, 4).map((pair) => (
               <button
                 type="button"
-                className="ghost-btn compact"
-                onClick={() => setDualCurrencyTargetPct(dualCurrencyDirection === 'buy-low' ? -4 : 5)}
+                key={pair.id}
+                className={`wealth-dual-pair-chip ${dualCurrencyPairId === pair.id ? 'active' : ''}`}
+                onClick={() => setDualCurrencyPairId(pair.id)}
               >
-                Suggested
+                <span className="wealth-dual-coin-stack" aria-hidden="true">
+                  <i>{pair.base.slice(0, 1)}</i>
+                  <i>{pair.quote.slice(0, 1)}</i>
+                </span>
+                <strong>{pair.id}</strong>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="wealth-dual-direction-panel">
+          <div className="product-title">Choose direction</div>
+          <div className="wealth-dual-direction-row">
+            {DUAL_CURRENCY_DIRECTION_OPTIONS.map((option) => (
+              <button
+                type="button"
+                key={option.id}
+                className={`wealth-dual-direction-chip ${dualCurrencyDirection === option.id ? 'active' : ''}`}
+                onClick={() => {
+                  setDualCurrencyDirection(option.id);
+                  setDualCurrencyTargetPct(option.id === 'buy-low' ? -4 : 5);
+                }}
+              >
+                {option.id === 'buy-low' ? 'Buy low' : 'Sell high'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="wealth-dual-filter-panel">
+          <div className="wealth-dual-filter-row">
+            {settlementDateFilters.map((filter) => (
+              <button
+                type="button"
+                key={filter.id}
+                className={`wealth-dual-filter-chip ${filter.id === 'all' ? 'active' : ''}`}
+                onClick={() => setSettlementDays(filter.days)}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+          <div className="wealth-dual-price-row">
+            <input aria-label="Minimum target price" placeholder="Enter min Target Price" />
+            <input aria-label="Maximum target price" placeholder="Enter max Target Price" />
+            <button
+              type="button"
+              className="wealth-dual-refresh-btn"
+              onClick={() => {
+                setDualCurrencyTargetPct(dualCurrencyDirection === 'buy-low' ? -4 : 5);
+                setSettlementDays(suggestedSettlementDays);
+              }}
+              aria-label="Reset dual investment filters"
+            >
+              Reset
+            </button>
+            <div className="wealth-dual-current-price">
+              <span className="wealth-dual-coin">{activePair.base.slice(0, 1)}</span>
+              <span>{activePair.id} current price:</span>
+              <strong>{activePair.referencePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 8 })}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div className="wealth-dual-warning">
+          This demo uses the page reference price for quote education, but subscription and rewards settle only in PT.
+        </div>
+
+        {surface === 'detail' ? (
+          <div className="wealth-dual-pt-quote-card">
+            <div className="wealth-dual-pt-quote-title">
+              <span className="wealth-dual-coin-stack" aria-hidden="true">
+                <i>{activePair.base.slice(0, 1)}</i>
+                <i>PT</i>
+              </span>
+              <div>
+                <div className="eyebrow">PT subscription preview</div>
+                <h3>{dualCurrencyDirection === 'sell-high' ? `Sell high ${activePair.base} with PT` : `Buy low ${activePair.base} with PT`}</h3>
+              </div>
+            </div>
+
+            <div className="wealth-dual-quote-metrics">
+              <div>
+                <span>APR</span>
+                <strong>{formatYieldPercent(highlightedQuote.apr)}</strong>
+              </div>
+              <div>
+                <span>Settlement date / term</span>
+                <strong>{highlightedQuote.date} {highlightedQuote.days}D</strong>
+              </div>
+            </div>
+
+            <div className="wealth-dual-subscribe-field">
+              <span>Subscription amount</span>
+              <strong>{ptSubscribeAmount.toLocaleString()} PT</strong>
+              <button
+                type="button"
+                className="wealth-dual-max-btn"
+                onClick={() => {
+                  setDualCurrencyTargetPct(highlightedQuote.targetPct);
+                  setSettlementDays(highlightedQuote.days);
+                }}
+              >
+                Max
               </button>
             </div>
+
+            <div className="wealth-dual-return-preview">
+              <div className="product-title">Reward overview</div>
+              <p>Outcomes are priced by the fixed target level, but the demo pays the learning result back as PT.</p>
+              <div className="wealth-dual-condition-row">
+                <span className="active">{targetConditionCopy}</span>
+                <span>{fallbackConditionCopy}</span>
+              </div>
+              <div className="wealth-dual-receive-card">
+                <span>You will receive</span>
+                <strong>{highlightedQuote.settlementPt.toLocaleString()} PT</strong>
+                <em>Principal {ptSubscribeAmount.toLocaleString()} PT + bonus {highlightedQuote.ptReward.toLocaleString()} PT</em>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="wealth-dual-table" role="table" aria-label="Dual Investment available orders">
+          <div className="wealth-dual-table-head" role="row">
+            <span>Target price</span>
+            <span>APR</span>
+            <span>Settlement date</span>
+            <span>Days</span>
+            <span>PT bonus</span>
+            <span>Action</span>
+          </div>
+          <div className="wealth-dual-table-body">
+            {orderRows.map((row) => (
+              <div className="wealth-dual-table-row" role="row" key={row.id}>
+                <div>
+                  <strong>{row.targetPrice.toLocaleString(undefined, { minimumFractionDigits: activePair.referencePrice > 1000 ? 2 : 4, maximumFractionDigits: activePair.referencePrice > 1000 ? 2 : 4 })}</strong>
+                  <span className={row.targetPct >= 0 ? 'risk-low' : 'risk-high'}>{row.targetPct >= 0 ? '+' : ''}{row.targetPct.toFixed(2)}%</span>
+                </div>
+                <strong className="risk-low">{formatYieldPercent(row.apr)}</strong>
+                <span>{row.date}</span>
+                <span>{row.days}D</span>
+                <span className="risk-low">+{row.ptReward.toLocaleString()} PT</span>
+                <button
+                  type="button"
+                  className="primary-btn compact wealth-dual-subscribe-btn"
+                  onClick={() => {
+                    setDualCurrencyTargetPct(row.targetPct);
+                    setSettlementDays(row.days);
+                    focusProduct(activeDualProduct.id, { topic: 'flow', categoryId: 'dual' });
+                    handleOpenSubscribeModal(activeDualProduct);
+                  }}
+                  disabled={wealthWalletActionPending}
+                >
+                  Subscribe
+                </button>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="wealth-chart-summary compact">
+        <div className="wealth-dual-board-note">
           <div>
-            <div className="label">Reference</div>
-            <div className="value">{dualCurrencyPair.referencePrice.toLocaleString()}</div>
+            <strong>Not a stablecoin deposit.</strong> {activeDirectionMeta.copy}
           </div>
           <div>
-            <div className="label">Target</div>
-            <div className="value">{dualCurrencyTargetPrice.toLocaleString()}</div>
-          </div>
-          <div>
-            <div className="label">Term reward cap</div>
-            <div className="value risk-medium">{formatYieldPercent(dualCurrencyTermPremiumRate)}</div>
+            <strong>PT reward model.</strong> Bonus PT is APR x days x subscribed PT, capped by the modeled term reward {formatYieldPercent(dualCurrencyTermPremiumRate)}.
           </div>
         </div>
 
-        <DualOutcomeSimulator
-          pair={dualCurrencyPair}
-          direction={dualCurrencyDirection}
-          targetPrice={dualCurrencyTargetPrice}
-          targetPct={dualCurrencyTargetPct}
-          apr={dualCurrencyApr}
-          settlementDays={settlementDays}
-          settlementMovePct={dualCurrencySettlementMovePct}
-          onSettlementMoveChange={setDualCurrencySettlementMovePct}
-        />
+        {surface === 'detail' ? (
+          <DualOutcomeSimulator
+            pair={activePair}
+            direction={dualCurrencyDirection}
+            targetPrice={dualCurrencyTargetPrice}
+            targetPct={dualCurrencyTargetPct}
+            apr={dualCurrencyApr}
+            settlementDays={settlementDays}
+            settlementMovePct={dualCurrencySettlementMovePct}
+            onSettlementMoveChange={setDualCurrencySettlementMovePct}
+          />
+        ) : null}
 
-        <div className="wealth-dual-outcome-grid wealth-dual-outcome-grid-compact">
-          <div className="reason-card">
-            <div className="entry-title">If target is not triggered</div>
-            <div className="entry-copy">
-              Deposit {dualCurrencyExamplePrincipal.toLocaleString()} {dualCurrencyPair.quote}; after {settlementWindowLabel}, keep the original currency and receive about {dualCurrencyExampleReward.toLocaleString()} {dualCurrencyPair.quote} modeled reward.
+        {surface === 'detail' ? (
+          <div className="wealth-dual-outcome-grid wealth-dual-outcome-grid-compact">
+            <div className="reason-card">
+              <div className="entry-title">If target is not triggered</div>
+              <div className="entry-copy">
+                Subscribe {dualCurrencyExamplePrincipal.toLocaleString()} PT; after {settlementWindowLabel}, keep the PT principal and receive about {dualCurrencyExampleReward.toLocaleString()} PT modeled reward.
+              </div>
+            </div>
+            <div className="reason-card">
+              <div className="entry-title">If target is triggered</div>
+              <div className="entry-copy">
+                Trigger condition: {dualCurrencyTriggerCopy}. The demo does not deliver real {activePair.base} or {activePair.quote}; it converts the learning result into PT bonus and updates the wallet score path.
+              </div>
+            </div>
+            <div className="reason-card">
+              <div className="entry-title">AI fit for this shelf</div>
+              <div className="entry-copy">
+                {selectedDualCurrencyFit.copy}
+              </div>
             </div>
           </div>
-          <div className="reason-card">
-            <div className="entry-title">If target is triggered</div>
-            <div className="entry-copy">
-              Trigger condition: {dualCurrencyTriggerCopy}. The same example can settle into about {dualCurrencyExampleBaseAmount.toLocaleString()} {dualCurrencyPair.base} at the target price, so the payout asset can change.
-            </div>
-          </div>
-          <div className="reason-card">
-            <div className="entry-title">AI fit for this shelf</div>
-            <div className="entry-copy">
-              {selectedDualCurrencyFit.copy}
-            </div>
-          </div>
-        </div>
+        ) : null}
       </section>
     );
   }
@@ -6881,7 +7243,7 @@ function WealthInner() {
         </div>
 
         <div className="paper-floating-product-leaderboard-copy">
-          The slider is always visible. Product rows are single-click shortcuts into detail; buy, settle, transfer, and pledge stay inside the selected product flow.
+          The timeline starts today and projects each receipt with predicted NAV. Product rows are single-click shortcuts into detail; buy, settle, transfer, and pledge stay inside the selected product flow.
         </div>
 
         <div className="wealth-floating-timeline-body">
@@ -6934,7 +7296,7 @@ function WealthInner() {
                 <div>
                   <div className="product-title">{row.previewOnly ? `Preview: ${row.shortName || row.name}` : row.shortName || row.name}</div>
                   <div className="muted">
-                    {row.settlementLabel} / NAV {row.projectedNav.toFixed(3)} / free {formatShareBalance(row.freeShares, hideBalances)}
+                    {row.settlementLabel} / predicted NAV {row.projectedNav.toFixed(3)} / free {formatShareBalance(row.freeShares, hideBalances)}
                   </div>
                   <div className={`wealth-timeline-lock-note ${row.lockStatus?.isLocked ? 'risk-medium' : 'risk-low'}`}>
                     {row.lockStatus?.isLocked
@@ -7287,7 +7649,7 @@ function WealthInner() {
         title: isCollateralPilotProduct(selectedProduct) ? 'Pledge as route support' : 'Transfer into another sleeve',
         copy: isCollateralPilotProduct(selectedProduct)
           ? 'Pledge locks the receipt and opens a support line that Paper Trading can read for route capacity. It should not inflate Wealth cash or total PT.'
-          : 'Transfer settles this receipt first, then remints the released value into another product receipt.'
+          : 'Transfer settles this receipt first, then records the released value into another product receipt.'
       }
     ];
 
@@ -7493,11 +7855,8 @@ function WealthInner() {
         <div className="product-title" style={{ marginTop: 16 }}>Approve, subscribe, and exit preview</div>
         <FlowPreviewGrid cards={flowPreviewCards} />
 
-        <div className="product-title" style={{ marginTop: 16 }}>Future wallet call preview</div>
-        <ModeledCallGrid cards={modeledCallCards} />
-
         <div className="env-hint">
-          <strong>Token mechanic.</strong> {selectedProduct.shareToken} is treated as the receipt: subscribe mints it, settlement burns or rolls it, and a pledge only opens route support instead of minting extra Wealth cash.
+          <strong>Token mechanic.</strong> {selectedProduct.shareToken} is treated as the receipt record: subscribe creates the record, settlement closes or rolls it, and a pledge only opens route support instead of adding extra Wealth cash.
         </div>
 
         <div className="wealth-contract-grid" style={{ marginTop: 16 }}>
@@ -7642,6 +8001,7 @@ function WealthInner() {
     return (
       <div
         className="wealth-expanded-detail"
+        data-wealth-product-detail={selectedProduct.id}
         ref={(node) => {
           if (node) {
             productDetailRefs.current.set(selectedProduct.id, node);
@@ -7714,6 +8074,7 @@ function WealthInner() {
             {selectedProductLocked ? <div className="wealth-inline-note">{selectedUnlockCopy}</div> : null}
 
             <div className="wealth-detail-stack">
+              {isDualInvestmentProduct(selectedProduct) ? renderDualInvestmentOrderBook({ surface: 'detail' }) : null}
           {selectedDetailTopics.includes('snapshot') ? (
             <div className="paper-mode-card wealth-detail-section">
               <div className="route-highlight wealth-detail-banner">
@@ -8153,6 +8514,11 @@ function WealthInner() {
                   onChange={(event) => setAllocationAmount(Number(event.target.value))}
                 />
               </label>
+              {subscriptionAmountWarning ? (
+                <div className="wealth-inline-note paper-inline-note risk-medium">
+                  <strong>Amount check.</strong> {subscriptionAmountWarning}
+                </div>
+              ) : null}
 
               <div className="wealth-amount-preset-row" aria-label="Quick subscribe amount presets">
                 {subscriptionAmountPresets.map((preset) => (
@@ -8174,11 +8540,11 @@ function WealthInner() {
                   <div className="value">{formatShareBalance(selectedPosition.shares, hideBalances)}</div>
                 </div>
                   <div className="paper-balance-box">
-                    <div className="label">Value @ timeline</div>
+                    <div className="label">Value @ predicted NAV</div>
                     <div className="value">{formatValue(selectedPositionTimelineValue, hideBalances)}</div>
                   </div>
                   <div className="paper-balance-box">
-                    <div className="label">PnL @ timeline</div>
+                    <div className="label">PnL @ predicted NAV</div>
                     <div className={`value ${selectedPositionTimelinePnl >= 0 ? 'risk-low' : 'risk-high'}`}>
                       {formatSignedValue(selectedPositionTimelinePnl, hideBalances)}
                     </div>
@@ -8213,27 +8579,6 @@ function WealthInner() {
                 <span className={`pill ${selectedSettlementPolicy.tone}`}>{selectedSettlementPolicy.label}</span>
               </div>
 
-              <div className="wealth-receipt-badge-strip" aria-label="Receipt lifecycle">
-                <div className={`wealth-receipt-badge ${selectedPosition.shares ? 'active' : ''}`}>
-                  <span className="wealth-receipt-badge-icon">Mint</span>
-                  <div>
-                    <strong>{selectedPosition.shares ? `${selectedProduct.shareToken} receipt active` : `Buy mints ${selectedProduct.shareToken}`}</strong>
-                    <small>
-                      {selectedPosition.shares
-                        ? `${formatShareBalance(selectedPosition.shares, hideBalances)} receipt shares live in this wallet.`
-                        : `${formatShareBalance(estimatedShares, hideBalances)} shares previewed from the subscribe amount.`}
-                    </small>
-                  </div>
-                </div>
-                <div className={`wealth-receipt-badge ${selectedPosition.shares ? 'ready' : ''}`}>
-                  <span className="wealth-receipt-badge-icon">Burn</span>
-                  <div>
-                    <strong>{selectedPosition.shares ? `${settlementActionMeta.label} can burn or roll` : 'Settle waits for a minted receipt'}</strong>
-                    <small>Settlement burns the current receipt, then roll or transfer can mint the next receipt.</small>
-                  </div>
-                </div>
-              </div>
-
               <div className="toolbar wealth-action-toolbar">
                 <button className="primary-btn" onClick={() => handleOpenSubscribeModal()} disabled={selectedProductLocked || wealthWalletActionPending}>
                   {wealthWalletActionPending ? 'Await wallet' : 'Review and buy'}
@@ -8246,21 +8591,34 @@ function WealthInner() {
               <div className="paper-mode-card wealth-subpanel-card" style={{ marginTop: 16 }}>
                 <div className="product-title">Settlement desk</div>
 
-                <label className="wealth-field">
-                  Days forward: {settlementWindowLabel} / suggested {suggestedSettlementDays}D
-                  <input
-                    type="range"
-                    min="0"
-                    max="730"
-                    step="30"
-                    value={settlementDays}
-                    onChange={(event) => setSettlementDays(Number(event.target.value))}
-                  />
-                  <div className="paper-range-suggestion-row">
-                    <span className="paper-range-suggestion-marker" style={{ left: `${(suggestedSettlementDays / 730) * 100}%` }} />
-                    <span>Suggested {suggestedSettlementDays}D</span>
-                  </div>
-                </label>
+                <div className="wealth-timeline-date-card">
+                  <span>Settlement timeline</span>
+                  <strong>{settlementWindowLabel}</strong>
+                  <em>{settlementPredictionCopy}</em>
+                </div>
+
+                <div className="wealth-amount-preset-row compact" aria-label="Settlement timeline presets">
+                  <button
+                    type="button"
+                    className={`ghost-btn compact ${settlementDaysNumber === 0 ? 'active-toggle' : ''}`}
+                    onClick={() => setSettlementDays(0)}
+                  >
+                    Today
+                  </button>
+                  <button type="button" className="ghost-btn compact" onClick={() => setSettlementDays(suggestedSettlementDays)}>
+                    Suggested {suggestedSettlementDays}D
+                  </button>
+                  {[30, 90, 180, 365].map((days) => (
+                    <button
+                      key={days}
+                      type="button"
+                      className={`ghost-btn compact ${settlementDaysNumber === days ? 'active-toggle' : ''}`}
+                      onClick={() => setSettlementDays(days)}
+                    >
+                      {days}D
+                    </button>
+                  ))}
+                </div>
 
                 <div className="wealth-compare-toolbar">
                   <label>
@@ -8292,11 +8650,11 @@ function WealthInner() {
 
                 <div className="wealth-chart-summary">
                   <div>
-                    <div className="label">Projected NAV</div>
+                    <div className="label">Predicted NAV</div>
                     <div className="value">{settlementProjectedNav.toFixed(3)}</div>
                   </div>
                   <div>
-                    <div className="label">Free receipt value</div>
+                    <div className="label">Value @ predicted NAV</div>
                     <div className="value">{formatValue(settlementPreviewValue, hideBalances)}</div>
                   </div>
                   <div>
@@ -8623,7 +8981,7 @@ function WealthInner() {
               <div>
                 {t(
                   `Demo wealth cash starts at ${WEALTH_STARTING_CASH.toLocaleString()} PT. Each completed onboarding milestone adds ${WEALTH_MILESTONE_BONUS.toLocaleString()} PT of preview buying power.`,
-                  `理财页演示资金从 ${WEALTH_STARTING_CASH.toLocaleString()} PT 开始，每完成一个 onboarding 里程碑会额外增加 ${WEALTH_MILESTONE_BONUS.toLocaleString()} PT 的预览购买力。`
+                  `理财页演示资金从 ${WEALTH_STARTING_CASH.toLocaleString()} PT 开始，每完成一�?onboarding 里程碑会额外增加 ${WEALTH_MILESTONE_BONUS.toLocaleString()} PT 的预览购买力。`
                 )}
               </div>
               <div>
@@ -8640,7 +8998,7 @@ function WealthInner() {
 
           <button className={`ghost-btn wallet-header-btn ${isConnected ? 'connected' : ''}`.trim()} onClick={() => setWalletModalOpen(true)} disabled={isPending}>
             {isConnected
-              ? t(`Wallet connected ${walletDisplayName}`, `钱包已连接 ${walletDisplayName}`)
+              ? t(`Wallet connected ${walletDisplayName}`, `钱包已连�?${walletDisplayName}`)
               : isPending
                 ? t('Connecting to MetaMask...', '正在连接 MetaMask...')
                 : t('Connect MetaMask', '连接 MetaMask')}
@@ -8648,7 +9006,7 @@ function WealthInner() {
 
           <div className="header-admin-row">
             <button className="ghost-btn compact" onClick={openDeveloperMode}>
-              {t('Developer mode', '开发者模式')}
+              {t('Developer mode', '开发者模�?)}
             </button>
           </div>
         </div>
@@ -8662,32 +9020,32 @@ function WealthInner() {
         <section className="card wealth-hero-card">
           <div className="section-head">
             <div>
-              <div className="eyebrow">{t('Goal-first wealth', '目标优先的理财')}</div>
-              <h1 style={{ maxWidth: 980 }}>{t('Build a clearer RWA and wealth shelf before asking users to trade.', '在要求用户交易之前，先把 RWA 与理财货架讲清楚。')}</h1>
+              <div className="eyebrow">{t('Goal-first wealth', '目标优先的理�?)}</div>
+              <h1 style={{ maxWidth: 980 }}>{t('Build a clearer RWA and wealth shelf before asking users to trade.', '在要求用户交易之前，先把 RWA 与理财货架讲清楚�?)}</h1>
             </div>
 
             <button className="ghost-btn compact" onClick={() => setHideBalances((current) => !current)}>
-              {hideBalances ? t('Show values', '显示数值') : t('Hide values', '隐藏数值')}
+              {hideBalances ? t('Show values', '显示数�?) : t('Hide values', '隐藏数�?)}
             </button>
           </div>
 
           <p className="hero-text">
             {t(
               'This wealth page borrows the shelf logic from large CEX earn products, but adapts it for RiskLens: explain the underlying, show the source of return, attach wallet-native share receipts, and gate advanced products with risk and quiz progress instead of hiding everything behind strategy jargon.',
-              '这个理财页借鉴了大型 CEX Earn 产品的货架逻辑，但针对 RiskLens 做了改造：解释底层资产、展示收益来源、附上钱包原生份额凭证，并用风险与测验进度来解锁高级产品，而不是把一切都藏在策略术语后面。'
+              '这个理财页借鉴了大�?CEX Earn 产品的货架逻辑，但针对 RiskLens 做了改造：解释底层资产、展示收益来源、附上钱包原生份额凭证，并用风险与测验进度来解锁高级产品，而不是把一切都藏在策略术语后面�?
             )}
           </p>
 
           <div className="hero-points">
-            <span className="pill risk-low">{t('Goal-based routing', '基于目标的路由')}</span>
-            <span className="pill risk-low">{t('RWA and quant shelves', 'RWA 与量化货架')}</span>
-            <span className="pill risk-medium">{t('AI diligence layer', 'AI 尽调层')}</span>
-            <span className="pill risk-medium">{t('Tokenized share receipts', '代币化份额凭证')}</span>
+            <span className="pill risk-low">{t('Goal-based routing', '基于目标的路�?)}</span>
+            <span className="pill risk-low">{t('RWA and quant shelves', 'RWA 与量化货�?)}</span>
+            <span className="pill risk-medium">{t('AI diligence layer', 'AI 尽调�?)}</span>
+            <span className="pill risk-medium">{t('Tokenized share receipts', '代币化份额凭�?)}</span>
           </div>
 
           <div className="wealth-summary-grid">
             <div className="wealth-summary-block">
-              <div className="label">{t('Total invested', '总投入')}</div>
+              <div className="label">{t('Total invested', '总投�?)}</div>
               <div className="wealth-summary-value">{formatValue(totalInvested, hideBalances)}</div>
               <div className="muted">Approx. {formatValue(totalInvested, hideBalances, 0, ' PT')}</div>
               <div className="wealth-summary-mini">
@@ -8703,7 +9061,7 @@ function WealthInner() {
             </div>
 
             <div className="wealth-summary-block">
-              <div className="label">{t('Total return', '总收益')}</div>
+              <div className="label">{t('Total return', '总收�?)}</div>
               <div className={`wealth-summary-value ${totalYield >= 0 ? 'risk-low' : 'risk-high'}`}>
                 {formatSignedValue(totalYield, hideBalances)}
               </div>
@@ -8953,13 +9311,11 @@ function WealthInner() {
             </div>
             <span className="pill risk-low">Open detail</span>
           </button>
-
-          {dualInvestmentShelfActive ? renderDualCurrencyGuideSection() : null}
         </section>
 
         {renderPositionsSection()}
 
-        <section className="wealth-shelf-shell">
+        <section className={`wealth-shelf-shell ${dualInvestmentShelfActive ? 'dual-focused' : ''}`}>
           <div className="wealth-shelf-main">
             <section className="card">
               <div className="section-head">
@@ -9019,6 +9375,7 @@ function WealthInner() {
                           }
                         }}
                         className={`product-card wealth-product-card ${expandedProductId === product.id ? 'active' : ''}`}
+                        data-wealth-product-card={product.id}
                         onClick={() => handleToggleProduct(product.id)}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter' || event.key === ' ') {
@@ -9197,6 +9554,7 @@ function WealthInner() {
                   {selectedProductLocked ? <div className="wealth-inline-note">{selectedUnlockCopy}</div> : null}
 
                   <div className="wealth-detail-stack">
+                    {isDualInvestmentProduct(selectedProduct) ? renderDualInvestmentOrderBook({ surface: 'detail' }) : null}
                     {selectedDetailTopics.includes('snapshot') ? (
                       <div className="paper-mode-card wealth-detail-section">
                         <div className="route-highlight wealth-detail-banner">
@@ -9456,7 +9814,7 @@ function WealthInner() {
                         <div className="starter-reasons" style={{ marginTop: 14 }}>
                           <div className="reason-card">
                             <div className="entry-title">Buy one receipt</div>
-                            <div className="entry-copy">Subscribe PT into the product. The demo mints {selectedProduct.shareToken} locally so the wallet has something concrete to track.</div>
+                            <div className="entry-copy">Subscribe PT into the product. The demo records {selectedProduct.shareToken} locally so the wallet has something concrete to track.</div>
                           </div>
                           <div className="reason-card">
                             <div className="entry-title">Settle</div>
@@ -9597,7 +9955,7 @@ function WealthInner() {
                               </div>
                               <div className="reason-card">
                                 <div className="entry-title">Roll or transfer</div>
-                                <div className="entry-copy">Roll restarts the same receipt with a refreshed basis; transfer settles this receipt first, then remints another one.</div>
+                                <div className="entry-copy">Roll restarts the same receipt with a refreshed basis; transfer settles this receipt first, then records another one.</div>
                               </div>
                               <div className="reason-card">
                                 <div className="entry-title">{isCollateralPilotProduct(selectedProduct) ? 'Pledge as route support' : 'Lifecycle preview'}</div>
@@ -9612,11 +9970,8 @@ function WealthInner() {
                             <div className="product-title" style={{ marginTop: 16 }}>Approve, subscribe, and exit preview</div>
                             <FlowPreviewGrid cards={flowPreviewCards} />
 
-                            <div className="product-title" style={{ marginTop: 16 }}>Future wallet call preview</div>
-                            <ModeledCallGrid cards={modeledCallCards} />
-
                             <div className="env-hint">
-                              <strong>Token mechanic.</strong> {selectedProduct.shareToken} is treated as the receipt: subscribe mints it, settlement burns or rolls it, and a pledge only opens route support instead of minting extra Wealth cash.
+                              <strong>Token mechanic.</strong> {selectedProduct.shareToken} is treated as the receipt record: subscribe creates the record, settlement closes or rolls it, and a pledge only opens route support instead of adding extra Wealth cash.
                             </div>
 
                             <div className="wealth-contract-grid" style={{ marginTop: 16 }}>
@@ -9859,6 +10214,7 @@ function WealthInner() {
             {dualInvestmentShelfActive ? renderDualInvestmentShelfSection() : null}
           </div>
 
+          {!dualInvestmentShelfActive ? (
           <aside className="card wealth-ranking-sidebar">
             <div className="section-head">
               <div>
@@ -9900,6 +10256,7 @@ function WealthInner() {
               Click any row to open that product and jump straight to its detail section. The sidebar stays focused on the top 10 instead of paging through the shelf.
             </div>
           </aside>
+          ) : null}
         </section>
 
         {renderCompareSection()}
@@ -9915,8 +10272,7 @@ function WealthInner() {
         aria-hidden={!showBackToTop}
         tabIndex={showBackToTop ? 0 : -1}
       >
-        ↑
-      </button>
+        �?      </button>
 
       <SubscriptionPreviewModal
         open={isSubscribeModalOpen}
@@ -9935,6 +10291,10 @@ function WealthInner() {
         lifecycleNotes={lifecycleNotes}
         onchainMechanics={onchainMechanics}
         vaultSnapshot={wealthVaultSnapshot}
+        receiptProofMode={subscriptionReceiptProofMode}
+        onReceiptProofModeChange={setSubscriptionReceiptProofMode}
+        receiptTokenId={getWealthReceiptTokenId(selectedProduct)}
+        receiptUnitAmount={toVaultUnitAmount(Number(allocationAmount)).toString()}
         isSigning={wealthWalletActionPending}
         onClose={() => setIsSubscribeModalOpen(false)}
         onConfirm={handleConfirmSubscribe}

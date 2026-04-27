@@ -10696,6 +10696,96 @@ label {
   background: rgba(164,255,47,0.08);
 }
 
+.wealth-receipt-proof-panel {
+  margin-top: 14px;
+}
+
+.wealth-proof-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.wealth-proof-choice {
+  display: grid;
+  gap: 7px;
+  min-height: 118px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(9,16,28,0.62);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.wealth-proof-choice.active {
+  border-color: rgba(164,255,47,0.42);
+  background: rgba(164,255,47,0.09);
+}
+
+.wealth-proof-choice:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.wealth-proof-choice span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.wealth-proof-choice strong {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.24;
+}
+
+.wealth-proof-choice em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+.wealth-proof-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.wealth-proof-detail-grid > div {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.16);
+}
+
+.wealth-proof-detail-grid span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.wealth-proof-detail-grid strong {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.wealth-proof-detail-grid em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
 .wealth-settlement-policy-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -10705,6 +10795,36 @@ label {
   border: 1px solid rgba(255,255,255,0.09);
   border-radius: 16px;
   background: rgba(255,255,255,0.03);
+}
+
+.wealth-timeline-date-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(164, 255, 47, 0.18);
+  background: rgba(164, 255, 47, 0.055);
+}
+
+.wealth-timeline-date-card span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.wealth-timeline-date-card strong {
+  color: var(--text);
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.wealth-timeline-date-card em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.45;
 }
 
 .wealth-lifecycle-map {
@@ -10973,6 +11093,8 @@ label {
   .wealth-dual-sim-strip,
   .wealth-dual-action-row,
   .wealth-receipt-badge-strip,
+  .wealth-proof-choice-grid,
+  .wealth-proof-detail-grid,
   .wealth-position-metric-grid {
     grid-template-columns: 1fr;
   }
@@ -11029,5 +11151,256 @@ label {
 
   .home-briefing-pill-row {
     justify-content: flex-start;
+  }
+}
+
+/* Dual Investment PT order board */
+.wealth-shelf-shell.dual-focused {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.wealth-dual-order-card {
+  border-color: rgba(255, 159, 64, 0.32);
+  background:
+    radial-gradient(circle at top right, rgba(255, 159, 64, 0.18), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(12, 20, 31, 0.92));
+}
+
+.wealth-dual-order-card.detail {
+  margin-top: 0;
+}
+
+.wealth-dual-pair-panel,
+.wealth-dual-direction-panel,
+.wealth-dual-filter-panel,
+.wealth-dual-pt-quote-card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.wealth-dual-pair-row,
+.wealth-dual-direction-row,
+.wealth-dual-filter-row,
+.wealth-dual-price-row,
+.wealth-dual-condition-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.wealth-dual-pair-chip,
+.wealth-dual-direction-chip,
+.wealth-dual-filter-chip,
+.wealth-dual-refresh-btn,
+.wealth-dual-max-btn {
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.wealth-dual-pair-chip,
+.wealth-dual-direction-chip,
+.wealth-dual-filter-chip {
+  padding: 12px 18px;
+}
+
+.wealth-dual-pair-chip.active,
+.wealth-dual-direction-chip.active,
+.wealth-dual-filter-chip.active,
+.wealth-dual-condition-row .active,
+.wealth-dual-subscribe-btn,
+.wealth-dual-max-btn {
+  border-color: rgba(255, 157, 52, 0.78);
+  background: linear-gradient(135deg, #ff9d34, #ffbf5e);
+  color: #121820;
+}
+
+.wealth-dual-coin-stack {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 8px;
+}
+
+.wealth-dual-coin-stack i,
+.wealth-dual-coin {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  background: #ff9d34;
+  color: #101722;
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 900;
+  box-shadow: 0 0 0 2px rgba(15, 23, 34, 0.9);
+}
+
+.wealth-dual-coin-stack i + i {
+  margin-left: -8px;
+  background: #4f8dff;
+  color: #fff;
+}
+
+.wealth-dual-price-row input {
+  min-width: min(260px, 100%);
+  flex: 1 1 220px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(5, 10, 18, 0.5);
+  color: var(--text-primary);
+  padding: 13px 16px;
+  font-weight: 700;
+}
+
+.wealth-dual-current-price {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-secondary);
+}
+
+.wealth-dual-current-price strong {
+  color: var(--text-primary);
+}
+
+.wealth-dual-warning {
+  color: #ffb347;
+  font-weight: 800;
+}
+
+.wealth-dual-pt-quote-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 250, 244, 0.96));
+  color: #17202b;
+}
+
+.wealth-dual-pt-quote-card .eyebrow,
+.wealth-dual-pt-quote-card p,
+.wealth-dual-pt-quote-card span,
+.wealth-dual-pt-quote-card em {
+  color: #6b7583;
+}
+
+.wealth-dual-pt-quote-card h3,
+.wealth-dual-pt-quote-card strong,
+.wealth-dual-pt-quote-card .product-title {
+  color: #17202b;
+}
+
+.wealth-dual-pt-quote-title,
+.wealth-dual-quote-metrics,
+.wealth-dual-subscribe-field,
+.wealth-dual-return-preview,
+.wealth-dual-receive-card {
+  display: grid;
+  gap: 10px;
+}
+
+.wealth-dual-pt-quote-title {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.wealth-dual-quote-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.wealth-dual-quote-metrics strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 1.35rem;
+}
+
+.wealth-dual-subscribe-field {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(23, 32, 43, 0.1);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.wealth-dual-max-btn {
+  padding: 8px 12px;
+}
+
+.wealth-dual-return-preview {
+  margin-top: 16px;
+}
+
+.wealth-dual-condition-row span {
+  flex: 1 1 180px;
+  padding: 13px 16px;
+  border-radius: 14px;
+  background: rgba(255, 157, 52, 0.16);
+  color: #ff8a1d;
+  font-weight: 900;
+  text-align: center;
+}
+
+.wealth-dual-receive-card {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid rgba(23, 32, 43, 0.08);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.wealth-dual-receive-card strong {
+  font-size: 1.55rem;
+}
+
+.wealth-dual-table {
+  display: grid;
+  gap: 12px;
+}
+
+.wealth-dual-table-head,
+.wealth-dual-table-row {
+  display: grid;
+  grid-template-columns: 1.15fr 0.75fr 1fr 0.55fr 0.9fr 0.85fr;
+  gap: 14px;
+  align-items: center;
+}
+
+.wealth-dual-table-head {
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  font-weight: 900;
+  padding: 0 14px;
+}
+
+.wealth-dual-table-row {
+  padding: 16px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.wealth-dual-table-row > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+@media (max-width: 960px) {
+  .wealth-dual-quote-metrics,
+  .wealth-dual-subscribe-field,
+  .wealth-dual-table-head,
+  .wealth-dual-table-row {
+    grid-template-columns: 1fr;
+  }
+
+  .wealth-dual-current-price {
+    margin-left: 0;
   }
 }
