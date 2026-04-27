@@ -15,7 +15,7 @@ export interface MSXQuestBadge$Type {
   readonly deployedLinkReferences: {};
   readonly immutableReferences: {};
   readonly inputSourceName: "project/contracts/MSXQuestBadge.sol";
-  readonly buildInfoId: "solc-0_8_24-ea6a928c01a9c7975190e1e0565bdb7c6f742391";
+  readonly buildInfoId: "solc-0_8_24-d2ce9c50d750522b7c6f4a9670760dc2cfd2d3a9";
 };
 
 import "hardhat/types/artifacts";

@@ -156,45 +156,6 @@
       ],
       "stateMutability": "view",
       "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "tokenId",
-          "type": "uint256"
-        }
-      ],
-      "name": "wealthReceiptCredentialOf",
-      "outputs": [
-        {
-          "internalType": "address",
-          "name": "account",
-          "type": "address"
-        },
-        {
-          "internalType": "uint16",
-          "name": "productId",
-          "type": "uint16"
-        },
-        {
-          "internalType": "uint256",
-          "name": "assetAmount",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "shareAmount",
-          "type": "uint256"
-        },
-        {
-          "internalType": "string",
-          "name": "purchasedOn",
-          "type": "string"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
     }
   ],
   "bytecode": "0x",
@@ -203,5 +164,5 @@
   "deployedLinkReferences": {},
   "immutableReferences": {},
   "inputSourceName": "project/contracts/MSXCollectibleRenderer.sol",
-  "buildInfoId": "solc-0_8_24-ea6a928c01a9c7975190e1e0565bdb7c6f742391"
+  "buildInfoId": "solc-0_8_24-d2ce9c50d750522b7c6f4a9670760dc2cfd2d3a9"
 }

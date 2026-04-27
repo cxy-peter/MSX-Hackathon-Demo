@@ -22,17 +22,6 @@ interface IMSXUnifiedDemoHubMetadataSource {
             uint256 maxDrawdownBps
         );
 
-    function wealthReceiptCredentialOf(uint256 tokenId)
-        external
-        view
-        returns (
-            address account,
-            uint16 productId,
-            uint256 assetAmount,
-            uint256 shareAmount,
-            string memory purchasedOn
-        );
-
     function wealthPledgeCredentialOf(uint256 tokenId)
         external
         view
@@ -126,10 +115,6 @@ contract MSXCollectibleRenderer {
             (, string memory category,,,,) = hub.paperLeaderboardCredentialOf(tokenId);
             return string(abi.encodePacked("RiskLens Paper Credential - ", category));
         }
-        if (_isWealthReceiptCredentialToken(tokenId)) {
-            (, uint16 productId,,,) = hub.wealthReceiptCredentialOf(tokenId);
-            return string(abi.encodePacked("RiskLens Receipt Credential - ", _receiptLabel(productId)));
-        }
         if (_isWealthPledgeCredentialToken(tokenId)) {
             (, uint16 productId,,) = hub.wealthPledgeCredentialOf(tokenId);
             return string(abi.encodePacked("RiskLens Pledge Credential - ", _receiptLabel(productId)));
@@ -153,22 +138,6 @@ contract MSXCollectibleRenderer {
                     _formatBps(maxDrawdownBps),
                     ". Submitted ",
                     submittedOn,
-                    "."
-                )
-            );
-        }
-        if (_isWealthReceiptCredentialToken(tokenId)) {
-            (, uint16 productId,,, string memory purchasedOn) = hub.wealthReceiptCredentialOf(tokenId);
-            return string(
-                abi.encodePacked(
-                    "Wallet receipt credential for ",
-                    _receiptLabel(productId),
-                    ". Product type: ",
-                    _receiptType(productId),
-                    ". Maturity: ",
-                    _receiptMaturity(productId),
-                    ". Purchased ",
-                    purchasedOn,
                     "."
                 )
             );
@@ -226,24 +195,6 @@ contract MSXCollectibleRenderer {
                     '"},{"trait_type":"Max drawdown","value":"',
                     _formatBps(maxDrawdownBps),
                     '"}'
-                )
-            );
-        }
-        if (_isWealthReceiptCredentialToken(tokenId)) {
-            (, uint16 productId, uint256 assetAmount,, string memory purchasedOn) = hub.wealthReceiptCredentialOf(tokenId);
-            return string(
-                abi.encodePacked(
-                    ',{"trait_type":"Product","value":"',
-                    _receiptLabel(productId),
-                    '"},{"trait_type":"Product type","value":"',
-                    _receiptType(productId),
-                    '"},{"trait_type":"Maturity","value":"',
-                    _receiptMaturity(productId),
-                    '"},{"trait_type":"Purchase date","value":"',
-                    purchasedOn,
-                    '"},{"trait_type":"Amount","value":"',
-                    assetAmount.toString(),
-                    ' PT"}'
                 )
             );
         }
@@ -312,7 +263,6 @@ contract MSXCollectibleRenderer {
 
     function _tokenSurface(uint256 tokenId) internal view returns (string memory) {
         if (_isPaperLeaderboardCredentialToken(tokenId)) return "Paper Leaderboard Credential";
-        if (_isWealthReceiptCredentialToken(tokenId)) return "Wealth Receipt Credential";
         if (_isWealthPledgeCredentialToken(tokenId)) return "Wealth Pledge Credential";
         if (_isSupportedHomeToken(tokenId)) return "Home";
         if (_isSupportedWealthTaskToken(tokenId)) return "Wealth Task";
@@ -323,7 +273,6 @@ contract MSXCollectibleRenderer {
 
     function _tokenKicker(uint256 tokenId) internal view returns (string memory) {
         if (_isPaperLeaderboardCredentialToken(tokenId)) return "RiskLens Leaderboard";
-        if (_isWealthReceiptCredentialToken(tokenId)) return "RiskLens Wealth Receipt";
         if (_isWealthPledgeCredentialToken(tokenId)) return "RiskLens Wealth Pledge";
         if (_isSupportedWealthReceiptToken(tokenId)) return "RiskLens Wealth Receipt";
         if (_isSupportedWealthTaskToken(tokenId)) return "RiskLens Wealth";
@@ -333,7 +282,6 @@ contract MSXCollectibleRenderer {
 
     function _tokenLineOne(uint256 tokenId) internal view returns (string memory) {
         if (_isPaperLeaderboardCredentialToken(tokenId)) return "LEADERBOARD";
-        if (_isWealthReceiptCredentialToken(tokenId)) return "WEALTH";
         if (_isWealthPledgeCredentialToken(tokenId)) return "PLEDGE";
         if (_isSupportedWealthReceiptToken(tokenId)) return "WEALTH";
         if (_isSupportedWealthTaskToken(tokenId)) return "WEALTH";
@@ -343,10 +291,6 @@ contract MSXCollectibleRenderer {
 
     function _tokenLineTwo(uint256 tokenId) internal view returns (string memory) {
         if (_isPaperLeaderboardCredentialToken(tokenId)) return "CREDENTIAL";
-        if (_isWealthReceiptCredentialToken(tokenId)) {
-            (, uint16 productId,,,) = hub.wealthReceiptCredentialOf(tokenId);
-            return string(abi.encodePacked("RECEIPT #", uint256(productId).toString()));
-        }
         if (_isWealthPledgeCredentialToken(tokenId)) return "SUPPORT LINE";
         if (_isSupportedWealthReceiptToken(tokenId)) {
             return string(abi.encodePacked("RECEIPT #", uint256(_receiptProductId(tokenId)).toString()));
@@ -380,10 +324,6 @@ contract MSXCollectibleRenderer {
             (,,, int256 returnBps, uint256 winRateBps,) = hub.paperLeaderboardCredentialOf(tokenId);
             return string(abi.encodePacked(_formatBps(winRateBps), " win / ", _formatSignedBps(returnBps), " return"));
         }
-        if (_isWealthReceiptCredentialToken(tokenId)) {
-            (, uint16 productId,,,) = hub.wealthReceiptCredentialOf(tokenId);
-            return _receiptType(productId);
-        }
         if (_isWealthPledgeCredentialToken(tokenId)) {
             (, uint16 productId,,) = hub.wealthPledgeCredentialOf(tokenId);
             return _receiptLabel(productId);
@@ -399,10 +339,6 @@ contract MSXCollectibleRenderer {
             (,,,,, uint256 maxDrawdownBps) = hub.paperLeaderboardCredentialOf(tokenId);
             return string(abi.encodePacked(_formatBps(maxDrawdownBps), " max DD"));
         }
-        if (_isWealthReceiptCredentialToken(tokenId)) {
-            (, uint16 productId,,,) = hub.wealthReceiptCredentialOf(tokenId);
-            return string(abi.encodePacked("Maturity: ", _receiptMaturity(productId)));
-        }
         if (_isWealthPledgeCredentialToken(tokenId)) {
             (,, uint256 supportAmount,) = hub.wealthPledgeCredentialOf(tokenId);
             return string(abi.encodePacked(supportAmount.toString(), " PT support"));
@@ -417,10 +353,6 @@ contract MSXCollectibleRenderer {
         if (_isPaperLeaderboardCredentialToken(tokenId)) {
             (, string memory category,,,,) = hub.paperLeaderboardCredentialOf(tokenId);
             return string(abi.encodePacked("Category: ", category));
-        }
-        if (_isWealthReceiptCredentialToken(tokenId)) {
-            (, uint16 productId,,,) = hub.wealthReceiptCredentialOf(tokenId);
-            return string(abi.encodePacked("Product: ", _receiptLabel(productId)));
         }
         if (_isWealthPledgeCredentialToken(tokenId)) {
             (, uint16 productId,,) = hub.wealthPledgeCredentialOf(tokenId);
@@ -439,10 +371,6 @@ contract MSXCollectibleRenderer {
         if (_isPaperLeaderboardCredentialToken(tokenId)) {
             (,, string memory submittedOn,,,) = hub.paperLeaderboardCredentialOf(tokenId);
             return string(abi.encodePacked("Date: ", submittedOn));
-        }
-        if (_isWealthReceiptCredentialToken(tokenId)) {
-            (,,,, string memory purchasedOn) = hub.wealthReceiptCredentialOf(tokenId);
-            return string(abi.encodePacked("Purchase: ", purchasedOn));
         }
         if (_isWealthPledgeCredentialToken(tokenId)) {
             (,,, string memory pledgedOn) = hub.wealthPledgeCredentialOf(tokenId);
@@ -464,10 +392,6 @@ contract MSXCollectibleRenderer {
                     _formatBps(maxDrawdownBps)
                 )
             );
-        }
-        if (_isWealthReceiptCredentialToken(tokenId)) {
-            (,, uint256 assetAmount,,) = hub.wealthReceiptCredentialOf(tokenId);
-            return string(abi.encodePacked("Amount: ", assetAmount.toString(), " PT"));
         }
         if (_isWealthPledgeCredentialToken(tokenId)) {
             (,, uint256 supportAmount,) = hub.wealthPledgeCredentialOf(tokenId);
@@ -502,7 +426,6 @@ contract MSXCollectibleRenderer {
 
     function _accent(uint256 tokenId) internal view returns (string memory) {
         if (_isPaperLeaderboardCredentialToken(tokenId)) return "#76A9FF";
-        if (_isWealthReceiptCredentialToken(tokenId)) return "#C8FF6B";
         if (_isWealthPledgeCredentialToken(tokenId)) return "#FFD166";
         if (_isSupportedWealthReceiptToken(tokenId)) return "#C8FF6B";
         if (_isSupportedWealthTaskToken(tokenId)) return "#49D6C4";
@@ -514,11 +437,6 @@ contract MSXCollectibleRenderer {
 
     function _isPaperLeaderboardCredentialToken(uint256 tokenId) internal view returns (bool) {
         (address account,,,,,) = hub.paperLeaderboardCredentialOf(tokenId);
-        return account != address(0);
-    }
-
-    function _isWealthReceiptCredentialToken(uint256 tokenId) internal view returns (bool) {
-        (address account,,,,) = hub.wealthReceiptCredentialOf(tokenId);
         return account != address(0);
     }
 

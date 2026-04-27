@@ -36,12 +36,10 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
     uint256 private constant WEALTH_TOKEN_OFFSET = 200;
     uint256 private constant WEALTH_RECEIPT_TOKEN_OFFSET = 1000;
     uint256 private constant PAPER_LEADERBOARD_CREDENTIAL_TOKEN_OFFSET = 100_000;
-    uint256 private constant WEALTH_RECEIPT_CREDENTIAL_TOKEN_OFFSET = 200_000;
     uint256 private constant WEALTH_PLEDGE_CREDENTIAL_TOKEN_OFFSET = 300_000;
 
     uint256 public nextHomeTokenId = 1;
     uint256 public nextPaperLeaderboardCredentialTokenId = PAPER_LEADERBOARD_CREDENTIAL_TOKEN_OFFSET + 1;
-    uint256 public nextWealthReceiptCredentialTokenId = WEALTH_RECEIPT_CREDENTIAL_TOKEN_OFFSET + 1;
     uint256 public nextWealthPledgeCredentialTokenId = WEALTH_PLEDGE_CREDENTIAL_TOKEN_OFFSET + 1;
     uint256 public navBps = BPS;
     uint256 public minSubscription = 500;
@@ -96,14 +94,6 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
         uint256 maxDrawdownBps;
     }
 
-    struct WealthReceiptCredential {
-        address account;
-        uint16 productId;
-        uint256 assetAmount;
-        uint256 shareAmount;
-        string purchasedOn;
-    }
-
     struct WealthPledgeCredential {
         address account;
         uint16 productId;
@@ -114,7 +104,6 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
     mapping(address => mapping(uint16 => WealthReceiptProof)) public wealthReceiptProofOf;
     mapping(uint256 => PaperLeaderboardCredential) public paperLeaderboardCredentialOf;
     mapping(address => mapping(uint256 => uint256)) public paperLeaderboardCredentialMintsByDay;
-    mapping(uint256 => WealthReceiptCredential) public wealthReceiptCredentialOf;
     mapping(uint256 => WealthPledgeCredential) public wealthPledgeCredentialOf;
 
     event TaskBadgeMinted(address indexed recipient, uint8 indexed badgeType, uint256 indexed tokenId);
@@ -169,13 +158,6 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
         int256 returnBps,
         uint256 winRateBps,
         uint256 maxDrawdownBps
-    );
-    event WealthReceiptCredentialMinted(
-        address indexed account,
-        uint16 indexed productId,
-        uint256 indexed tokenId,
-        uint256 assetAmount,
-        string purchasedOn
     );
     event WealthPledgeCredentialMinted(
         address indexed account,
@@ -423,7 +405,7 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
         string calldata purchasedOn
     ) external returns (uint256 shareAmount) {
         require(bytes(purchasedOn).length > 0, "Missing purchase date");
-        return _subscribeProductWithDate(msg.sender, productId, assetAmount, purchasedOn);
+        return _subscribeProduct(msg.sender, productId, assetAmount);
     }
 
     function redeem(uint256 shareAmount) external returns (uint256 assetAmount) {
@@ -459,15 +441,6 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
         uint16 productId,
         uint256 assetAmount
     ) internal returns (uint256 shareAmount) {
-        return _subscribeProductWithDate(investor, productId, assetAmount, block.timestamp.toString());
-    }
-
-    function _subscribeProductWithDate(
-        address investor,
-        uint16 productId,
-        uint256 assetAmount,
-        string memory purchasedOn
-    ) internal returns (uint256 shareAmount) {
         require(!subscriptionsPaused, "Subscriptions paused");
         require(productId > 0, "Invalid product");
         require(assetAmount >= minSubscription, "Below minimum");
@@ -484,19 +457,8 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
             purchasedAt: block.timestamp,
             productDetail: _receiptDetail(productId)
         });
-        uint256 receiptCredentialTokenId = nextWealthReceiptCredentialTokenId;
-        nextWealthReceiptCredentialTokenId += 1;
-        wealthReceiptCredentialOf[receiptCredentialTokenId] = WealthReceiptCredential({
-            account: investor,
-            productId: productId,
-            assetAmount: assetAmount,
-            shareAmount: shareAmount,
-            purchasedOn: purchasedOn
-        });
-        _mint(investor, receiptCredentialTokenId, 1, "");
         emit Subscribed(investor, assetAmount, shareAmount);
         emit ProductReceiptSubscribed(investor, productId, tokenId, assetAmount, shareAmount, block.timestamp, _receiptDetail(productId));
-        emit WealthReceiptCredentialMinted(investor, productId, receiptCredentialTokenId, assetAmount, purchasedOn);
     }
 
     function _redeemProduct(
