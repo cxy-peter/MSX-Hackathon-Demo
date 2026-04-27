@@ -513,7 +513,9 @@ function listProfileBackupAccounts() {
     });
   }
 
-  return accounts.sort((left, right) => profileBackupTimeValue(right.signedAt) - profileBackupTimeValue(left.signedAt));
+  return accounts
+    .sort((left, right) => profileBackupTimeValue(right.signedAt) - profileBackupTimeValue(left.signedAt))
+    .slice(0, 3);
 }
 
 function clampNumber(value, min, max) {
@@ -1069,7 +1071,7 @@ function WalletModal({
                 </div>
                 <div className="profile-backup-history">
                   <label>
-                    Historical account login
+                    Historical account login (latest 3)
                     <select
                       value={selectedProfileBackupAddress}
                       onChange={(event) => onSelectedProfileBackupAddressChange?.(event.target.value)}
@@ -1087,7 +1089,7 @@ function WalletModal({
                     </select>
                   </label>
                   <div className="profile-backup-history-copy">
-                    Backup stores demo state only. It does not recover keys, so MetaMask still needs to connect this session.
+                    Backup is a local signed snapshot now. Its content hash is decentralized-storage-ready for IPFS, Filecoin, Ceramic, or Arweave, but it is not uploaded automatically.
                   </div>
                   <button
                     type="button"

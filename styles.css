@@ -571,6 +571,9 @@ select option {
   background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(151, 169, 191, 0.55) rgba(255,255,255,0.04);
 }
 
 .wallet-modal-main {
@@ -581,7 +584,37 @@ select option {
   gap: 12px;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
   padding-right: 18px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(151, 169, 191, 0.55) rgba(255,255,255,0.04);
+}
+
+.wallet-modal-sidebar::-webkit-scrollbar,
+.wallet-modal-main::-webkit-scrollbar,
+.developer-modal::-webkit-scrollbar {
+  width: 10px;
+}
+
+.wallet-modal-sidebar::-webkit-scrollbar-track,
+.wallet-modal-main::-webkit-scrollbar-track,
+.developer-modal::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.04);
+  border-radius: 999px;
+}
+
+.wallet-modal-sidebar::-webkit-scrollbar-thumb,
+.wallet-modal-main::-webkit-scrollbar-thumb,
+.developer-modal::-webkit-scrollbar-thumb {
+  background: rgba(151, 169, 191, 0.5);
+  border-radius: 999px;
+  border: 2px solid rgba(10, 16, 28, 0.86);
+}
+
+.wallet-modal-sidebar::-webkit-scrollbar-thumb:hover,
+.wallet-modal-main::-webkit-scrollbar-thumb:hover,
+.developer-modal::-webkit-scrollbar-thumb:hover {
+  background: rgba(151, 169, 191, 0.7);
 }
 
 .wallet-modal-main-connected {
@@ -1434,6 +1467,12 @@ label {
 
 .developer-modal {
   max-width: 1120px;
+  max-height: min(820px, calc(100vh - 24px));
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(151, 169, 191, 0.55) rgba(255,255,255,0.04);
 }
 
 .developer-modal-main {
@@ -1452,6 +1491,91 @@ label {
 .developer-auth-form {
   display: grid;
   gap: 14px;
+}
+
+.developer-account-selector {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.035);
+}
+
+.developer-account-selector-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.developer-account-selector-head strong {
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.developer-account-list {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.developer-account-button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 76px;
+  padding: 10px 11px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.16);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.developer-account-button.active {
+  border-color: rgba(164,255,47,0.42);
+  background: rgba(164,255,47,0.09);
+}
+
+.developer-account-button span,
+.developer-account-button strong,
+.developer-account-button em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.developer-account-button span {
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.developer-account-button strong {
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.developer-account-button em,
+.developer-account-empty {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.developer-account-empty {
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(0,0,0,0.14);
 }
 
 .developer-auth-form label {
@@ -1608,6 +1732,10 @@ label {
   border: 1px solid rgba(255,255,255,0.08);
   background: rgba(255,255,255,0.03);
   text-align: left;
+}
+
+.developer-storage-hint {
+  width: 100%;
 }
 
 .developer-profile-grid {
@@ -2594,7 +2722,7 @@ label {
   min-height: 0;
   align-content: start;
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .wealth-product-card:focus-visible {
@@ -3745,7 +3873,8 @@ label {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 0;
+  align-self: stretch;
 }
 
 .wealth-mini-stat,
@@ -3757,8 +3886,9 @@ label {
 
 .wealth-mini-stat {
   display: grid;
-  gap: 4px;
-  padding: 10px 12px;
+  gap: 3px;
+  padding: 8px 10px;
+  align-content: center;
 }
 
 .wealth-period-picker {
@@ -3791,7 +3921,7 @@ label {
 }
 
 .wealth-nav-period-strip.compact {
-  margin-top: 8px;
+  margin-top: 0;
 }
 
 .wealth-nav-chip {
@@ -3806,15 +3936,17 @@ label {
 }
 
 .wealth-product-card .wealth-nav-period-strip.compact {
-  grid-template-columns: repeat(4, minmax(58px, max-content));
-  gap: 8px;
+  grid-template-columns: repeat(4, minmax(44px, 1fr));
+  gap: 6px;
 }
 
 .wealth-product-card .wealth-nav-chip.compact {
-  min-width: 58px;
-  padding: 7px 9px;
-  border-radius: 12px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 7px;
+  border-radius: 10px;
   text-align: center;
+  place-items: center;
 }
 
 .wealth-product-card .wealth-nav-chip.compact span {
@@ -3822,7 +3954,21 @@ label {
 }
 
 .wealth-product-card .wealth-nav-chip.compact strong {
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.wealth-card-performance-row {
+  display: grid;
+  grid-template-columns: minmax(188px, 0.9fr) minmax(0, 1.1fr);
+  gap: 10px;
+  align-items: stretch;
+  margin-top: 2px;
+}
+
+.wealth-card-performance-row .wealth-nav-period-strip,
+.wealth-card-performance-row .wealth-card-period-row {
+  min-width: 0;
 }
 
 .wealth-product-actions {
@@ -9902,13 +10048,13 @@ label {
 }
 
 .wealth-product-card .wealth-product-fact-grid {
-  gap: 8px;
+  gap: 7px;
 }
 
 .wealth-product-card .wealth-product-fact-card {
   position: relative;
-  min-height: 82px;
-  padding: 10px 34px 10px 10px;
+  min-height: 70px;
+  padding: 9px 32px 9px 10px;
   align-content: start;
 }
 
@@ -10004,7 +10150,7 @@ label {
   .wealth-floating-timeline-toggle { display: none; }
   h1 { font-size: 42px; }
   .guide-next { grid-template-columns: 1fr; }
-  .wallet-modal { grid-template-columns: 1fr; min-height: auto; }
+  .wallet-modal { grid-template-columns: 1fr; min-height: auto; overflow-y: auto; }
   .wallet-modal-sidebar { border-right: none; border-bottom: 1px solid rgba(22, 28, 40, 0.08); }
   .unlock-box-grid { grid-template-columns: 1fr; }
   .mint-action-box { flex-direction: column; align-items: stretch; }
@@ -10030,6 +10176,7 @@ label {
   .wealth-compare-legend,
   .wealth-period-grid { grid-template-columns: 1fr; }
   .wealth-leader-summary-grid { grid-template-columns: 1fr; }
+  .wealth-card-performance-row { grid-template-columns: 1fr; }
   .wealth-card-period-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .home-briefing-fact-grid { grid-template-columns: 1fr; }
   .home-surface-hero { flex-direction: column; }

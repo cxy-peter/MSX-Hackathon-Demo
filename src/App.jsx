@@ -725,6 +725,7 @@ const MIN_PAPER_TRADE = 100;
 const DEV_MODE_USERNAME = 'msxadmin';
 const DEV_MODE_PASSWORD = 'msx2026';
 const ANALYTICS_STORAGE_KEY = 'msx-click-analytics';
+const WALLET_BEHAVIOR_STORAGE_PREFIX = 'msx-wallet-behavior-';
 const DEV_AUTH_STORAGE_KEY = 'msx-dev-auth';
 const ADMIN_UNLOCK_STORAGE_PREFIX = 'msx-admin-unlock';
 const PROFILE_BACKUP_POINTER_STORAGE_PREFIX = 'msx-wallet-profile-pointer-';
@@ -820,7 +821,83 @@ function listProfileBackupAccounts() {
     });
   }
 
-  return accounts.sort((left, right) => profileBackupTimeValue(right.signedAt) - profileBackupTimeValue(left.signedAt));
+  return accounts
+    .sort((left, right) => profileBackupTimeValue(right.signedAt) - profileBackupTimeValue(left.signedAt))
+    .slice(0, 3);
+}
+
+function getAddressFromStoredKey(key, prefix) {
+  if (!key || !key.startsWith(prefix)) return '';
+  const address = key.slice(prefix.length).replace(/^-/, '').toLowerCase();
+  return isAddress(address) ? address : '';
+}
+
+function listDeveloperWalletAccounts({ connectedAddress = '', analyticsSnapshot = {}, backupAccounts = [] } = {}) {
+  if (typeof window === 'undefined' || !window.localStorage) return [];
+
+  const candidates = new Map();
+  const addCandidate = (address, source) => {
+    const normalized = normalizeAnalyticsWalletAddress(address);
+    if (!normalized) return;
+    const current = candidates.get(normalized) || { address: normalized, sources: new Set() };
+    current.sources.add(source);
+    candidates.set(normalized, current);
+  };
+
+  addCandidate(connectedAddress, 'connected');
+  backupAccounts.forEach((account) => addCandidate(account.address, 'signed backup'));
+
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    addCandidate(getAddressFromStoredKey(key, 'msx-wallet-profile-'), 'profile');
+    addCandidate(getAddressFromStoredKey(key, PROFILE_BACKUP_POINTER_STORAGE_PREFIX), 'signed backup');
+    addCandidate(getAddressFromStoredKey(key, 'msx-progress-'), 'home progress');
+    addCandidate(getAddressFromStoredKey(key, 'msx-paper-state-'), 'home PT');
+    addCandidate(getAddressFromStoredKey(key, 'msx-paper-replay-state-'), 'paper replay');
+    addCandidate(getAddressFromStoredKey(key, 'msx-wealth-state-'), 'wealth');
+    addCandidate(getAddressFromStoredKey(key, 'msx-wallet-nickname-'), 'nickname');
+    addCandidate(getAddressFromStoredKey(key, WALLET_BEHAVIOR_STORAGE_PREFIX), 'behavior');
+  }
+
+  return Array.from(candidates.values())
+    .map((candidate) => {
+      const profile = readWalletProfile(candidate.address);
+      const summary = getWalletProfileSummary(profile);
+      const pointerRecord = readStorageJson(getWalletProfilePointerKey(candidate.address), null);
+      const behavior = getWalletAnalyticsBucket(analyticsSnapshot, candidate.address);
+      const nickname = readWalletNickname(candidate.address);
+      const latestAt = [
+        profile.updatedAt,
+        behavior.updatedAt,
+        pointerRecord?.createdAt,
+        pointerRecord?.profile?.storage?.signedAt
+      ]
+        .map((value) => profileBackupTimeValue(value))
+        .filter(Boolean)
+        .sort((left, right) => right - left)[0] || 0;
+
+      return {
+        address: candidate.address,
+        label: getWalletDisplayName(candidate.address, nickname, shortAddress),
+        shortLabel: shortAddress(candidate.address),
+        sources: Array.from(candidate.sources),
+        summary,
+        behavior,
+        storageMode: profile.storage?.mode || (behavior.contentHash ? 'behavior-snapshot-local' : 'local-first'),
+        contentHash: pointerRecord?.contentHash || profile.storage?.contentHash || '',
+        cidReadyPointer: pointerRecord?.cidReadyPointer || profile.storage?.cidReadyPointer || '',
+        behaviorContentHash: behavior.contentHash || '',
+        behaviorPointer: behavior.cidReadyPointer || '',
+        signedAt: pointerRecord?.createdAt || profile.storage?.signedAt || '',
+        updatedAt: latestAt
+      };
+    })
+    .sort((left, right) => {
+      const connectedKey = normalizeAnalyticsWalletAddress(connectedAddress);
+      if (connectedKey && left.address === connectedKey) return -1;
+      if (connectedKey && right.address === connectedKey) return 1;
+      return right.updatedAt - left.updatedAt;
+    });
 }
 
 function deleteStorageKey(key) {
@@ -828,11 +905,139 @@ function deleteStorageKey(key) {
   window.localStorage.removeItem(key);
 }
 
-function trackAnalytics(eventName) {
+function getWalletBehaviorStorageKey(address) {
+  return address ? `${WALLET_BEHAVIOR_STORAGE_PREFIX}${address.toLowerCase()}` : '';
+}
+
+function normalizeAnalyticsWalletAddress(address) {
+  const normalized = String(address || '').toLowerCase();
+  return isAddress(normalized) ? normalized : '';
+}
+
+function createEmptyWalletAnalytics() {
+  return {
+    total: 0,
+    events: {},
+    updatedAt: '',
+    firstSeenAt: '',
+    contentHash: '',
+    cidReadyPointer: ''
+  };
+}
+
+function createLocalContentHash(value) {
+  const text = typeof value === 'string' ? value : JSON.stringify(value || {});
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash << 5) - hash + text.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(16).padStart(64, '0');
+}
+
+function buildWalletBehaviorStorageRecord(address, bucket = {}) {
+  const normalized = normalizeAnalyticsWalletAddress(address);
+  const body = {
+    kind: 'msx.wallet-behavior.v1',
+    address: normalized,
+    updatedAt: bucket.updatedAt || new Date().toISOString(),
+    behavior: {
+      total: Number(bucket.total || 0),
+      events: bucket.events || {},
+      firstSeenAt: bucket.firstSeenAt || '',
+      updatedAt: bucket.updatedAt || ''
+    }
+  };
+  const contentHash = createLocalContentHash(body);
+  return {
+    ...body,
+    contentHash,
+    cidReadyPointer: `local:${contentHash}`,
+    storagePlan: {
+      local: getWalletBehaviorStorageKey(normalized),
+      recommendedNetwork: 'Pin this JSON to IPFS/Filecoin or Arweave when the demo is connected to a storage endpoint.'
+    }
+  };
+}
+
+function getWalletAnalyticsBucket(snapshot = {}, address = '') {
+  const normalized = normalizeAnalyticsWalletAddress(address);
+  if (!normalized) return createEmptyWalletAnalytics();
+  const storedRecord = readStorageJson(getWalletBehaviorStorageKey(normalized), {});
+  const storedBucket = storedRecord.behavior || storedRecord;
+  const snapshotBucket = snapshot.byWallet?.[normalized] || {};
+
+  return {
+    ...createEmptyWalletAnalytics(),
+    ...storedBucket,
+    ...snapshotBucket,
+    contentHash: snapshotBucket.contentHash || storedRecord.contentHash || storedBucket.contentHash || '',
+    cidReadyPointer: snapshotBucket.cidReadyPointer || storedRecord.cidReadyPointer || storedBucket.cidReadyPointer || ''
+  };
+}
+
+function writeWalletAnalyticsBucket(address, bucket) {
+  const normalized = normalizeAnalyticsWalletAddress(address);
+  if (!normalized) return null;
+
+  const behaviorRecord = buildWalletBehaviorStorageRecord(normalized, bucket);
+  const bucketWithPointer = {
+    ...behaviorRecord.behavior,
+    contentHash: behaviorRecord.contentHash,
+    cidReadyPointer: behaviorRecord.cidReadyPointer
+  };
+
+  writeStorageJson(getWalletBehaviorStorageKey(normalized), behaviorRecord);
+
+  const existingProfile = readStorageJson(getWalletProfileKey(normalized), null);
+  if (existingProfile) {
+    writeWalletProfilePatch(normalized, {
+      storage: {
+        ...(existingProfile.storage || {}),
+        developerAnalytics: {
+          total: bucketWithPointer.total,
+          events: bucketWithPointer.events,
+          updatedAt: bucketWithPointer.updatedAt,
+          contentHash: behaviorRecord.contentHash,
+          cidReadyPointer: behaviorRecord.cidReadyPointer,
+          localKey: getWalletBehaviorStorageKey(normalized)
+        }
+      }
+    });
+  }
+
+  return bucketWithPointer;
+}
+
+function trackAnalytics(eventName, walletAddress = '') {
   if (typeof window === 'undefined') return { total: 0, events: {} };
   const next = readStorageJson(ANALYTICS_STORAGE_KEY, { total: 0, events: {} });
+  const normalizedWallet = normalizeAnalyticsWalletAddress(walletAddress);
+  const trackedAt = new Date().toISOString();
+
   next.total += 1;
   next.events[eventName] = (next.events[eventName] || 0) + 1;
+  next.updatedAt = trackedAt;
+
+  if (normalizedWallet) {
+    const currentBucket = getWalletAnalyticsBucket(next, normalizedWallet);
+    const nextBucket = {
+      ...currentBucket,
+      total: Number(currentBucket.total || 0) + 1,
+      events: {
+        ...(currentBucket.events || {}),
+        [eventName]: Number(currentBucket.events?.[eventName] || 0) + 1
+      },
+      firstSeenAt: currentBucket.firstSeenAt || trackedAt,
+      updatedAt: trackedAt
+    };
+    const storedBucket = writeWalletAnalyticsBucket(normalizedWallet, nextBucket) || nextBucket;
+    next.byWallet = {
+      ...(next.byWallet || {}),
+      [normalizedWallet]: storedBucket
+    };
+  }
+
   writeStorageJson(ANALYTICS_STORAGE_KEY, next);
   return next;
 }
@@ -986,7 +1191,7 @@ function ProfileBackupCard({
         </div>
         <div className="profile-backup-history">
           <label>
-            Historical account login
+            Historical account login (latest 3)
             <select
               value={selectedProfileBackupAddress}
               onChange={(event) => onSelectedProfileBackupAddressChange?.(event.target.value)}
@@ -1004,7 +1209,7 @@ function ProfileBackupCard({
             </select>
           </label>
           <div className="profile-backup-history-copy">
-            Backup can remember a prior demo account, but MetaMask still has to connect that same wallet before recovery.
+            Backup is a local signed snapshot now. Its content hash is decentralized-storage-ready for IPFS, Filecoin, Ceramic, or Arweave, but it is not uploaded automatically.
           </div>
           <button
             type="button"
@@ -1283,6 +1488,7 @@ export default function App() {
   const [devModeNotice, setDevModeNotice] = useState('');
   const [devModePtAmount, setDevModePtAmount] = useState(String(DEFAULT_ADMIN_PT_AMOUNT));
   const [developerDetailTopic, setDeveloperDetailTopic] = useState('clicks');
+  const [developerWalletAddress, setDeveloperWalletAddress] = useState('');
   const [analyticsSnapshot, setAnalyticsSnapshot] = useState({ total: 0, events: {} });
   const [profileBackupStatus, setProfileBackupStatus] = useState('');
   const [selectedProfileBackupAddress, setSelectedProfileBackupAddress] = useState('');
@@ -1417,6 +1623,26 @@ export default function App() {
     () => listProfileBackupAccounts(),
     [connectedAddressKey, profileBackupStatus, walletNickname]
   );
+  const developerWalletAccounts = useMemo(
+    () =>
+      listDeveloperWalletAccounts({
+        connectedAddress: address,
+        analyticsSnapshot,
+        backupAccounts: profileBackupAccounts
+      }),
+    [
+      address,
+      analyticsSnapshot,
+      connectedAddressKey,
+      developerSessionDirty,
+      devModeOpen,
+      paperBalanceSnapshot,
+      paperTradesCompleted,
+      profileBackupAccounts,
+      profileBackupStatus,
+      walletNickname
+    ]
+  );
 
   useEffect(() => {
     if (isConnected) {
@@ -1466,6 +1692,25 @@ export default function App() {
       return currentWalletBackup?.address || profileBackupAccounts[0].address;
     });
   }, [connectedAddressKey, profileBackupAccounts]);
+
+  useEffect(() => {
+    if (!developerWalletAccounts.length) {
+      setDeveloperWalletAddress('');
+      return;
+    }
+
+    setDeveloperWalletAddress((current) => {
+      const normalizedCurrent = normalizeAnalyticsWalletAddress(current);
+      if (normalizedCurrent && developerWalletAccounts.some((account) => account.address === normalizedCurrent)) {
+        return normalizedCurrent;
+      }
+
+      const connectedAccount = connectedAddressKey
+        ? developerWalletAccounts.find((account) => account.address === connectedAddressKey)
+        : null;
+      return connectedAccount?.address || developerWalletAccounts[0].address;
+    });
+  }, [connectedAddressKey, developerWalletAccounts]);
 
   useEffect(() => {
     setMintRecipient('');
@@ -1731,6 +1976,7 @@ export default function App() {
   const riskTaskBadgeMinted = Boolean(address) && Boolean(riskBadgeOnchain);
   const quizTaskBadgeMinted = Boolean(address) && Boolean(quizBadgeOnchain);
   const paperTaskBadgeMinted = Boolean(address) && Boolean(paperBadgeOnchain);
+  const paperTradeCompleted = paperTradesCompleted > 0;
   const walletBadgeChecking = Boolean(address) && badgeContractConfigured && !walletBadgeFetched && walletBadgeFetching;
   const welcomeBadgeChecking = Boolean(address) && badgeContractConfigured && !welcomeBadgeFetched && welcomeBadgeFetching;
   const riskBadgeChecking = Boolean(address) && badgeContractConfigured && !riskBadgeFetched && riskBadgeFetching;
@@ -1824,8 +2070,79 @@ export default function App() {
         .filter((row) => ['Wallet onboarding', 'Quest wall', 'Risk review', 'Quiz', 'Wallet collectible actions'].includes(row.section))
         .reduce((sum, row) => sum + row.count, 0) / analyticsSnapshot.total
     : 0;
-  const completedBoxes = [walletQuestDone, welcomeGateCompleted, riskTaskDone].filter(Boolean).length;
-  const paperTradingUnlocked = completedBoxes >= 3 || fastTrackPaper;
+  const selectedDeveloperWalletAccount =
+    developerWalletAccounts.find((account) => account.address === developerWalletAddress) || developerWalletAccounts[0] || null;
+  const selectedDeveloperWalletAddress = selectedDeveloperWalletAccount?.address || '';
+  const selectedDeveloperWalletProfile = useMemo(
+    () => (selectedDeveloperWalletAddress ? readWalletProfile(selectedDeveloperWalletAddress) : null),
+    [
+      analyticsSnapshot,
+      developerSessionDirty,
+      devModeOpen,
+      paperBalanceSnapshot,
+      paperTradesCompleted,
+      profileBackupStatus,
+      selectedDeveloperWalletAddress
+    ]
+  );
+  const selectedDeveloperWalletSummary = selectedDeveloperWalletProfile
+    ? getWalletProfileSummary(selectedDeveloperWalletProfile)
+    : null;
+  const selectedDeveloperProgress = selectedDeveloperWalletProfile?.progress || {};
+  const selectedDeveloperBehavior = selectedDeveloperWalletAddress
+    ? getWalletAnalyticsBucket(analyticsSnapshot, selectedDeveloperWalletAddress)
+    : createEmptyWalletAnalytics();
+  const selectedDeveloperBackupRecord = selectedDeveloperWalletAddress
+    ? readStorageJson(getWalletProfilePointerKey(selectedDeveloperWalletAddress), null)
+    : null;
+  const selectedDeveloperRiskCount = sanitizeViewedRiskCards(selectedDeveloperProgress.viewedRiskCards).length;
+  const selectedDeveloperTaskCount = selectedDeveloperWalletSummary?.completedMilestones || 0;
+  const selectedDeveloperPaperUnlocked = Boolean(
+    selectedDeveloperProgress.paperUnlocked ||
+      selectedDeveloperProgress.paperTradesCompleted > 0 ||
+      selectedDeveloperTaskCount > 0
+  );
+  const selectedDeveloperOrigin =
+    selectedDeveloperWalletProfile?.home?.userOrigin || selectedDeveloperProgress.userOrigin || 'unknown';
+  const selectedDeveloperIntent =
+    selectedDeveloperOrigin === 'web3'
+      ? selectedDeveloperWalletProfile?.home?.web3Intent || selectedDeveloperProgress.web3Intent || 'learn'
+      : selectedDeveloperWalletProfile?.home?.web2Intent || selectedDeveloperProgress.web2Intent || 'trading';
+  const selectedDeveloperTopBehavior = Object.entries(selectedDeveloperBehavior.events || {})
+    .sort((left, right) => right[1] - left[1])
+    .map(([name, count]) => ({ ...getAnalyticsEventMeta(name), name, count }))[0] || null;
+  const selectedDeveloperDesignTitle =
+    selectedDeveloperOrigin === 'web3' && selectedDeveloperIntent === 'skip'
+      ? 'Fast replay preference'
+      : selectedDeveloperOrigin === 'web3'
+        ? 'Wallet-native learning preference'
+        : selectedDeveloperIntent === 'wealth'
+          ? 'Cautious wealth-first preference'
+          : 'Guided task-first preference';
+  const selectedDeveloperBehaviorPointer = selectedDeveloperBehavior.contentHash || '';
+  const selectedDeveloperStorageMode =
+    selectedDeveloperBackupRecord?.remote?.ok || selectedDeveloperBackupRecord?.remote?.cid || selectedDeveloperBackupRecord?.remote?.url
+      ? 'Signed remote pointer'
+      : selectedDeveloperWalletSummary?.contentHash
+        ? 'Signed content-addressed local'
+        : selectedDeveloperBehaviorPointer
+          ? 'Behavior content-addressed local'
+          : selectedDeveloperWalletSummary?.storageMode || 'Local-first';
+  const selectedDeveloperWalletDisplayName = selectedDeveloperWalletAccount?.label || (
+    selectedDeveloperWalletAddress ? shortAddress(selectedDeveloperWalletAddress) : 'No wallet selected'
+  );
+  const completedTaskCount = [
+    walletQuestDone,
+    welcomeGateCompleted,
+    riskTaskDone,
+    quizTaskDone,
+    paperTradeCompleted,
+    walletTaskBadgeMinted,
+    riskTaskBadgeMinted,
+    quizTaskBadgeMinted,
+    paperTaskBadgeMinted
+  ].filter(Boolean).length;
+  const paperTradingUnlocked = completedTaskCount > 0 || fastTrackPaper;
   const paperTradingLockedByTutorial = !paperTradingUnlocked;
   const walletLearningProfile = !isConnected
     ? {
@@ -1843,18 +2160,40 @@ export default function App() {
             copy: 'This wallet already understands ownership, return source, and disclosure well enough to move beyond pure reserve products.'
           }
         : {
+        title: 'Starter wallet',
+        copy: 'This wallet should still be routed toward reserve sleeves, explicit ownership language, and guided explanation before strategy-heavy products.'
+      };
+  const selectedDeveloperWalletLearningProfile = !selectedDeveloperWalletAddress
+    ? {
+        title: 'No wallet selected',
+        copy: 'Select a connected or previously saved wallet on the left to inspect its profile, behavior, storage pointer, and design preference.'
+      }
+    : selectedDeveloperPaperUnlocked || selectedDeveloperTaskCount > 1 || selectedDeveloperBehavior.total > 2
+      ? {
+          title: 'Replay-ready wallet',
+          copy: 'This wallet has enough task or behavior history to enter replay. The profile below is read from that wallet address, not just the currently connected account.'
+        }
+      : selectedDeveloperProgress.quizCompleted || selectedDeveloperRiskCount >= RISK_REVIEW_REQUIRED
+        ? {
+            title: 'Builder wallet',
+            copy: 'This wallet has learning progress but still benefits from clearer product framing and goal-first routing.'
+          }
+        : {
             title: 'Starter wallet',
-            copy: 'This wallet should still be routed toward reserve sleeves, explicit ownership language, and guided explanation before strategy-heavy products.'
+            copy: 'This wallet has little recorded behavior, so the safest design route is guided tasks, reserve products, and explicit ownership language.'
           };
   const developerWalletSummaryRows = [
-    { label: 'Wallet stage', value: walletLearningProfile.title },
-    { label: 'Risk briefings', value: `${riskReviewProgress}/${RISK_REVIEW_REQUIRED}` },
-    { label: 'Checkpoint answers', value: `${riskCheckpointCorrectCount} correct` },
-    { label: 'Quiz status', value: quizTaskDone ? 'Passed' : 'Open' },
-    { label: 'Paper unlock', value: paperTradingUnlocked ? 'Unlocked' : 'Locked' },
-    { label: 'Admin override', value: adminUnlockedForCurrentAccount ? 'Enabled' : 'Off' },
-    { label: 'PT available', value: `${walletProfileSummary.availablePT.toLocaleString()} PT` },
-    { label: 'Backup', value: profileBackupConfigured ? 'Signed snapshot ready' : 'No signed snapshot' }
+    { label: 'Wallet stage', value: selectedDeveloperWalletLearningProfile.title },
+    { label: 'Account', value: selectedDeveloperWalletAddress ? shortAddress(selectedDeveloperWalletAddress) : 'None' },
+    { label: 'Behavior events', value: `${Number(selectedDeveloperBehavior.total || 0)} tracked` },
+    { label: 'Risk briefings', value: `${Math.min(selectedDeveloperRiskCount, RISK_REVIEW_REQUIRED)}/${RISK_REVIEW_REQUIRED}` },
+    { label: 'Quiz status', value: selectedDeveloperProgress.quizCompleted ? 'Passed' : 'Open' },
+    { label: 'Paper unlock', value: selectedDeveloperPaperUnlocked ? 'Unlocked' : 'Locked' },
+    { label: 'PT available', value: `${Number(selectedDeveloperWalletSummary?.availablePT || 0).toLocaleString()} PT` },
+    { label: 'Backup', value: selectedDeveloperWalletSummary?.contentHash ? 'Signed snapshot ready' : 'No signed snapshot' },
+    { label: 'Storage mode', value: selectedDeveloperStorageMode },
+    { label: 'Profile pointer', value: selectedDeveloperWalletSummary?.contentHash ? `${selectedDeveloperWalletSummary.contentHash.slice(0, 12)}...` : 'Not signed' },
+    { label: 'Behavior pointer', value: selectedDeveloperBehaviorPointer ? `${selectedDeveloperBehaviorPointer.slice(0, 12)}...` : 'No events yet' }
   ];
   const getDeveloperEventCount = (eventName) => Number(analyticsSnapshot.events?.[eventName] || 0);
   const developerClickthroughTiles = [
@@ -1903,9 +2242,9 @@ export default function App() {
     {
       id: 'profile',
       label: 'Wallet profile',
-      kicker: 'Current wallet',
-      title: walletLearningProfile.title,
-      copy: walletLearningProfile.copy,
+      kicker: selectedDeveloperWalletDisplayName,
+      title: selectedDeveloperWalletLearningProfile.title,
+      copy: selectedDeveloperWalletLearningProfile.copy,
       rows: developerWalletSummaryRows
     },
     {
@@ -1915,22 +2254,23 @@ export default function App() {
       title: 'Unlimited PT edits and full local gate unlock',
       copy: 'When the developer account is signed in, the admin controls below can write the same wallet-linked PT cash and feature override that the older developer panel exposed.',
       rows: [
-        { label: 'Feature override', value: adminUnlockedForCurrentAccount ? 'Already on' : 'Ready', copy: 'Enable onboarding, quiz, paper unlock, and admin override for this wallet.' },
+        { label: 'Feature override', value: adminUnlockedForCurrentAccount ? 'Already on' : 'Ready', copy: 'Enable onboarding, quiz, paper unlock, and admin override for the connected wallet.' },
         { label: 'PT amount box', value: `${Number(devModePtAmount || 0).toLocaleString()} PT`, copy: 'Add to or set the Home and Paper cash stores for the connected account.' },
+        { label: 'Connected write target', value: address ? shortAddress(address) : 'None', copy: 'Inspection can switch accounts on the left; writes still require the currently connected wallet.' },
         { label: 'Exit policy', value: developerSessionDirty ? 'Review changes' : 'Snapshot ready', copy: 'Close can keep changes or roll back the pre-session wallet state.' }
       ]
     },
     {
       id: 'exchange',
-      label: 'Exchange pattern',
-      kicker: 'Design reference',
-      title: 'Exchange-style review buttons',
-      copy: 'Large exchange Earn and wallet pages usually split the experience into portfolio, product shelf, detail, and action confirmation. This panel mirrors that shape so judges can click into the actual module instead of reading a static admin dump.',
+      label: 'Design preference',
+      kicker: selectedDeveloperWalletDisplayName,
+      title: selectedDeveloperDesignTitle,
+      copy: 'This view changes with the selected wallet account. It reads local behavior, task progress, and signed profile metadata so the developer can see which route the product should emphasize for that wallet.',
       rows: [
-        { label: 'Portfolio', value: `${walletProfileSummary.remainingPT.toLocaleString()} PT`, copy: 'Show wallet-level balance, allocation, and progress first.' },
-        { label: 'Earn shelf', value: 'Product lanes', copy: 'Group products by simple earn, advanced earn, structured, and private-market lanes.' },
-        { label: 'Detail page', value: 'Before action', copy: 'Open terms, evidence, lockup, and lifecycle before subscribe or trade.' },
-        { label: 'Action controls', value: devModeAuthed ? 'Unlocked' : 'Login required', copy: 'Keep high-power controls behind a fresh developer-account sign-in.' }
+        { label: 'Arrival mindset', value: selectedDeveloperOrigin === 'unknown' ? 'Unknown' : selectedDeveloperOrigin.toUpperCase(), copy: `Stored intent: ${selectedDeveloperIntent || 'not set'}.` },
+        { label: 'Most common action', value: selectedDeveloperTopBehavior ? selectedDeveloperTopBehavior.label : 'No behavior yet', copy: selectedDeveloperTopBehavior ? `${selectedDeveloperTopBehavior.count} clicks in ${selectedDeveloperTopBehavior.section}.` : 'Actions will appear here after this wallet uses Home routes.' },
+        { label: 'Replay stance', value: selectedDeveloperPaperUnlocked ? 'Open replay' : 'Guide first', copy: selectedDeveloperPaperUnlocked ? 'Paper trading can open because at least one task is complete.' : 'Route through a first task before replay.' },
+        { label: 'Storage read form', value: selectedDeveloperStorageMode, copy: selectedDeveloperWalletSummary?.contentHash ? `Readable profile pointer ${selectedDeveloperWalletSummary.contentHash.slice(0, 12)}...` : selectedDeveloperBehaviorPointer ? `Readable behavior snapshot ${selectedDeveloperBehaviorPointer.slice(0, 12)}...` : 'No storage pointer yet; use this wallet once or sign a profile backup to create a readable record.' }
       ]
     }
   ];
@@ -1955,36 +2295,31 @@ export default function App() {
     !isMinting &&
     !isConfirmingMint &&
     !isSwitchingChain;
-  const paperTradeCompleted = paperTradesCompleted > 0;
   const remainingPaperPrereqs = [
-    walletQuestDone ? null : 'connect wallet',
-    welcomeGateCompleted ? null : badgeContractConfigured ? 'mint welcome collectible' : 'connect wallet',
-    riskTaskDone ? null : 'review product briefings'
+    completedTaskCount > 0 ? null : 'complete any wallet, briefing, quiz, or paper task'
   ].filter(Boolean);
   const paperUnlockChecklist = [
     {
       id: 'wallet',
-      label: 'Wallet connected',
+      label: 'Any wallet task completed',
       done: walletQuestDone,
-      helper: walletQuestDone ? `Connected ${walletDisplayName}` : 'Connect MetaMask before opening paper trading.'
+      helper: walletQuestDone ? `Connected ${walletDisplayName}; paper trading can open without minting.` : 'Connect MetaMask, or complete any other task below.'
+    },
+    {
+      id: 'learn',
+      label: 'Any learning task completed',
+      done: riskTaskDone || quizTaskDone,
+      helper: riskTaskDone || quizTaskDone
+        ? 'A briefing or quiz task is complete, so simulation is unlocked.'
+        : 'Review product briefings or pass the quiz to unlock paper trading.'
     },
     {
       id: 'mint',
-      label: 'Welcome collectible minted',
-      done: welcomeGateCompleted,
-      helper: badgeContractConfigured
-        ? badgeMintCompleted
-          ? 'The welcome collectible is already minted for this wallet.'
-          : 'Finish the Sepolia welcome mint in step 2 first.'
-        : walletQuestDone
-          ? 'Onchain collectible minting is not connected in this deployment, so the demo uses the connected wallet as the gate.'
-          : 'Connect a wallet to continue in demo mode.'
-    },
-    {
-      id: 'risk',
-      label: 'Product briefings reviewed',
-      done: riskTaskDone,
-      helper: riskTaskDone ? 'This wallet already completed the product-briefing prerequisite.' : `Review ${RISK_REVIEW_REQUIRED} product briefings so paper mode opens with product context.`
+      label: 'Mint optional',
+      done: badgeMintCompleted || walletTaskBadgeMinted || riskTaskBadgeMinted || quizTaskBadgeMinted || paperTaskBadgeMinted,
+      helper: badgeMintCompleted || walletTaskBadgeMinted || riskTaskBadgeMinted || quizTaskBadgeMinted || paperTaskBadgeMinted
+        ? 'A collectible exists for this wallet, but it is no longer required for paper access.'
+        : 'Minting remains optional; paper trading opens after any completed task.'
     }
   ];
   const mintChecklist = [
@@ -2101,14 +2436,16 @@ export default function App() {
     {
       id: 'paper',
       title: paperTaskBadgeMinted ? 'Paper trading preview completed' : paperTradingUnlocked ? 'Paper trading preview ready' : 'Paper trading preview',
-      status: paperTaskDone ? 'Completed' : paperTradingUnlocked ? 'Done' : paperBadgeChecking ? 'Checking' : `${completedBoxes}/3 completed`,
+      status: paperTaskDone ? 'Completed' : paperTradingUnlocked ? 'Done' : paperBadgeChecking ? 'Checking' : 'Complete any task',
       reward: '+1000 PT',
       label: quests[4].reward,
-      hint: 'Unlock depends on wallet, welcome mint, and product-briefing review.',
+      hint: paperTradingUnlocked
+        ? 'Unlocked because this wallet has at least one completed task. Minting is optional.'
+        : 'Complete any wallet, briefing, quiz, or paper task to unlock simulation. Minting is optional.',
       coverAccent: 'green',
       coverKicker: 'RiskLens Replay Task',
       coverTitle: 'Paper trading',
-      coverSubtitle: 'Practice with replay mode only after the wallet, welcome collectible, and product briefing path are in place.'
+      coverSubtitle: 'Practice with replay mode after any task is complete; collectibles can still be minted afterward.'
     }
   ];
 
@@ -2222,14 +2559,18 @@ export default function App() {
               ? 'Waiting for Sepolia confirmation'
               : 'Ready to mint on Sepolia';
 
+  function recordAnalytics(eventName) {
+    setAnalyticsSnapshot(trackAnalytics(eventName, address));
+  }
+
   function openWalletModal() {
-    setAnalyticsSnapshot(trackAnalytics('wallet_modal_open'));
+    recordAnalytics('wallet_modal_open');
     setWalletModalOpen(true);
     setWalletError('');
   }
 
   function handleRiskCardSelect(productId) {
-    setAnalyticsSnapshot(trackAnalytics(`risk_card_${productId}`));
+    recordAnalytics(`risk_card_${productId}`);
     setSelectedRiskProduct(productId);
     setViewedRiskCards((current) => (current.includes(productId) ? current : [...current, productId]));
   }
@@ -2259,7 +2600,7 @@ export default function App() {
   }
 
   function handleQuizSubmit() {
-    setAnalyticsSnapshot(trackAnalytics('product_quiz_submit'));
+    recordAnalytics('product_quiz_submit');
     setQuizSubmitted(true);
     if (quizPassed) {
       setQuizCompleted(true);
@@ -2416,7 +2757,7 @@ export default function App() {
   }
 
   function openLearnQuest(questId) {
-    setAnalyticsSnapshot(trackAnalytics(`module_${questId}`));
+    recordAnalytics(`module_${questId}`);
     if (questId === 'wallet' || questId === 'mint') {
       if (activeCoreQuest === questId) {
         setActiveCoreQuest(null);
@@ -2727,7 +3068,7 @@ export default function App() {
 
     try {
       setWalletError('');
-      setAnalyticsSnapshot(trackAnalytics(`badge_mint_${taskKey}`));
+      recordAnalytics(`badge_mint_${taskKey}`);
 
       if (chainId !== SEPOLIA_CHAIN_ID) {
         await switchChainAsync({ chainId: SEPOLIA_CHAIN_ID });
@@ -2994,11 +3335,11 @@ export default function App() {
                 <button className="primary-btn" onClick={openWalletModal}>
                   {t('Connect wallet', '连接钱包')}
                 </button>
-                <a className="secondary-btn" href="#discover" onClick={() => setAnalyticsSnapshot(trackAnalytics('hero_discover_click'))}>
+                <a className="secondary-btn" href="#discover" onClick={() => recordAnalytics('hero_discover_click')}>
                   {t('Explore product lanes', '查看产品路径')}
                 </a>
               </div>
-              <a className="hero-helper-link" href="#route" onClick={() => setAnalyticsSnapshot(trackAnalytics('hero_route_help_click'))}>
+              <a className="hero-helper-link" href="#route" onClick={() => recordAnalytics('hero_route_help_click')}>
                 {t('No wallet? We can help you!', '还没有钱包？我们可以帮你！')}
               </a>
             </div>
@@ -3049,7 +3390,7 @@ export default function App() {
                   <button
                     className={`entry-card origin-choice ${userOrigin === 'web2' ? 'active' : ''}`}
                     onClick={() => {
-                      setAnalyticsSnapshot(trackAnalytics('route_origin_web2'));
+                      recordAnalytics('route_origin_web2');
                       setUserOrigin('web2');
                     }}
                   >
@@ -3059,7 +3400,7 @@ export default function App() {
                   <button
                     className={`entry-card origin-choice ${userOrigin === 'web3' ? 'active' : ''}`}
                     onClick={() => {
-                      setAnalyticsSnapshot(trackAnalytics('route_origin_web3'));
+                      recordAnalytics('route_origin_web3');
                       setUserOrigin('web3');
                     }}
                   >
@@ -3075,7 +3416,7 @@ export default function App() {
                       <button
                         className={`entry-card origin-choice ${web2Intent === 'trading' ? 'active' : ''}`}
                         onClick={() => {
-                          setAnalyticsSnapshot(trackAnalytics('route_web2_trading'));
+                          recordAnalytics('route_web2_trading');
                           setWeb2Intent('trading');
                         }}
                       >
@@ -3085,7 +3426,7 @@ export default function App() {
                       <button
                         className={`entry-card origin-choice ${web2Intent === 'wealth' ? 'active' : ''}`}
                         onClick={() => {
-                          setAnalyticsSnapshot(trackAnalytics('route_web2_wealth'));
+                          recordAnalytics('route_web2_wealth');
                           setWeb2Intent('wealth');
                         }}
                       >
@@ -3101,7 +3442,7 @@ export default function App() {
                       <button
                         className={`entry-card origin-choice ${web3Intent === 'skip' ? 'active' : ''}`}
                         onClick={() => {
-                          setAnalyticsSnapshot(trackAnalytics('route_web3_skip'));
+                          recordAnalytics('route_web3_skip');
                           setWeb3Intent('skip');
                         }}
                       >
@@ -3111,7 +3452,7 @@ export default function App() {
                       <button
                         className={`entry-card origin-choice ${web3Intent === 'learn' ? 'active' : ''}`}
                         onClick={() => {
-                          setAnalyticsSnapshot(trackAnalytics('route_web3_learn'));
+                          recordAnalytics('route_web3_learn');
                           setWeb3Intent('learn');
                         }}
                       >
@@ -3618,38 +3959,38 @@ export default function App() {
                     <div>
                       <div className="product-title">Paper trading preview</div>
                       <div className="muted">
-                        This module should only open after the three prerequisite onboarding tasks are finished. When all three are done, this task can mint its wallet collectible.
+                        This module opens after any task is complete. Minting remains a collectible reward, not the paper-trading gate.
                       </div>
                     </div>
                     <span className={`pill ${paperTaskBadgeMinted ? 'risk-low' : paperTradingUnlocked ? 'risk-low' : 'risk-medium'}`}>
-                      {paperTaskBadgeMinted ? 'Completed' : paperTradingUnlocked ? 'Wait to be minted' : `${completedBoxes}/3 completed`}
+                      {paperTaskBadgeMinted ? 'Completed' : paperTradingUnlocked ? 'Wait to be minted' : 'Complete any task'}
                     </span>
                   </div>
 
-                  <div className="quest-panel-title" style={{ marginTop: 18 }}>Required before paper trading</div>
+                  <div className="quest-panel-title" style={{ marginTop: 18 }}>What unlocks paper trading</div>
                   <div className="checklist-list">
                     {[
                       {
                         id: 'wallet',
-                        label: 'Step 1: Connect wallet',
+                        label: 'Wallet task',
                         done: walletQuestDone,
-                        helper: walletQuestDone ? 'Wallet connection is already finished for this account.' : 'Complete the real MetaMask connection flow first.'
+                        helper: walletQuestDone ? 'Wallet connection is complete, so paper trading is open.' : 'Connect MetaMask, or complete another task.'
+                      },
+                      {
+                        id: 'learn',
+                        label: 'Learning task',
+                        done: riskTaskDone || quizTaskDone,
+                        helper: riskTaskDone || quizTaskDone
+                          ? 'A briefing or quiz task is complete, so paper trading is open.'
+                          : 'Review briefings or pass the quiz as another way to unlock paper trading.'
                       },
                       {
                         id: 'mint',
-                        label: 'Step 2: Mint welcome collectible',
-                        done: welcomeGateCompleted,
-                        helper: welcomeGateCompleted
-                          ? badgeContractConfigured
-                            ? 'The welcome collectible has already been minted on Sepolia.'
-                            : 'This deployment uses the connected wallet as the demo welcome gate.'
-                          : 'Submit the welcome collectible mint before paper trading unlocks.'
-                      },
-                      {
-                        id: 'risk',
-                        label: 'Step 3: Review product briefings',
-                        done: riskTaskDone,
-                        helper: riskTaskDone ? 'The product-briefing review task is already complete for this wallet.' : `Open any ${RISK_REVIEW_REQUIRED} product briefings before opening paper trading.`
+                        label: 'Collectible mint',
+                        done: welcomeGateCompleted || walletTaskBadgeMinted || riskTaskBadgeMinted || quizTaskBadgeMinted || paperTaskBadgeMinted,
+                        helper: welcomeGateCompleted || walletTaskBadgeMinted || riskTaskBadgeMinted || quizTaskBadgeMinted || paperTaskBadgeMinted
+                          ? 'Collectible proof exists, but paper access did not require it.'
+                          : 'Optional after a task is done; no longer required before opening replay.'
                       }
                     ].map((item) => (
                       <div className={`checklist-item ${item.done ? 'done' : ''}`} key={item.id}>
@@ -3666,13 +4007,13 @@ export default function App() {
 
                   <div className="mint-action-box inline-mint-action task-badge-mint-box">
                     <div>
-                      <div className="product-title">Mint paper trading preview collectible</div>
-                      <div className="muted">
-                        {paperTaskBadgeMinted
-                          ? 'This wallet already minted the paper trading preview collectible.'
-                          : paperTradingUnlocked
-                            ? 'All three prerequisite tasks are complete. You can now mint the paper trading preview collectible for this wallet.'
-                            : 'Finish the three prerequisite tasks above first, then mint the paper trading preview collectible.'}
+                        <div className="product-title">Mint paper trading preview collectible</div>
+                        <div className="muted">
+                          {paperTaskBadgeMinted
+                            ? 'This wallet already minted the paper trading preview collectible.'
+                            : paperTradingUnlocked
+                              ? 'At least one task is complete. You can mint the paper trading preview collectible for this wallet.'
+                              : 'Complete any task first, then mint the paper trading preview collectible if you want the onchain reward.'}
                       </div>
                     </div>
                     <div className="mint-status-stack">
@@ -3687,7 +4028,7 @@ export default function App() {
                             ? getMintTaskStatus('paper') || 'Finish current mint first'
                             : paperTradingUnlocked
                               ? 'Mint paper trading collectible'
-                              : 'Finish 3 tasks first'}
+                              : 'Complete any task first'}
                       </button>
                     </div>
                   </div>
@@ -3697,7 +4038,7 @@ export default function App() {
                       <div>
                         <div className="product-title">Open paper trading</div>
                         <div className="muted">
-                          The prerequisite tasks are done, so the simulation page is now unlocked for this wallet.
+                          At least one task is complete, so the simulation page is now unlocked for this wallet.
                         </div>
                       </div>
                       <div className="mint-status-stack">
@@ -3783,7 +4124,7 @@ export default function App() {
               </div>
             </div>
             <div className="toolbar" style={{ marginTop: 14 }}>
-              <a className="primary-btn" href="./wealth.html" onClick={() => setAnalyticsSnapshot(trackAnalytics('wealth_hub_open'))}>Open wealth hub</a>
+              <a className="primary-btn" href="./wealth.html" onClick={() => recordAnalytics('wealth_hub_open')}>Open wealth hub</a>
             </div>
           </section>
 
@@ -3835,23 +4176,23 @@ export default function App() {
                     <div className="entry-title">{riskTaskDone ? 'Product briefings already reviewed' : 'Product briefings still open'}</div>
                     <div className="entry-copy">
                       {riskTaskDone
-                        ? 'This wallet already completed the product-briefing prerequisite, so paper trading can focus on actual simulation instead of first-pass education.'
+                        ? 'This wallet already completed a product-briefing task, so paper trading can focus on actual simulation instead of first-pass education.'
                         : `Finish ${RISK_REVIEW_REQUIRED} product briefings on the homepage first so paper mode opens with product context instead of raw route mechanics.`}
                     </div>
                   </div>
                 </div>
                   <div className="toolbar" style={{ marginTop: 14 }}>
                     {paperTradingUnlocked ? (
-                      <a className="primary-btn" href="./paper-trading.html" onClick={() => setAnalyticsSnapshot(trackAnalytics('paper_trading_page_open'))}>Open replay lab</a>
+                      <a className="primary-btn" href="./paper-trading.html" onClick={() => recordAnalytics('paper_trading_page_open')}>Open replay lab</a>
                     ) : (
-                      <button className="secondary-btn" disabled>Finish wallet tutorial to unlock</button>
+                      <button className="secondary-btn" disabled>Complete any task to unlock</button>
                     )}
                   </div>
                   <div className="mint-action-box inline-mint-action task-badge-mint-box">
                     <div>
                       <div className="product-title">Mint paper trading collectible</div>
                       <div className="muted">
-                        After the three onboarding prerequisites are finished, this paper trading preview can mint its wallet collectible for the current wallet.
+                        After any task is complete, this paper trading preview can mint its wallet collectible for the current wallet.
                       </div>
                     </div>
                     <div className="mint-status-stack">
@@ -3866,13 +4207,13 @@ export default function App() {
                             ? getMintTaskStatus('paper') || 'Finish current mint first'
                             : paperTradingUnlocked
                               ? 'Mint paper collectible'
-                              : 'Finish wallet tutorial first'}
+                              : 'Complete any task first'}
                       </button>
                     </div>
                   </div>
                 {paperTradingLockedByTutorial ? (
                   <div className="paper-lock-note">
-                    Complete the wallet tutorial first. Skip? <a href="./paper-trading.html">Open the preview page</a>.
+                    Complete any task first. Skip? <a href="./paper-trading.html">Open the preview page</a>.
                   </div>
                 ) : null}
               </div>
@@ -3925,6 +4266,34 @@ export default function App() {
               <div className="wallet-install-copy">
                 Inspect click-through activity, wallet state, and local override behavior across the homepage. Close the panel anytime; if you changed live wallet settings in this session, you can keep them or restore the earlier local state on exit.
               </div>
+              {devModeAuthed ? (
+                <div className="developer-account-selector">
+                  <div className="developer-account-selector-head">
+                    <span>Wallet accounts</span>
+                    <strong>{developerWalletAccounts.length}</strong>
+                  </div>
+                  <div className="developer-account-list">
+                    {developerWalletAccounts.length ? (
+                      developerWalletAccounts.map((account) => (
+                        <button
+                          type="button"
+                          key={account.address}
+                          className={`developer-account-button ${developerWalletAddress === account.address ? 'active' : ''}`.trim()}
+                          onClick={() => setDeveloperWalletAddress(account.address)}
+                        >
+                          <span>{account.label}</span>
+                          <strong>{account.shortLabel}</strong>
+                          <em>
+                            {Number(account.behavior?.total || 0)} events / {account.storageMode}
+                          </em>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="developer-account-empty">Connect or recover a wallet to populate this list.</div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
               <button className="secondary-btn" onClick={handleDeveloperModeCloseRequest}>
                 Exit developer mode
               </button>
@@ -4037,11 +4406,19 @@ export default function App() {
                     <div className="section-head compact">
                       <div>
                         <div className="eyebrow">Wallet profile</div>
-                        <h3>{isConnected ? walletDisplayName : 'No wallet connected'}</h3>
+                        <h3>{selectedDeveloperWalletDisplayName}</h3>
                       </div>
-                      <span className="pill risk-low">{walletLearningProfile.title}</span>
+                      <span className="pill risk-low">{selectedDeveloperWalletLearningProfile.title}</span>
                     </div>
-                    <div className="muted">{walletLearningProfile.copy}</div>
+                    <div className="muted">{selectedDeveloperWalletLearningProfile.copy}</div>
+                    <div className="env-hint developer-storage-hint">
+                      <strong>Storage read form:</strong>{' '}
+                      {selectedDeveloperWalletSummary?.contentHash
+                        ? `Signed profile snapshot ${selectedDeveloperWalletSummary.contentHash.slice(0, 16)}... can be read from the local mutable pointer and is CID-ready for IPFS/Filecoin, Ceramic, or Arweave pinning.`
+                        : selectedDeveloperBehaviorPointer
+                          ? `Behavior snapshot ${selectedDeveloperBehaviorPointer.slice(0, 16)}... is written per wallet as a content-addressed local record and can be pinned by a storage endpoint later.`
+                          : 'No signed profile or behavior snapshot yet. Use the wallet once or sign a profile backup to create a content-addressed record for this account.'}
+                    </div>
                     <div className="developer-profile-grid">
                       {developerWalletSummaryRows.map((row) => (
                         <div className="developer-profile-item" key={row.label}>

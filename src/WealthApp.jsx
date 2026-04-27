@@ -1058,7 +1058,9 @@ function listProfileBackupAccounts() {
     });
   }
 
-  return accounts.sort((left, right) => profileBackupTimeValue(right.signedAt) - profileBackupTimeValue(left.signedAt));
+  return accounts
+    .sort((left, right) => profileBackupTimeValue(right.signedAt) - profileBackupTimeValue(left.signedAt))
+    .slice(0, 3);
 }
 
 function MetaMaskIcon({ className = '' }) {
@@ -1234,7 +1236,7 @@ function WealthWalletModal({
                 </div>
                 <div className="profile-backup-history">
                   <label>
-                    Historical account login
+                    Historical account login (latest 3)
                     <select
                       value={selectedProfileBackupAddress}
                       onChange={(event) => onSelectedProfileBackupAddressChange?.(event.target.value)}
@@ -1252,7 +1254,7 @@ function WealthWalletModal({
                     </select>
                   </label>
                   <div className="profile-backup-history-copy">
-                    Backup stores demo state only. It does not recover keys, so MetaMask still needs to connect this session.
+                    Backup is a local signed snapshot now. Its content hash is decentralized-storage-ready for IPFS, Filecoin, Ceramic, or Arweave, but it is not uploaded automatically.
                   </div>
                   <button
                     type="button"
@@ -5120,25 +5122,7 @@ function WealthInner() {
           actionLabel: 'Complete task first',
           actionDisabled: true
         };
-  const selectedWealthTaskClaimSteps = wealthVaultConfigured
-    ? [
-        {
-          label: 'Sepolia vault configured',
-          done: true,
-          copy: `${shortAddress(WEALTH_VAULT_ADDRESS)} / ERC-1155 token #${selectedWealthTaskTokenId}`
-        },
-        {
-          label: 'Task flag read onchain',
-          done: selectedWealthTaskFlagOnchain,
-          copy: 'Reads hasWealthTask(wallet, taskId) from Sepolia.'
-        },
-        {
-          label: 'Wallet collectible owned',
-          done: selectedWealthTaskCollectibleOwned,
-          copy: 'Reads balanceOf(wallet, tokenId) before showing Claimed.'
-        }
-      ]
-    : [];
+  const selectedWealthTaskClaimSteps = [];
   const timelinePreviewRows = useMemo(() => {
     const rows = portfolioRows.length
       ? portfolioRows.map((row) => ({ ...row, previewOnly: false }))
@@ -5787,6 +5771,14 @@ function WealthInner() {
 
   function handleToggleProduct(productId) {
     const product = getProductByIdFrom(liveProducts, productId);
+
+    if (expandedProductId === productId && selectedProductId === productId) {
+      startTransition(() => {
+        setExpandedProductId(null);
+        setPendingScrollProductId(productId);
+      });
+      return;
+    }
 
     focusProduct(productId, {
       topic: 'flow',
@@ -8972,6 +8964,7 @@ function WealthInner() {
             <section className="card">
               <div className="section-head">
                 <div>
+                  <div className="eyebrow">Product shelf</div>
                   <h2>{selectedShelfTitle}</h2>
                   <p className="muted">{selectedShelfSubtitle}</p>
                 </div>
@@ -9035,6 +9028,7 @@ function WealthInner() {
                         }}
                         role="button"
                         tabIndex={0}
+                        aria-expanded={isExpanded}
                       >
                         <div className="product-top">
                           <div>
@@ -9082,32 +9076,34 @@ function WealthInner() {
                           </div>
                         </div>
 
-                        <div className="wealth-nav-period-strip compact" onClick={(event) => event.stopPropagation()}>
-                          {NAV_PERIOD_OPTIONS.map((period) => (
-                            <button
-                              key={`${product.id}-${period.id}`}
-                              type="button"
-                              className={`wealth-nav-chip compact ${period.id === productNavPeriod ? 'active' : ''}`}
-                              onClick={() => handleProductNavPeriodChange(product.id, period.id)}
-                            >
-                              <span>NAV window</span>
-                              <strong>{period.label}</strong>
-                            </button>
-                          ))}
-                        </div>
-
-                        <div className="wealth-card-period-row">
-                          <div className="wealth-mini-stat">
-                            <span>{productReturnDisplay.metric}</span>
-                            <strong className={productReturnDisplay.tone}>
-                              {productReturnDisplay.value}
-                            </strong>
+                        <div className="wealth-card-performance-row">
+                          <div className="wealth-nav-period-strip compact" onClick={(event) => event.stopPropagation()}>
+                            {NAV_PERIOD_OPTIONS.map((period) => (
+                              <button
+                                key={`${product.id}-${period.id}`}
+                                type="button"
+                                className={`wealth-nav-chip compact ${period.id === productNavPeriod ? 'active' : ''}`}
+                                onClick={() => handleProductNavPeriodChange(product.id, period.id)}
+                              >
+                                <span>NAV window</span>
+                                <strong>{period.label}</strong>
+                              </button>
+                            ))}
                           </div>
-                          <div className="wealth-mini-stat">
-                            <span>{productWindowLabel} return</span>
-                            <strong className={sparkDeltaPercent >= 0 ? 'risk-low' : 'risk-high'}>
-                              {sparkDeltaPercent >= 0 ? '+' : ''}{sparkDeltaPercent.toFixed(2)}%
-                            </strong>
+
+                          <div className="wealth-card-period-row">
+                            <div className="wealth-mini-stat">
+                              <span>{productReturnDisplay.metric}</span>
+                              <strong className={productReturnDisplay.tone}>
+                                {productReturnDisplay.value}
+                              </strong>
+                            </div>
+                            <div className="wealth-mini-stat">
+                              <span>{productWindowLabel} return</span>
+                              <strong className={sparkDeltaPercent >= 0 ? 'risk-low' : 'risk-high'}>
+                                {sparkDeltaPercent >= 0 ? '+' : ''}{sparkDeltaPercent.toFixed(2)}%
+                              </strong>
+                            </div>
                           </div>
                         </div>
 
@@ -9123,7 +9119,7 @@ function WealthInner() {
                         <MiniNavChart series={sparkSeries} tone={product.risk.toLowerCase()} />
 
                         <div className="wealth-inline-note paper-inline-note">
-                          Click this product to view details, read AI diligence, then buy or pledge from the detail page.
+                          Click this product to view details; click it again to collapse the detail.
                         </div>
 
                         {productPosition.shares ? (
