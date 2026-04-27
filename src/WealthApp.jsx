@@ -8960,7 +8960,7 @@ function WealthInner() {
           <div className="brand-dot"></div>
           <div>
             <div className="eyebrow">RiskLens Guided Investing Hub</div>
-            <div className="brand-name">{t('RiskLens Wealth Hub', 'RiskLens 理财中心')}</div>
+            <div className="brand-name">{t('RiskLens Wealth Hub', 'RiskLens 鐞嗚储涓績')}</div>
           </div>
         </div>
 
@@ -8970,18 +8970,18 @@ function WealthInner() {
 
         <div className="header-actions">
           <a className="ghost-btn compact" href="./index.html#wealth">
-            {t('Back to welcome', '返回主页')}
+            {t('Back to welcome', '杩斿洖涓婚〉')}
           </a>
 
           <div className="paper-token-pill wealth-pill">
-            <div className="paper-token-label">{t('Remaining paper tokens', '剩余模拟代币')}</div>
+            <div className="paper-token-label">{t('Remaining paper tokens', '鍓╀綑妯℃嫙浠ｅ竵')}</div>
             <div className="paper-token-value">{formatValue(remainingPaperTokens, hideBalances)}</div>
             <div className="paper-token-tooltip">
-              <div className="paper-token-tooltip-title">{t('How this works', '说明')}</div>
+              <div className="paper-token-tooltip-title">{t('How this works', '璇存槑')}</div>
               <div>
                 {t(
                   `Demo wealth cash starts at ${WEALTH_STARTING_CASH.toLocaleString()} PT. Each completed onboarding milestone adds ${WEALTH_MILESTONE_BONUS.toLocaleString()} PT of preview buying power.`,
-                  `理财页演示资金从 ${WEALTH_STARTING_CASH.toLocaleString()} PT 开始，每完成一�?onboarding 里程碑会额外增加 ${WEALTH_MILESTONE_BONUS.toLocaleString()} PT 的预览购买力。`
+                  `鐞嗚储椤垫紨绀鸿祫閲戜粠 ${WEALTH_STARTING_CASH.toLocaleString()} PT 寮€濮嬶紝姣忓畬鎴愪竴锟?onboarding 閲岀▼纰戜細棰濆澧炲姞 ${WEALTH_MILESTONE_BONUS.toLocaleString()} PT 鐨勯瑙堣喘涔板姏銆俙
                 )}
               </div>
               <div>
@@ -8998,15 +8998,15 @@ function WealthInner() {
 
           <button className={`ghost-btn wallet-header-btn ${isConnected ? 'connected' : ''}`.trim()} onClick={() => setWalletModalOpen(true)} disabled={isPending}>
             {isConnected
-              ? t(`Wallet connected ${walletDisplayName}`, `钱包已连�?${walletDisplayName}`)
+              ? t(`Wallet connected ${walletDisplayName}`, `閽卞寘宸茶繛锟?${walletDisplayName}`)
               : isPending
-                ? t('Connecting to MetaMask...', '正在连接 MetaMask...')
-                : t('Connect MetaMask', '连接 MetaMask')}
+                ? t('Connecting to MetaMask...', '姝ｅ湪杩炴帴 MetaMask...')
+                : t('Connect MetaMask', '杩炴帴 MetaMask')}
           </button>
 
           <div className="header-admin-row">
             <button className="ghost-btn compact" onClick={openDeveloperMode}>
-              {t('Developer mode', '开发者模�?)}
+              {t('Developer mode', '\u5f00\u53d1\u8005\u6a21\u5f0f')}
             </button>
           </div>
         </div>
@@ -9020,32 +9020,32 @@ function WealthInner() {
         <section className="card wealth-hero-card">
           <div className="section-head">
             <div>
-              <div className="eyebrow">{t('Goal-first wealth', '目标优先的理�?)}</div>
-              <h1 style={{ maxWidth: 980 }}>{t('Build a clearer RWA and wealth shelf before asking users to trade.', '在要求用户交易之前，先把 RWA 与理财货架讲清楚�?)}</h1>
+              <div className="eyebrow">{t('Goal-first wealth', '鐩爣浼樺厛鐨勭悊锟?)}</div>
+              <h1 style={{ maxWidth: 980 }}>{t('Build a clearer RWA and wealth shelf before asking users to trade.', '鍦ㄨ姹傜敤鎴蜂氦鏄撲箣鍓嶏紝鍏堟妸 RWA 涓庣悊璐㈣揣鏋惰娓呮锟?)}</h1>
             </div>
 
             <button className="ghost-btn compact" onClick={() => setHideBalances((current) => !current)}>
-              {hideBalances ? t('Show values', '显示数�?) : t('Hide values', '隐藏数�?)}
+              {hideBalances ? t('Show values', '鏄剧ず鏁帮拷?) : t('Hide values', '闅愯棌鏁帮拷?)}
             </button>
           </div>
 
           <p className="hero-text">
             {t(
               'This wealth page borrows the shelf logic from large CEX earn products, but adapts it for RiskLens: explain the underlying, show the source of return, attach wallet-native share receipts, and gate advanced products with risk and quiz progress instead of hiding everything behind strategy jargon.',
-              '这个理财页借鉴了大�?CEX Earn 产品的货架逻辑，但针对 RiskLens 做了改造：解释底层资产、展示收益来源、附上钱包原生份额凭证，并用风险与测验进度来解锁高级产品，而不是把一切都藏在策略术语后面�?
+              '杩欎釜鐞嗚储椤靛€熼壌浜嗗ぇ锟?CEX Earn 浜у搧鐨勮揣鏋堕€昏緫锛屼絾閽堝 RiskLens 鍋氫簡鏀归€狅細瑙ｉ噴搴曞眰璧勪骇銆佸睍绀烘敹鐩婃潵婧愩€侀檮涓婇挶鍖呭師鐢熶唤棰濆嚟璇侊紝骞剁敤椋庨櫓涓庢祴楠岃繘搴︽潵瑙ｉ攣楂樼骇浜у搧锛岃€屼笉鏄妸涓€鍒囬兘钘忓湪绛栫暐鏈鍚庨潰锟?
             )}
           </p>
 
           <div className="hero-points">
-            <span className="pill risk-low">{t('Goal-based routing', '基于目标的路�?)}</span>
-            <span className="pill risk-low">{t('RWA and quant shelves', 'RWA 与量化货�?)}</span>
-            <span className="pill risk-medium">{t('AI diligence layer', 'AI 尽调�?)}</span>
-            <span className="pill risk-medium">{t('Tokenized share receipts', '代币化份额凭�?)}</span>
+            <span className="pill risk-low">{t('Goal-based routing', '鍩轰簬鐩爣鐨勮矾锟?)}</span>
+            <span className="pill risk-low">{t('RWA and quant shelves', 'RWA 涓庨噺鍖栬揣锟?)}</span>
+            <span className="pill risk-medium">{t('AI diligence layer', 'AI 灏借皟锟?)}</span>
+            <span className="pill risk-medium">{t('Tokenized share receipts', '浠ｅ竵鍖栦唤棰濆嚟锟?)}</span>
           </div>
 
           <div className="wealth-summary-grid">
             <div className="wealth-summary-block">
-              <div className="label">{t('Total invested', '总投�?)}</div>
+              <div className="label">{t('Total invested', '鎬绘姇锟?)}</div>
               <div className="wealth-summary-value">{formatValue(totalInvested, hideBalances)}</div>
               <div className="muted">Approx. {formatValue(totalInvested, hideBalances, 0, ' PT')}</div>
               <div className="wealth-summary-mini">
@@ -9061,7 +9061,7 @@ function WealthInner() {
             </div>
 
             <div className="wealth-summary-block">
-              <div className="label">{t('Total return', '总收�?)}</div>
+              <div className="label">{t('Total return', '鎬绘敹锟?)}</div>
               <div className={`wealth-summary-value ${totalYield >= 0 ? 'risk-low' : 'risk-high'}`}>
                 {formatSignedValue(totalYield, hideBalances)}
               </div>
@@ -9079,7 +9079,7 @@ function WealthInner() {
             </div>
 
             <div className="wealth-summary-block">
-              <div className="label">{t('Portfolio annual yield', '组合年化收益')}</div>
+              <div className="label">{t('Portfolio annual yield', '缁勫悎骞村寲鏀剁泭')}</div>
               <div className={`wealth-summary-value ${portfolioAnnualYieldRate >= 0 ? 'risk-low' : 'risk-high'}`}>
                 {formatYieldPercent(portfolioAnnualYieldRate, hideBalances)}
               </div>
@@ -9101,14 +9101,14 @@ function WealthInner() {
         <section className="card wealth-task-guide-card">
           <div className="section-head">
             <div>
-              <div className="eyebrow">{t('Wealth task guide', '财富任务指引')}</div>
-              <h2>{t('Follow one guided path, then buy every product through the same receipt flow', '按同一套任务路径理解产品，再通过统一凭证流程购买')}</h2>
+              <div className="eyebrow">{t('Wealth task guide', '璐㈠瘜浠诲姟鎸囧紩')}</div>
+              <h2>{t('Follow one guided path, then buy every product through the same receipt flow', '鎸夊悓涓€濂椾换鍔¤矾寰勭悊瑙ｄ骇鍝侊紝鍐嶉€氳繃缁熶竴鍑瘉娴佺▼璐拱')}</h2>
             </div>
             <span className="pill risk-low">{wealthTaskCompletedCount}/{wealthQuestRows.length} complete</span>
           </div>
 
           <div className="route-highlight wealth-next-task">
-            <strong>Next task:</strong> {nextWealthTask.badge} · {nextWealthTask.title}. {nextWealthTask.copy}
+            <strong>Next task:</strong> {nextWealthTask.badge} 路 {nextWealthTask.title}. {nextWealthTask.copy}
           </div>
 
           <div className="wealth-task-guide-grid">
@@ -9125,7 +9125,7 @@ function WealthInner() {
                     {quest.statusLabel}
                   </span>
                 </div>
-                <div className="wealth-task-meta">Task {quest.taskNumber} · {quest.activityLabel}</div>
+                <div className="wealth-task-meta">Task {quest.taskNumber} 路 {quest.activityLabel}</div>
                 <strong>{quest.title}</strong>
                 <p>{quest.copy}</p>
               </button>
@@ -9136,7 +9136,7 @@ function WealthInner() {
             <div className="section-head compact">
               <div>
                 <div className="eyebrow">{selectedWealthTaskDetail.eyebrow}</div>
-                <h3>{selectedWealthTask.badge} · {selectedWealthTaskDetail.title}</h3>
+                <h3>{selectedWealthTask.badge} 路 {selectedWealthTaskDetail.title}</h3>
               </div>
               <span className={`pill ${selectedWealthTaskReadyToClaim || selectedWealthTaskClaimed ? 'risk-low' : 'risk-medium'}`}>
                 {selectedWealthTaskClaimStatus.text}
@@ -10272,7 +10272,7 @@ function WealthInner() {
         aria-hidden={!showBackToTop}
         tabIndex={showBackToTop ? 0 : -1}
       >
-        �?      </button>
+        锟?      </button>
 
       <SubscriptionPreviewModal
         open={isSubscribeModalOpen}
