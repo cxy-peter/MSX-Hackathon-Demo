@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
-import "@openzeppelin/contracts/utils/Base64.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
 contract MSXUnifiedDemoHub is ERC1155, Ownable {
@@ -405,13 +404,12 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
     }
 
     function uri(uint256 tokenId) public view override returns (string memory) {
-        bytes memory metadata = abi.encodePacked(
+        return string(abi.encodePacked(
+            "data:application/json;utf8,",
             '{"name":"',
             _tokenName(tokenId),
             '","description":"',
             _tokenDescription(tokenId),
-            '","image":"data:image/svg+xml;base64,',
-            Base64.encode(bytes(_buildTokenSvg(tokenId))),
             '","attributes":[{"trait_type":"Surface","value":"',
             _tokenSurface(tokenId),
             '"},{"trait_type":"Network","value":"Sepolia"},{"trait_type":"Token ID","value":"',
@@ -419,9 +417,7 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
             '"}',
             _tokenExtraAttributes(tokenId),
             ']}'
-        );
-
-        return string(abi.encodePacked("data:application/json;base64,", Base64.encode(metadata)));
+        ));
     }
 
     function _tokenName(uint256 tokenId) internal view returns (string memory) {

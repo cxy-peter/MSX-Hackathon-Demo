@@ -6,3 +6,5 @@ build/
 .env.local
 *.log
 *.pdf
+.vercel
+.env*.local

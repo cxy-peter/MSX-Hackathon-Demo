@@ -51,7 +51,7 @@ button, input, select { font: inherit; color: inherit; }
 
 .site-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
   padding: 14px 0 22px;
@@ -162,6 +162,24 @@ button, input, select { font: inherit; color: inherit; }
   letter-spacing: 0.01em;
 }
 
+.site-header .brand-wrap {
+  flex: 0 1 280px;
+  min-width: 220px;
+  flex-wrap: nowrap;
+}
+
+.site-header .brand-name {
+  max-width: none;
+  white-space: nowrap;
+  font-size: clamp(18px, 2.1vw, 22px);
+}
+
+.site-header .brand-wrap .eyebrow {
+  max-width: none;
+  white-space: nowrap;
+  font-size: clamp(10px, 1.15vw, 11px);
+}
+
 .eyebrow {
   color: var(--green);
   font-size: 11px;
@@ -174,11 +192,14 @@ button, input, select { font: inherit; color: inherit; }
   color: var(--muted);
   font-size: 18px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .site-nav {
   justify-content: center;
-  flex: 1 1 380px;
+  flex: 1 1 520px;
+  flex-wrap: nowrap;
+  gap: clamp(14px, 3vw, 34px);
 }
 
 .site-nav a:hover { color: var(--text); }
@@ -11220,6 +11241,16 @@ label {
 .wealth-dual-sample-value span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.wealth-dual-sim-strip .paper-balance-box .value,
+.wealth-dual-sample-value strong {
+  display: inline;
+  width: fit-content;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .wealth-dual-outcome-grid-compact .entry-copy,
