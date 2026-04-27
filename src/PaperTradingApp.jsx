@@ -17846,6 +17846,24 @@ function PaperTradingInner() {
             )}
           </p>
 
+          <div className="starter-reasons paper-diligence-return-grid">
+            <div className="reason-card">
+              <div className="eyebrow">AI Diligence</div>
+              <div className="entry-title">Evidence before trade</div>
+              <div className="entry-copy">Read quality, suitability, red flags, and the memo before using the replay desk.</div>
+            </div>
+            <div className="reason-card">
+              <div className="eyebrow">RiskLens vs CEX</div>
+              <div className="entry-title">Product decision, not just order entry</div>
+              <div className="entry-copy">Compare wallet impact, route costs, and wrapper rights instead of showing only a ticker and price.</div>
+            </div>
+            <div className="reason-card">
+              <div className="eyebrow">Explainers</div>
+              <div className="entry-title">Human first, protocol second</div>
+              <div className="entry-copy">Each product keeps a plain-language explanation beside the protocol or venue mechanics.</div>
+            </div>
+          </div>
+
             <div className="wealth-summary-grid">
               <div className="wealth-summary-block">
                 <div className="label">{t('Estimated account value', '预估账户价值')}</div>
@@ -17885,11 +17903,6 @@ function PaperTradingInner() {
                 <div className="muted">{t('Estimated net value if every open position exited at the current replay cursor.', '如果所有持仓都在当前回放位置卖出后的预估净值。')}</div>
               </div>
           </div>
-        </section>
-
-        <section className="card">
-          {renderReplayLeaderboardCard(false)}
-          {renderLeaderboardScoreRouteCard()}
         </section>
 
         <section className="card">
@@ -18271,13 +18284,15 @@ function PaperTradingInner() {
           <aside
             className="paper-side-rail"
           >
-                {renderPaperPositionsSideCard()}
-                {renderReplayFillsSideCard()}
                 {renderCompactReplayCard('diligence')}
           </aside>
         </section>
 
         {renderProductFloatingLeaderboard()}
+        <div className="paper-floating-ledger-stack" aria-label="Open positions and trade log">
+          {renderPaperPositionsSideCard()}
+          {renderReplayFillsSideCard()}
+        </div>
       </main>
 
       <PaperBuyPrimerModal
