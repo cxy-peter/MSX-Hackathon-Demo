@@ -5315,6 +5315,21 @@ label {
   font-weight: 800;
 }
 
+.paper-floating-product-leaderboard-toggle {
+  width: auto;
+  min-width: 112px;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 16px;
+}
+
+.paper-floating-product-leaderboard-toggle span {
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
 .paper-floating-leaderboard-toggle.left {
   border-top-left-radius: 12px;
   border-bottom-left-radius: 12px;
@@ -5651,6 +5666,115 @@ label {
   gap: 12px;
   margin-top: 14px;
   min-width: 0;
+}
+
+.paper-ledger-side-card {
+  padding: 16px;
+}
+
+.paper-ledger-side-body {
+  gap: 10px;
+}
+
+.paper-ledger-position-list,
+.paper-replay-fill-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.paper-ledger-empty-card {
+  border-radius: 16px;
+}
+
+.paper-replay-position-card {
+  padding: 14px;
+  border-radius: 18px;
+}
+
+.paper-replay-position-card.active {
+  border-color: rgba(164,255,47,0.32);
+  background: rgba(164,255,47,0.055);
+}
+
+.paper-position-metric-grid {
+  gap: 8px;
+}
+
+.paper-position-metric-grid .wealth-position-metric {
+  padding: 10px;
+  border-radius: 12px;
+}
+
+.paper-position-metric-grid .wealth-position-metric .v {
+  font-size: 13px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.paper-position-detail-hint {
+  color: var(--green);
+}
+
+.paper-replay-fill-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 13px;
+  border-radius: 16px;
+  border: 1px solid rgba(151, 169, 191, 0.14);
+  background: rgba(255,255,255,0.035);
+}
+
+.paper-replay-fill-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.paper-replay-fill-head > div {
+  min-width: 0;
+}
+
+.paper-replay-fill-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.paper-replay-fill-metrics > div {
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.026);
+}
+
+.paper-replay-fill-metrics span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
+  margin-bottom: 3px;
+}
+
+.paper-replay-fill-metrics strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.paper-ledger-side-pagination {
+  margin-top: 2px;
+  gap: 8px;
+}
+
+.paper-ledger-side-pagination .paper-shelf-pagination-controls {
+  flex-wrap: wrap;
 }
 
 .paper-side-card-hedge-pulse {
@@ -10430,6 +10554,41 @@ label {
   background: rgba(122,166,255,0.05);
 }
 
+.wealth-task-detail-card .section-head.compact {
+  align-items: start;
+}
+
+.wealth-task-detail-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 18px;
+  line-height: 1.18;
+}
+
+.wealth-task-detail-title-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(164,255,47,0.22);
+  background: rgba(164,255,47,0.08);
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.wealth-task-detail-copy {
+  margin: 2px 0 4px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .wealth-task-detail-grid {
   display: grid;
   grid-template-columns: 1.2fr 0.9fr;
@@ -11403,4 +11562,166 @@ label {
   .wealth-dual-current-price {
     margin-left: 0;
   }
+}
+
+/* Task ready-to-mint state */
+.learn-quest-tile.ready,
+.wealth-task-card.ready {
+  border-color: rgba(255, 177, 66, 0.55);
+  box-shadow: 0 0 0 1px rgba(255, 177, 66, 0.12), 0 18px 36px rgba(255, 177, 66, 0.08);
+}
+
+.checklist-status-badge.ready,
+.wealth-task-status.ready {
+  background: rgba(255, 177, 66, 0.16);
+  color: #ffbd59;
+  border-color: rgba(255, 177, 66, 0.44);
+}
+
+/* Header nickname and compact floating labels */
+.header-admin-row {
+  gap: 10px;
+}
+
+.header-admin-row .wallet-nickname-top-btn {
+  margin-right: auto;
+}
+
+.wealth-floating-timeline-toggle {
+  width: auto;
+  min-width: 142px;
+  height: 44px;
+  padding: 0 14px;
+}
+
+.wealth-floating-timeline-toggle span {
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.paper-shelf-risk-pill {
+  white-space: nowrap;
+  min-width: max-content;
+}
+
+/* Dual Investment: RiskLens/MSX color refresh */
+.wealth-dual-order-card {
+  border-color: rgba(164, 255, 47, 0.26);
+  background:
+    radial-gradient(circle at top right, rgba(164, 255, 47, 0.12), transparent 36%),
+    linear-gradient(180deg, rgba(17, 28, 42, 0.96), rgba(8, 13, 23, 0.96));
+}
+
+.wealth-dual-pair-panel,
+.wealth-dual-direction-panel,
+.wealth-dual-filter-panel,
+.wealth-dual-pt-quote-card {
+  border-color: rgba(164, 255, 47, 0.14);
+  background: rgba(8, 15, 26, 0.74);
+}
+
+.wealth-dual-pair-chip,
+.wealth-dual-direction-chip,
+.wealth-dual-filter-chip,
+.wealth-dual-refresh-btn,
+.wealth-dual-max-btn,
+.wealth-dual-condition-row button {
+  border: 1px solid rgba(164, 255, 47, 0.14);
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text-primary, var(--text));
+}
+
+.wealth-dual-pair-chip.active,
+.wealth-dual-direction-chip.active,
+.wealth-dual-filter-chip.active,
+.wealth-dual-condition-row button.active,
+.wealth-dual-subscribe-btn,
+.wealth-dual-max-btn {
+  border-color: rgba(164, 255, 47, 0.66);
+  background: linear-gradient(180deg, rgba(164, 255, 47, 0.96), rgba(132, 224, 38, 0.94));
+  color: #091006;
+}
+
+.wealth-dual-pair-chip {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.wealth-dual-pair-chip .wealth-dual-coin-stack i {
+  width: auto;
+  min-width: 34px;
+  padding: 0 8px;
+  font-size: 0.66rem;
+}
+
+.wealth-dual-coin-stack i,
+.wealth-dual-coin {
+  background: rgba(164, 255, 47, 0.95);
+  color: #091006;
+}
+
+.wealth-dual-coin-stack i + i {
+  background: rgba(80, 140, 255, 0.92);
+  color: #fff;
+}
+
+.wealth-dual-warning {
+  color: #d8ff94;
+}
+
+.wealth-dual-pt-quote-card {
+  color: var(--text-primary, var(--text));
+  box-shadow: inset 0 1px 0 rgba(164, 255, 47, 0.08);
+}
+
+.wealth-dual-pt-quote-card .eyebrow,
+.wealth-dual-pt-quote-card p,
+.wealth-dual-pt-quote-card span,
+.wealth-dual-pt-quote-card em {
+  color: var(--text-secondary, var(--muted));
+}
+
+.wealth-dual-pt-quote-card h3,
+.wealth-dual-pt-quote-card strong,
+.wealth-dual-pt-quote-card .product-title {
+  color: var(--text-primary, var(--text));
+}
+
+.wealth-dual-subscribe-field {
+  grid-template-columns: minmax(0, 1fr) auto;
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(164, 255, 47, 0.14);
+}
+
+.wealth-dual-subscribe-input {
+  display: grid;
+  gap: 8px;
+}
+
+.wealth-dual-subscribe-input input {
+  width: 100%;
+  border: 1px solid rgba(164, 255, 47, 0.16);
+  border-radius: 14px;
+  background: rgba(5, 10, 18, 0.72);
+  color: var(--text-primary, var(--text));
+  padding: 12px 14px;
+  font-size: 1.1rem;
+  font-weight: 900;
+}
+
+.wealth-dual-condition-row button {
+  flex: 1 1 190px;
+  padding: 13px 16px;
+  border-radius: 14px;
+  font-weight: 900;
+  text-align: center;
+  cursor: pointer;
+}
+
+.wealth-dual-receive-card {
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(164, 255, 47, 0.14);
 }

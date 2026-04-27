@@ -3299,12 +3299,12 @@ export default function App() {
                       ? t('Connecting to MetaMask...', '正在连接 MetaMask...')
                       : t('Connect MetaMask', '连接 MetaMask')}
                 </button>
-                <button className="ghost-btn compact wallet-nickname-top-btn" onClick={openWalletModal}>
-                  {walletNickname ? `Nickname: ${walletNickname}` : 'Wallet nickname'}
-                </button>
               </div>
             </div>
             <div className="header-admin-row">
+              <button className="ghost-btn compact wallet-nickname-top-btn" onClick={openWalletModal}>
+                {walletNickname ? `Nickname: ${walletNickname}` : 'Wallet nickname'}
+              </button>
               <button className="ghost-btn compact" onClick={openDeveloperMode}>
                 {t('Developer mode', '开发者模式')}
               </button>
@@ -3321,6 +3321,8 @@ export default function App() {
             <div className="hero-copy">
               <div className="eyebrow">{t('RiskLens + AI-guided discovery + wallet-native onboarding', 'RiskLens + AI 引导发现 + 钱包原生 onboarding')}</div>
               <h1>{t('Make RWA investing understandable before it feels onchain.', '在用户真正接触链上之前，先把 RWA 投资讲明白。')}</h1>
+              {false ? (
+                <>
               <p className="hero-text">
                 {t(
                   'This version keeps the RiskLens welcome-page aesthetic, but upgrades the wallet entry into a real MetaMask connection flow that can be deployed to GitHub Pages and tested directly by judges.',
@@ -3331,6 +3333,8 @@ export default function App() {
                 <span>{t('First-time users see purpose, not jargon', '新用户先看到用途，而不是术语')}</span>
                 <span>{t('Wallet connection feels like a real product flow', '钱包连接更像真实产品流程')}</span>
               </div>
+                </>
+              ) : null}
               <div className="cta-row">
                 <button className="primary-btn" onClick={openWalletModal}>
                   {t('Connect wallet', '连接钱包')}
@@ -3525,7 +3529,7 @@ export default function App() {
                 {learnQuestCards.slice(0, 2).map((quest, index) => (
                   <button
                     key={quest.id}
-                    className={`learn-quest-tile core ${activeCoreQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' || quest.status === 'Done' || quest.status === 'Unlocked' ? 'done' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}
+                    className={`learn-quest-tile core ${activeCoreQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' || quest.status === 'Unlocked' ? 'done' : ''} ${quest.status === 'Done' ? 'ready' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}
                     onClick={() => openLearnQuest(quest.id)}
                   >
                     <div className="home-quest-task-summary">
@@ -3744,7 +3748,7 @@ export default function App() {
               {learnQuestCards.slice(2).map((quest) => (
                 <button
                   key={quest.id}
-                  className={`learn-quest-tile ${activeOptionalQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' || quest.status === 'Done' || quest.status === 'Unlocked' ? 'done' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}
+                className={`learn-quest-tile ${activeOptionalQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' || quest.status === 'Unlocked' ? 'done' : ''} ${quest.status === 'Done' ? 'ready' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}
                   onClick={() => openLearnQuest(quest.id)}
                 >
                   <div className="home-quest-task-summary">
@@ -3837,7 +3841,7 @@ export default function App() {
                         </>
                       ) : riskTaskDone ? (
                         <>
-                          <strong>Ready:</strong> {RISK_REVIEW_REQUIRED} product briefings were already reviewed for this wallet. You can mint the risk collectible now.
+                          <strong>Wait to be minted:</strong> {RISK_REVIEW_REQUIRED} product briefings were already reviewed for this wallet. Mint the risk collectible for this account to complete the task.
                         </>
                       ) : (
                         <>
@@ -3863,7 +3867,7 @@ export default function App() {
                             : mintForCurrentAccountBusy
                               ? getMintTaskStatus('risk') || 'Finish current mint first'
                               : riskTaskDone
-                                ? 'Mint risk collectible'
+                                ? 'Wait to be minted'
                                 : `Review ${RISK_REVIEW_REQUIRED} briefings first`}
                         </button>
                       </div>
@@ -3916,7 +3920,7 @@ export default function App() {
                       </label>
                     ))}
                     <button className="secondary-btn" onClick={handleQuizSubmit} disabled={!quizAllQuestionsAnswered}>
-                      {quizTaskBadgeMinted ? 'Quiz completed' : quizTaskDone ? 'Quiz passed, mint collectible' : 'Check 3-question quiz'}
+                      {quizTaskBadgeMinted ? 'Quiz completed' : quizTaskDone ? 'Wait to be minted' : 'Check 3-question quiz'}
                     </button>
                     {quizSubmitted ? (
                       <div className={`env-hint ${quizPassed ? '' : 'quiz-error'}`}>
@@ -3944,7 +3948,7 @@ export default function App() {
                             : mintForCurrentAccountBusy
                               ? getMintTaskStatus('quiz') || 'Finish current mint first'
                               : quizTaskDone
-                                ? 'Mint quiz collectible'
+                                ? 'Wait to be minted'
                                 : 'Pass quiz first'}
                         </button>
                       </div>
@@ -4012,7 +4016,7 @@ export default function App() {
                           {paperTaskBadgeMinted
                             ? 'This wallet already minted the paper trading preview collectible.'
                             : paperTradingUnlocked
-                              ? 'At least one task is complete. You can mint the paper trading preview collectible for this wallet.'
+                              ? 'At least one task is locally complete. Wait to be minted for this wallet to complete the paper trading preview collectible.'
                               : 'Complete any task first, then mint the paper trading preview collectible if you want the onchain reward.'}
                       </div>
                     </div>
@@ -4027,7 +4031,7 @@ export default function App() {
                           : mintForCurrentAccountBusy
                             ? getMintTaskStatus('paper') || 'Finish current mint first'
                             : paperTradingUnlocked
-                              ? 'Mint paper trading collectible'
+                              ? 'Wait to be minted'
                               : 'Complete any task first'}
                       </button>
                     </div>
@@ -4192,7 +4196,7 @@ export default function App() {
                     <div>
                       <div className="product-title">Mint paper trading collectible</div>
                       <div className="muted">
-                        After any task is complete, this paper trading preview can mint its wallet collectible for the current wallet.
+                        After any task is locally complete, this paper trading preview waits to be minted for the current wallet.
                       </div>
                     </div>
                     <div className="mint-status-stack">
@@ -4206,7 +4210,7 @@ export default function App() {
                           : mintForCurrentAccountBusy
                             ? getMintTaskStatus('paper') || 'Finish current mint first'
                             : paperTradingUnlocked
-                              ? 'Mint paper collectible'
+                              ? 'Wait to be minted'
                               : 'Complete any task first'}
                       </button>
                     </div>

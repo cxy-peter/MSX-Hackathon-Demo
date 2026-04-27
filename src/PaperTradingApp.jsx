@@ -8660,9 +8660,6 @@ function PaperTradingInner() {
   const replayFillsHasMultiplePages = replayFillsPageCount >= 2;
   const replayFillsPageStart = (replayFillsPage - 1) * PAPER_REPLAY_FILLS_PAGE_SIZE;
   const replayFillsPageEnd = Math.min(paperState.trades.length, replayFillsPage * PAPER_REPLAY_FILLS_PAGE_SIZE);
-  const replayFillsRemainingCount = Math.max(0, paperState.trades.length - replayFillsPageEnd);
-  const replayFillsNextCount =
-    replayFillsPage < replayFillsPageCount ? Math.min(PAPER_REPLAY_FILLS_PAGE_SIZE, replayFillsRemainingCount) : 0;
   const pagedReplayFills = paperState.trades.slice(replayFillsPageStart, replayFillsPageEnd);
   const shelfLeaderboardRows = useMemo(() => {
     const baseRows = filteredProducts.map((product) => {
@@ -9530,7 +9527,7 @@ function PaperTradingInner() {
   const unlockedReplayAchievementCount = replayAchievements.filter((achievement) => achievement.unlocked).length;
   const claimReadyReplayAchievementCount = replayAchievements.filter((achievement) => achievement.canClaimOnchain).length;
   const claimedReplayAchievementCount = replayAchievements.filter((achievement) => achievement.onchainClaimed).length;
-  const nextReplayAchievement = replayAchievements.find((achievement) => !achievement.unlocked) || null;
+  const nextReplayAchievement = replayAchievements.find((achievement) => !achievement.onchainClaimed) || null;
   const selectedPosition = paperState.positions[selectedProductId] || {
     units: 0,
     principal: 0,
@@ -17148,11 +17145,11 @@ function PaperTradingInner() {
 
       return (
         <div
-          className={`paper-floating-leaderboard-toggle ${productLeaderboardFloat.arrowSide}`}
+          className={`paper-floating-leaderboard-toggle paper-floating-product-leaderboard-toggle ${productLeaderboardFloat.arrowSide}`}
           style={collapsedStyle}
           role="button"
           tabIndex={0}
-          aria-label="Open product ranking"
+          aria-label="Open leaderboard"
           onPointerDown={beginProductLeaderboardArrowGesture}
           onKeyDown={(event) => {
             if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -17160,7 +17157,7 @@ function PaperTradingInner() {
             handleExpandProductLeaderboard();
           }}
         >
-          <span>{productLeaderboardFloat.arrowSide === 'left' ? '>' : '<'}</span>
+          <span>Leaderboard</span>
         </div>
       );
     }
@@ -17236,6 +17233,199 @@ function PaperTradingInner() {
           onPointerDown={beginProductLeaderboardResize}
         />
       </aside>
+    );
+  }
+
+  function renderPaperPositionsSideCard() {
+    return (
+      <div className="paper-side-card paper-ledger-side-card paper-positions-side-card">
+        <div className="paper-side-card-head">
+          <div>
+            <div className="eyebrow">Open positions</div>
+            <h3>Wallet-linked replay holdings</h3>
+          </div>
+          <span className="pill risk-low">{portfolioRows.length} open</span>
+        </div>
+
+        <div className="paper-side-card-body paper-ledger-side-body">
+          {portfolioRows.length === 0 ? (
+            <div className="reason-card paper-ledger-empty-card">
+              <div className="entry-title">No replay positions yet</div>
+              <div className="entry-copy">
+                Start with Public markets if you want the clearest first replay, then compare Private markets / pre-IPO,
+                Leverage & hedging, or Options / strategy once the mechanics feel familiar.
+              </div>
+            </div>
+          ) : (
+            <div className="paper-ledger-position-list">
+              {portfolioRows.map((row) => (
+                <button
+                  type="button"
+                  className={`reason-card wealth-position-card wealth-position-card-clickable paper-replay-position-card ${
+                    selectedProductId === row.id ? 'active' : ''
+                  }`}
+                  key={row.id}
+                  onClick={() => handleSelectProduct(row.id)}
+                >
+                  <div className="wealth-position-head">
+                    <div>
+                      <div className="product-title">{row.ticker}</div>
+                      <div className="muted">{row.productType}</div>
+                    </div>
+                    <span className={`pill ${riskClass(row.risk)}`}>{row.risk}</span>
+                  </div>
+
+                  <div className="wealth-position-metric-grid paper-position-metric-grid">
+                    <div className="wealth-position-metric">
+                      <div className="k">Units</div>
+                      <div className="v">{formatUnits(row.units)}</div>
+                    </div>
+                    <div className="wealth-position-metric">
+                      <div className="k">Entry / mark</div>
+                      <div className="v">
+                        {formatPrice(row.avgEntry)} / {formatPrice(row.markPrice)}
+                      </div>
+                    </div>
+                    <div className="wealth-position-metric">
+                      <div className="k">Gross value</div>
+                      <div className="v">{formatNotional(row.marketValue)} PT</div>
+                    </div>
+                    <div className="wealth-position-metric">
+                      <div className="k">Net exit</div>
+                      <div className="v">{formatNotional(row.netExitValue)} PT</div>
+                    </div>
+                    <div className="wealth-position-metric">
+                      <div className="k">Carry + mgmt</div>
+                      <div className="v">
+                        {formatNotional(row.unpaidCarry)} / {formatNotional(row.managementFee)} PT
+                      </div>
+                    </div>
+                    <div className="wealth-position-metric">
+                      <div className="k">Net PnL</div>
+                      <div className={`v ${row.netPnl >= 0 ? 'risk-low' : 'risk-high'}`}>{formatSigned(row.netPnl)} PT</div>
+                    </div>
+                  </div>
+
+                  <div className="wealth-position-detail-hint paper-position-detail-hint">
+                    Holding {row.holdingDays.toFixed(1)}d / gross PnL {formatSigned(row.unrealizedPnl)} PT
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function renderReplayFillsSideCard() {
+    return (
+      <div className="paper-side-card paper-ledger-side-card paper-trade-log-side-card">
+        <div className="paper-side-card-head">
+          <div>
+            <div className="eyebrow">Trade log</div>
+            <h3>Replay fills</h3>
+          </div>
+          <span className="pill risk-low">{paperState.trades.length} fills</span>
+        </div>
+
+        <div className="paper-side-card-body paper-ledger-side-body">
+          {paperState.trades.length === 0 ? (
+            <div className="reason-card paper-ledger-empty-card">
+              <div className="entry-title">No replay fills yet</div>
+              <div className="entry-copy">
+                The first buy or sell will create a replay log entry with the product, timestamp, interval, fill price,
+                and realized PnL where relevant.
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="paper-replay-fill-list">
+                {pagedReplayFills.map((trade) => {
+                  const product = getProductById(trade.productId);
+                  const realizedClass = trade.realizedPnl >= 0 ? 'risk-low' : trade.realizedPnl < 0 ? 'risk-high' : '';
+
+                  return (
+                    <div className="paper-replay-fill-card" key={trade.id}>
+                      <div className="paper-replay-fill-head">
+                        <div>
+                          <div className="product-title">{product.ticker}</div>
+                          <div className="muted">
+                            {formatReplayDate(trade.ts, trade.interval)} / {trade.interval}
+                          </div>
+                        </div>
+                        <span className={`pill ${trade.side === 'buy' ? 'risk-low' : 'risk-high'}`}>
+                          {trade.side === 'buy' ? 'Buy' : 'Sell'}
+                        </span>
+                      </div>
+
+                      <div className="paper-replay-fill-metrics">
+                        <div>
+                          <span>Units</span>
+                          <strong>{formatUnits(trade.units)}</strong>
+                        </div>
+                        <div>
+                          <span>Price</span>
+                          <strong>{formatPrice(trade.price)}</strong>
+                        </div>
+                        <div>
+                          <span>Notional</span>
+                          <strong>{formatNotional(trade.notional)} PT</strong>
+                        </div>
+                        <div>
+                          <span>Fees / tax</span>
+                          <strong>
+                            {trade.feeTotal ? `${formatNotional(trade.feeTotal)} PT` : '--'} /{' '}
+                            {trade.taxTotal ? `${formatNotional(trade.taxTotal)} PT` : '--'}
+                          </strong>
+                        </div>
+                        <div>
+                          <span>Carry / mgmt</span>
+                          <strong>
+                            {trade.carryTotal ? `${formatNotional(trade.carryTotal)} PT` : '--'} /{' '}
+                            {trade.managementFeeTotal ? `${formatNotional(trade.managementFeeTotal)} PT` : '--'}
+                          </strong>
+                        </div>
+                        <div>
+                          <span>Realized</span>
+                          <strong className={realizedClass}>{trade.realizedPnl ? `${formatSigned(trade.realizedPnl)} PT` : '--'}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {replayFillsHasMultiplePages ? (
+                <div className="paper-shelf-pagination paper-ledger-side-pagination">
+                  <div className="paper-shelf-pagination-controls">
+                    <button
+                      type="button"
+                      className="ghost-btn compact"
+                      onClick={() => handleReplayFillsPageChange(replayFillsPage - 1)}
+                      disabled={replayFillsPage <= 1}
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-btn compact"
+                      onClick={() => handleReplayFillsPageChange(replayFillsPage + 1)}
+                      disabled={replayFillsPage >= replayFillsPageCount}
+                    >
+                      Next
+                    </button>
+                  </div>
+                  <div className="muted paper-shelf-page-status">
+                    Page {replayFillsPage} / {replayFillsPageCount} | Showing {replayFillsPageStart + 1}-{replayFillsPageEnd} of{' '}
+                    {paperState.trades.length} fills
+                  </div>
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
     );
   }
 
@@ -17640,8 +17830,8 @@ function PaperTradingInner() {
         <section className="card wealth-hero-card">
           <div className="section-head">
             <div>
-              <div className="eyebrow">{t('Replay-first paper trading', '回放优先的模拟交易')}</div>
-              <h1 style={{ maxWidth: 1020 }}>{t('Practice RiskLens-style product decisions against historical replay bars before any live action.', '在任何真实操作之前，先用历史回放练习 RiskLens 风格的产品决策。')}</h1>
+              <div className="eyebrow">{t('Replay lab', '回放实验室')}</div>
+              <h1 style={{ maxWidth: 1020 }}>{t('Practice buys, exits, and hedges before going live.', '先练习买入、退出和对冲，再进入真实操作。')}</h1>
             </div>
 
             <button className="ghost-btn compact" onClick={handleResetLab}>
@@ -17651,17 +17841,10 @@ function PaperTradingInner() {
 
           <p className="hero-text">
             {t(
-              'This version turns paper trading into an explainable replay lab. You can compare RiskLens starter RWAs, common crypto assets, and perp tutorials inside one wallet-linked simulation surface, then step through history bar by bar to see what your decision would have done next.',
-              '这个版本把模拟交易做成了一个可解释的回放实验室。你可以在同一个绑定钱包的模拟界面里，对比 RiskLens 入门 RWA、常见加密资产以及永续合约教学，然后逐根回放历史 K 线，看看你的决策接下来会发生什么。'
+              'Use one wallet-linked replay surface to test product choices on historical bars. RiskLens keeps the wallet balance, route costs, and next action visible so the practice feels like a guided decision, not a trading terminal.',
+              '用同一个钱包绑定的回放界面，在历史 K 线上练习产品选择。RiskLens 会把钱包余额、路线成本和下一步操作放在一起，让练习更像有引导的决策，而不是交易终端。'
             )}
           </p>
-
-          <div className="hero-points">
-            <span className="pill risk-low">{t('Historical replay', '历史回放')}</span>
-            <span className="pill risk-low">{t('Wallet-linked ledger', '钱包绑定账本')}</span>
-            <span className="pill risk-medium">{t('RiskLens vs CEX comparison', 'RiskLens 与 CEX 对比')}</span>
-            <span className="pill risk-medium">{t('Human / protocol explainers', '人话 / 协议解释')}</span>
-          </div>
 
             <div className="wealth-summary-grid">
               <div className="wealth-summary-block">
@@ -17718,10 +17901,6 @@ function PaperTradingInner() {
             <span className="pill risk-low">{unlockedReplayAchievementCount}/{replayAchievements.length} unlocked</span>
           </div>
 
-          <div className="env-hint" style={{ marginBottom: 18 }}>
-            <strong>{t('How this works.', '说明。')}</strong> {t('Users only need to connect the same wallet, finish the local replay condition, switch MetaMask to Sepolia, and press the claim button. If replay badges are still offline, no code is required from the user; the project owner simply has not connected the replay badge contract yet.', '用户只需要连接同一个钱包、完成本地回放条件、把 MetaMask 切到 Sepolia，然后点击领取按钮。如果回放徽章路线仍未上线，也不需要用户写代码，只是项目方还没有把 replay badge contract 接进来。')}
-          </div>
-
           <div className="paper-balance-strip wealth-balance-strip">
             <div className="paper-balance-box">
               <div className="label">Unlocked tasks</div>
@@ -17735,32 +17914,24 @@ function PaperTradingInner() {
               <div className="label">Claimed onchain</div>
               <div className="value">{claimedReplayAchievementCount}</div>
             </div>
-              <div className="paper-balance-box">
-                <div className="label">Onchain anchor</div>
-                <div className="value">
-                  {replayBadgeContractConfigured ? shortAddress(REPLAY_BADGE_CONTRACT_ADDRESS) : 'Set env var'}
-                </div>
-                <div className="muted">
-                  {nextReplayAchievement ? `Next replay task: ${nextReplayAchievement.title}` : 'All local replay tasks are complete.'}
-                </div>
-              </div>
             </div>
 
           <div className="learn-quest-optional-row paper-reward-task-row" style={{ marginTop: 18 }}>
             {replayAchievements.map((achievement) => (
               (() => {
+                const achievementTileStatus = getReplayAchievementTileStatus(achievement);
                 return (
                   <button
                     key={achievement.id}
                     className={`learn-quest-tile ${selectedRewardTaskId === achievement.id ? 'active' : ''} ${
-                      achievement.unlocked || achievement.onchainClaimed || achievement.inherited ? 'done' : ''
+                      achievementTileStatus.tone === 'done' ? 'done' : achievementTileStatus.tone === 'ready' ? 'ready' : ''
                     }`}
                     onClick={() => handleToggleRewardTask(achievement.id)}
                   >
                 <div className="learn-quest-ribbon">Task {achievement.taskNumber}</div>
                 <div className="quest-inline-status-card paper-task-cover-summary">
-                  <span className={`checklist-status-badge ${achievement.unlocked || achievement.onchainClaimed || achievement.inherited ? 'done' : 'todo'}`}>
-                    {achievement.unlocked || achievement.onchainClaimed || achievement.inherited ? 'Complete' : 'To do'}
+                  <span className={`checklist-status-badge ${achievementTileStatus.tone === 'done' ? 'done' : achievementTileStatus.tone === 'ready' ? 'ready' : 'todo'}`}>
+                    {achievementTileStatus.text}
                   </span>
                 </div>
                 <div className="learn-quest-pills">
@@ -18100,168 +18271,13 @@ function PaperTradingInner() {
           <aside
             className="paper-side-rail"
           >
+                {renderPaperPositionsSideCard()}
+                {renderReplayFillsSideCard()}
                 {renderCompactReplayCard('diligence')}
           </aside>
         </section>
 
         {renderProductFloatingLeaderboard()}
-
-        <section className="paper-replay-ledger-stack">
-          <section className="card">
-            <div className="section-head">
-              <div>
-                <div className="eyebrow">Open positions</div>
-                <h2>Wallet-linked replay holdings</h2>
-              </div>
-            </div>
-
-            {portfolioRows.length === 0 ? (
-              <div className="reason-card">
-                <div className="entry-title">No replay positions yet</div>
-                <div className="entry-copy">
-                  Start with Public markets if you want the clearest first replay, then compare Private markets / pre-IPO,
-                  Leverage & hedging, or Options / strategy once the mechanics feel familiar.
-                </div>
-              </div>
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Product</th>
-                      <th>Units</th>
-                      <th>Avg entry</th>
-                      <th>Mark</th>
-                      <th>Gross value</th>
-                      <th>Holding days</th>
-                      <th>Carry drag</th>
-                      <th>Mgmt fee</th>
-                      <th>Net exit</th>
-                      <th>Gross PnL</th>
-                      <th>Net PnL</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {portfolioRows.map((row) => (
-                      <tr key={row.id} onClick={() => handleSelectProduct(row.id)}>
-                        <td>
-                          <strong>{row.ticker}</strong>
-                          <div className="tiny">{row.productType}</div>
-                        </td>
-                        <td>{formatUnits(row.units)}</td>
-                        <td>{formatPrice(row.avgEntry)}</td>
-                        <td>{formatPrice(row.markPrice)}</td>
-                        <td>{formatNotional(row.marketValue)} PT</td>
-                        <td>{row.holdingDays.toFixed(1)}d</td>
-                        <td>{formatNotional(row.unpaidCarry)} PT</td>
-                        <td>{formatNotional(row.managementFee)} PT</td>
-                        <td>{formatNotional(row.netExitValue)} PT</td>
-                        <td className={row.unrealizedPnl >= 0 ? 'risk-low' : 'risk-high'}>
-                          {formatSigned(row.unrealizedPnl)} PT
-                        </td>
-                        <td className={row.netPnl >= 0 ? 'risk-low' : 'risk-high'}>{formatSigned(row.netPnl)} PT</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          <section className="card">
-            <div className="section-head">
-              <div>
-                <div className="eyebrow">Trade log</div>
-                <h2>Replay fills</h2>
-              </div>
-            </div>
-
-            {paperState.trades.length === 0 ? (
-              <div className="reason-card">
-                <div className="entry-title">No replay fills yet</div>
-                <div className="entry-copy">
-                  The first buy or sell will create a replay log entry with the product, timestamp, interval, fill price,
-                  and realized PnL where relevant.
-                </div>
-              </div>
-            ) : (
-              <>
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Time</th>
-                        <th>Product</th>
-                        <th>Side</th>
-                        <th>Units</th>
-                        <th>Price</th>
-                        <th>Notional</th>
-                        <th>Fees</th>
-                        <th>Tax</th>
-                        <th>Carry</th>
-                        <th>Mgmt</th>
-                        <th>Realized</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pagedReplayFills.map((trade) => {
-                        const product = getProductById(trade.productId);
-                        return (
-                          <tr key={trade.id}>
-                            <td>
-                              <div>{formatReplayDate(trade.ts, trade.interval)}</div>
-                              <div className="tiny">{trade.interval}</div>
-                            </td>
-                            <td>{product.ticker}</td>
-                            <td className={trade.side === 'buy' ? 'risk-low' : 'risk-high'}>
-                              {trade.side === 'buy' ? 'Buy' : 'Sell'}
-                            </td>
-                            <td>{formatUnits(trade.units)}</td>
-                            <td>{formatPrice(trade.price)}</td>
-                            <td>{formatNotional(trade.notional)} PT</td>
-                            <td>{trade.feeTotal ? `${formatNotional(trade.feeTotal)} PT` : '--'}</td>
-                            <td>{trade.taxTotal ? `${formatNotional(trade.taxTotal)} PT` : '--'}</td>
-                            <td>{trade.carryTotal ? `${formatNotional(trade.carryTotal)} PT` : '--'}</td>
-                            <td>{trade.managementFeeTotal ? `${formatNotional(trade.managementFeeTotal)} PT` : '--'}</td>
-                            <td className={trade.realizedPnl >= 0 ? 'risk-low' : trade.realizedPnl < 0 ? 'risk-high' : ''}>
-                              {trade.realizedPnl ? `${formatSigned(trade.realizedPnl)} PT` : '--'}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                {replayFillsHasMultiplePages ? (
-                  <div className="paper-shelf-pagination">
-                    <div className="paper-shelf-pagination-controls">
-                      <button
-                        type="button"
-                        className="ghost-btn compact"
-                        onClick={() => handleReplayFillsPageChange(replayFillsPage - 1)}
-                        disabled={replayFillsPage <= 1}
-                      >
-                        Previous
-                      </button>
-                      <button
-                        type="button"
-                        className="ghost-btn compact"
-                        onClick={() => handleReplayFillsPageChange(replayFillsPage + 1)}
-                        disabled={replayFillsPage >= replayFillsPageCount}
-                      >
-                        Next {replayFillsNextCount}
-                      </button>
-                    </div>
-                    <div className="muted paper-shelf-page-status">
-                      Page {replayFillsPage} / {replayFillsPageCount} | Showing {replayFillsPageStart + 1}-{replayFillsPageEnd} of{' '}
-                      {paperState.trades.length} fills
-                    </div>
-                  </div>
-                ) : null}
-              </>
-            )}
-          </section>
-        </section>
       </main>
 
       <PaperBuyPrimerModal

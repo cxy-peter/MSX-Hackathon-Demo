@@ -1508,7 +1508,7 @@ function getDualInvestmentPayoffRange(product = {}, hidden = false) {
 
   return {
     metric: 'Payoff range',
-    value: hidden ? '---' : `No fixed floor -> +${(upperPremium * 100).toFixed(2)}% cap`,
+    value: hidden ? '---' : `No fixed floor - +${(upperPremium * 100).toFixed(2)}% cap`,
     basis: `${days}D premium quote ${premiumRange}; not annual yield`,
     cap: hidden ? 'Upper cap hidden' : `Upper cap +${(upperPremium * 100).toFixed(2)}% term premium`,
     floor: 'Lower bound: no fixed floor because settlement can convert into the less desired asset.',
@@ -4420,13 +4420,14 @@ function WealthInner() {
       id: 'subscribe',
       taskNumber: 1,
       badge: WEALTH_TASK_BADGES.subscribe,
-      activityLabel: 'Receipt mint',
+      activityLabel: 'Receipt record',
       title: 'Buy one receipt',
-      copy: 'Choose a product, open the lifecycle desk, review the buy flow, then mint a local receipt balance in the wealth ledger.',
-      done: wealthSubscribeQuestDone,
+      copy: 'Choose a product, open the lifecycle desk, review the buy flow, then record a local receipt balance in the wealth ledger.',
+      done: wealthSubscribeTaskClaimed,
       claimed: wealthSubscribeTaskClaimed,
-      statusLabel: wealthSubscribeTaskClaimed ? 'Collectible claimed' : wealthSubscribeQuestDone ? '3/3 ready' : 'To do',
-      statusTone: wealthSubscribeTaskClaimed || wealthSubscribeQuestDone ? 'done' : 'todo'
+      readyToClaim: Boolean(wealthSubscribeQuestDone && !wealthSubscribeTaskClaimed),
+      statusLabel: wealthSubscribeTaskClaimed ? 'Minted' : wealthSubscribeQuestDone ? 'Wait to be minted' : 'To do',
+      statusTone: wealthSubscribeTaskClaimed ? 'done' : wealthSubscribeQuestDone ? 'ready' : 'todo'
     },
     {
       id: 'settlement',
@@ -4435,10 +4436,11 @@ function WealthInner() {
       activityLabel: 'Settle / pledge',
       title: 'Simulate settle or pledge',
       copy: 'Settle means close, redeem, roll, or mature the receipt. Pledge means locking it as route support before release.',
-      done: wealthSettlementQuestDone,
+      done: wealthSettlementTaskClaimed,
       claimed: wealthSettlementTaskClaimed,
-      statusLabel: wealthSettlementTaskClaimed ? 'Collectible claimed' : wealthSettlementQuestDone ? '3/3 ready' : 'To do',
-      statusTone: wealthSettlementTaskClaimed || wealthSettlementQuestDone ? 'done' : 'todo'
+      readyToClaim: Boolean(wealthSettlementQuestDone && !wealthSettlementTaskClaimed),
+      statusLabel: wealthSettlementTaskClaimed ? 'Minted' : wealthSettlementQuestDone ? 'Wait to be minted' : 'To do',
+      statusTone: wealthSettlementTaskClaimed ? 'done' : wealthSettlementQuestDone ? 'ready' : 'todo'
     }
   ];
   const wealthTaskCompletedCount = wealthQuestRows.filter((quest) => quest.done).length;
@@ -4799,10 +4801,12 @@ function WealthInner() {
   const settlementTargetDateLabel = formatSettlementTimelineDate(settlementDaysNumber);
   const settlementWindowLabel =
     settlementDaysNumber <= 0
-      ? `Today (${settlementStartDateLabel})`
-      : `${settlementDaysNumber}D forward (${settlementStartDateLabel} -> ${settlementTargetDateLabel})`;
+      ? 'Today'
+      : `${settlementDaysNumber}D forward (${settlementStartDateLabel} - ${settlementTargetDateLabel})`;
   const settlementPredictionCopy =
-    `Future value uses predicted NAV ${settlementProjectedNav.toFixed(3)} from ${settlementStartDateLabel} to ${settlementTargetDateLabel}.`;
+    settlementDaysNumber <= 0
+      ? `Current value uses predicted NAV ${settlementProjectedNav.toFixed(3)} at today's timeline point.`
+      : `Future value uses predicted NAV ${settlementProjectedNav.toFixed(3)} from ${settlementStartDateLabel} to ${settlementTargetDateLabel}.`;
   const suggestedSettlementDays = clamp(
     Math.max(30, selectedLockStatus.daysLeft > 0 ? selectedLockStatus.daysLeft : getWealthLockDays(selectedProduct) || 90),
     0,
@@ -5027,7 +5031,7 @@ function WealthInner() {
       title: 'Wallet behavior',
       copy: 'Activity pushes the user toward detail pages they have not practiced yet, instead of repeating the same buy card.',
       metrics: [
-        { label: 'Receipt minted', value: portfolioRows.length ? 'Yes' : 'No' },
+        { label: 'Receipt recorded', value: portfolioRows.length ? 'Yes' : 'No' },
         { label: 'Settlement practiced', value: wealthActivityTypes.has('settlement') || wealthActivityTypes.has('redeem') ? 'Yes' : 'No' },
         { label: 'Pledge practiced', value: Object.keys(displayWealthState.collateral || {}).length ? 'Yes' : 'No' }
       ]
@@ -5156,7 +5160,7 @@ function WealthInner() {
         },
         {
           id: 'receipt',
-          title: 'Receipt minted',
+          title: 'Receipt recorded',
           done: subscribeTaskReceiptMinted,
           copy: subscribeTaskReceiptMinted
             ? `A wallet-linked ${subscribeTaskProduct.shareToken} receipt is recorded in the Wealth ledger.`
@@ -6173,7 +6177,7 @@ function WealthInner() {
           functionName: 'subscribeProduct',
           args: [receiptProductId, receiptUnitAmount],
           pendingLabel: `Minting required Sepolia receipt #${receiptTokenId} and W1 badge for ${requestedAmount.toLocaleString()} PT.`,
-          submittedLabel: `Receipt mint submitted for ${selectedProduct.shortName || selectedProduct.name}`,
+          submittedLabel: `Receipt record submitted for ${selectedProduct.shortName || selectedProduct.name}`,
           confirmedLabel: `Sepolia receipt #${receiptTokenId} confirmed for ${selectedProduct.shortName || selectedProduct.name}.`
         })
       : true;
@@ -6822,13 +6826,14 @@ function WealthInner() {
     ];
     const targetDirection = dualCurrencyDirection === 'sell-high' ? 1 : -1;
     const baseDistance = Math.max(0.006, Math.abs(Number(dualCurrencyTargetPct || 0)) / 100 || 0.04);
+    const ptSubscribeAmount = Math.max(0, Number(allocationAmount) || dualCurrencyExamplePrincipal);
     const orderRows = [1, 2, 1, 3, 2, 4].map((days, index) => {
       const distance = baseDistance + index * 0.004;
       const targetPrice = roundNumber(activePair.referencePrice * (1 + targetDirection * distance), activePair.referencePrice > 1000 ? 2 : 4);
       const targetPct = roundNumber((targetPrice / activePair.referencePrice - 1) * 100, 2);
       const apr = Math.min(2.2, Math.max(0.22, dualCurrencyApr * (1 + index * 0.08) * Math.max(0.55, 2 / Math.sqrt(days))));
-      const ptReward = Math.max(1, Math.round(dualCurrencyExamplePrincipal * apr * days / 365));
-      const settlementPt = dualCurrencyExamplePrincipal + ptReward;
+      const ptReward = Math.max(1, Math.round(ptSubscribeAmount * apr * days / 365));
+      const settlementPt = ptSubscribeAmount + ptReward;
       return {
         id: `${activePair.id}-${dualCurrencyDirection}-${days}-${index}`,
         targetPrice,
@@ -6841,7 +6846,6 @@ function WealthInner() {
       };
     });
     const highlightedQuote = orderRows[0];
-    const ptSubscribeAmount = dualCurrencyExamplePrincipal;
     const targetPriceLabel = highlightedQuote.targetPrice.toLocaleString(undefined, {
       minimumFractionDigits: activePair.referencePrice > 1000 ? 2 : 4,
       maximumFractionDigits: activePair.referencePrice > 1000 ? 2 : 4
@@ -6874,8 +6878,8 @@ function WealthInner() {
                 onClick={() => setDualCurrencyPairId(pair.id)}
               >
                 <span className="wealth-dual-coin-stack" aria-hidden="true">
-                  <i>{pair.base.slice(0, 1)}</i>
-                  <i>{pair.quote.slice(0, 1)}</i>
+                  <i>{pair.base}</i>
+                  <i>{pair.quote}</i>
                 </span>
                 <strong>{pair.id}</strong>
               </button>
@@ -6908,7 +6912,7 @@ function WealthInner() {
               <button
                 type="button"
                 key={filter.id}
-                className={`wealth-dual-filter-chip ${filter.id === 'all' ? 'active' : ''}`}
+                className={`wealth-dual-filter-chip ${settlementDays === filter.days || (filter.id === 'all' && settlementDays === suggestedSettlementDays) ? 'active' : ''}`}
                 onClick={() => setSettlementDays(filter.days)}
               >
                 {filter.label}
@@ -6966,12 +6970,22 @@ function WealthInner() {
             </div>
 
             <div className="wealth-dual-subscribe-field">
-              <span>Subscription amount</span>
-              <strong>{ptSubscribeAmount.toLocaleString()} PT</strong>
+              <label className="wealth-dual-subscribe-input">
+                <span>Subscription amount</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={allocationAmount}
+                  onChange={(event) => setAllocationAmount(event.target.value)}
+                  aria-label="Dual Investment PT subscription amount"
+                />
+              </label>
               <button
                 type="button"
                 className="wealth-dual-max-btn"
                 onClick={() => {
+                  setAllocationAmount(String(Math.max(0, roundNumber(availableCash, 2))));
                   setDualCurrencyTargetPct(highlightedQuote.targetPct);
                   setSettlementDays(highlightedQuote.days);
                 }}
@@ -6984,8 +6998,26 @@ function WealthInner() {
               <div className="product-title">Reward overview</div>
               <p>Outcomes are priced by the fixed target level, but the demo pays the learning result back as PT.</p>
               <div className="wealth-dual-condition-row">
-                <span className="active">{targetConditionCopy}</span>
-                <span>{fallbackConditionCopy}</span>
+                <button
+                  type="button"
+                  className={dualCurrencyDirection === 'sell-high' ? 'active' : ''}
+                  onClick={() => {
+                    setDualCurrencyDirection('sell-high');
+                    setDualCurrencyTargetPct(Math.abs(dualCurrencyTargetPct || highlightedQuote.targetPct || 5));
+                  }}
+                >
+                  {dualCurrencyDirection === 'sell-high' ? targetConditionCopy : fallbackConditionCopy}
+                </button>
+                <button
+                  type="button"
+                  className={dualCurrencyDirection === 'buy-low' ? 'active' : ''}
+                  onClick={() => {
+                    setDualCurrencyDirection('buy-low');
+                    setDualCurrencyTargetPct(-Math.abs(dualCurrencyTargetPct || highlightedQuote.targetPct || 4));
+                  }}
+                >
+                  {dualCurrencyDirection === 'buy-low' ? targetConditionCopy : fallbackConditionCopy}
+                </button>
               </div>
               <div className="wealth-dual-receive-card">
                 <span>You will receive</span>
@@ -7214,7 +7246,7 @@ function WealthInner() {
             handleExpandWealthTimeline();
           }}
         >
-          <span>{timelineDockFloat.arrowSide === 'left' ? '>' : '<'}</span>
+          <span>Portfolio timeline</span>
         </div>
       );
     }
@@ -9029,20 +9061,6 @@ function WealthInner() {
             </button>
           </div>
 
-          <p className="hero-text">
-            {t(
-              'This wealth page borrows the shelf logic from large CEX earn products, but adapts it for RiskLens: explain the underlying, show the source of return, attach wallet-native share receipts, and gate advanced products with risk and quiz progress instead of hiding everything behind strategy jargon.',
-              'This wealth page borrows the shelf logic from large CEX earn products, but adapts it for RiskLens: explain the underlying, show the source of return, attach wallet-native share receipts, and gate advanced products with risk and quiz progress instead of hiding everything behind strategy jargon.'
-            )}
-          </p>
-
-          <div className="hero-points">
-            <span className="pill risk-low">{t('Goal-based routing', 'Goal-based routing')}</span>
-            <span className="pill risk-low">{t('RWA and quant shelves', 'RWA and quant shelves')}</span>
-            <span className="pill risk-medium">{t('AI diligence layer', 'AI diligence layer')}</span>
-            <span className="pill risk-medium">{t('Tokenized share receipts', 'Tokenized share receipts')}</span>
-          </div>
-
           <div className="wealth-summary-grid">
             <div className="wealth-summary-block">
               <div className="label">{t('Total invested', 'Total invested')}</div>
@@ -9107,25 +9125,21 @@ function WealthInner() {
             <span className="pill risk-low">{wealthTaskCompletedCount}/{wealthQuestRows.length} complete</span>
           </div>
 
-          <div className="route-highlight wealth-next-task">
-            <strong>Next task:</strong> {nextWealthTask.badge} 闁?{nextWealthTask.title}. {nextWealthTask.copy}
-          </div>
-
           <div className="wealth-task-guide-grid">
             {wealthQuestRows.map((quest) => (
               <button
                 type="button"
                 key={quest.id}
-                className={`wealth-task-card ${quest.done ? 'done' : ''} ${selectedWealthTask.id === quest.id ? 'active' : ''}`}
+                className={`wealth-task-card ${quest.done ? 'done' : ''} ${quest.readyToClaim ? 'ready' : ''} ${selectedWealthTask.id === quest.id ? 'active' : ''}`}
                 onClick={() => setSelectedWealthTaskId(quest.id)}
               >
                 <div className="wealth-task-card-head">
                   <span className="wealth-task-badge">Task {quest.taskNumber}</span>
-                  <span className={`wealth-task-status ${quest.statusTone === 'done' ? 'done' : 'todo'}`}>
+                  <span className={`wealth-task-status ${quest.statusTone === 'done' ? 'done' : quest.statusTone === 'ready' ? 'ready' : 'todo'}`}>
                     {quest.statusLabel}
                   </span>
                 </div>
-                <div className="wealth-task-meta">Task {quest.taskNumber} 闁?{quest.activityLabel}</div>
+                <div className="wealth-task-meta">Task {quest.taskNumber} - {quest.activityLabel}</div>
                 <strong>{quest.title}</strong>
                 <p>{quest.copy}</p>
               </button>
@@ -9136,13 +9150,16 @@ function WealthInner() {
             <div className="section-head compact">
               <div>
                 <div className="eyebrow">{selectedWealthTaskDetail.eyebrow}</div>
-                <h3>{selectedWealthTask.badge} 闁?{selectedWealthTaskDetail.title}</h3>
+                <h3 className="wealth-task-detail-title">
+                  <span className="wealth-task-detail-title-badge">{selectedWealthTask.badge}</span>
+                  <span>{selectedWealthTaskDetail.title}</span>
+                </h3>
               </div>
               <span className={`pill ${selectedWealthTaskReadyToClaim || selectedWealthTaskClaimed ? 'risk-low' : 'risk-medium'}`}>
                 {selectedWealthTaskClaimStatus.text}
               </span>
             </div>
-            <p className="muted">{selectedWealthTaskDetail.copy}</p>
+            <p className="muted wealth-task-detail-copy">{selectedWealthTaskDetail.copy}</p>
             <div className="wealth-task-detail-grid">
               <div className="wealth-task-detail-panel">
                 <div className="checklist-list">
