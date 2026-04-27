@@ -211,6 +211,7 @@ const portfolioComboBaseResultCache = new Map();
 const portfolioComboWindowResultCache = new Map();
 const portfolioComboLatestResultByName = new Map();
 const PORTFOLIO_COMBO_RESULT_CACHE_LIMIT = 160;
+const LEARNING_ROUTE_VALUE_ORDER = ['spot', 'perp:leverage', 'perp:hedge', 'borrow', 'perp:combo', 'strategy-ai', 'routing', 'lending'];
 const HEDGE_PROTECTION_EFFECTIVENESS = {
   direct: 1,
   basket: 0.75,
@@ -930,7 +931,22 @@ function WalletModal({
   onRecoverSelectedProfileBackup,
   profileBackupSummaryText
 }) {
+  const [disconnectConfirmOpen, setDisconnectConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    setDisconnectConfirmOpen(false);
+  }, [isConnected, open]);
+
   if (!open) return null;
+
+  function requestDisconnect() {
+    setDisconnectConfirmOpen(true);
+  }
+
+  function confirmDisconnect() {
+    setDisconnectConfirmOpen(false);
+    onDisconnect?.();
+  }
 
   return (
     <div className="wallet-modal-backdrop" onClick={(event) => event.target === event.currentTarget && !isPending && onClose()}>
@@ -943,7 +959,7 @@ function WalletModal({
           <div className="wallet-modal-subtitle">Replay Layer</div>
           <button
             className={`wallet-option ${isConnected ? 'connected' : ''} ${isPending || (!isConnected && !hasMetaMaskInstalled) ? 'disabled' : ''}`}
-            onClick={isConnected ? onDisconnect : onConnect}
+            onClick={isConnected ? requestDisconnect : onConnect}
             disabled={isPending || (!isConnected && !hasMetaMaskInstalled)}
           >
             <MetaMaskIcon className="wallet-option-icon" />
@@ -960,6 +976,21 @@ function WalletModal({
               </div>
             </div>
           </button>
+          {isConnected && disconnectConfirmOpen ? (
+            <div className="wallet-disconnect-confirm">
+              <div className="wallet-disconnect-confirm-copy">
+                Disconnect this browser session? Your nickname and signed backups stay saved for the wallet address.
+              </div>
+              <div className="toolbar">
+                <button type="button" className="ghost-btn compact" onClick={() => setDisconnectConfirmOpen(false)}>
+                  Cancel
+                </button>
+                <button type="button" className="secondary-btn compact" onClick={confirmDisconnect}>
+                  Confirm disconnect
+                </button>
+              </div>
+            </div>
+          ) : null}
           {!hasMetaMaskInstalled ? (
             <div className="wallet-install-card">
               <div className="wallet-install-title">MetaMask not detected</div>
@@ -977,7 +1008,7 @@ function WalletModal({
             </div>
           ) : null}
         </div>
-        <div className={`wallet-modal-pane wallet-modal-main ${isConnected ? 'wallet-modal-main-connected' : ''}`}>
+        <div className={`wallet-modal-pane wallet-modal-main ${isConnected ? 'wallet-modal-main-connected' : ''} ${profileBackupAccounts.length ? 'wallet-modal-main-has-backup' : ''}`}>
           <MetaMaskIcon className="wallet-modal-hero wallet-modal-hero-metamask" />
           <div className="wallet-modal-status">
             {isConnected
@@ -1083,7 +1114,7 @@ function WalletModal({
             </div>
           )}
           {isConnected ? (
-            <button className="secondary-btn" onClick={onDisconnect}>
+            <button className="secondary-btn" onClick={requestDisconnect}>
               Disconnect wallet
             </button>
           ) : null}
@@ -1624,7 +1655,7 @@ function AutoSellPreviewModal({
                 <div className="entry-title">{note.title}</div>
               </div>
               <div className="paper-inline-support-list">
-                <div className="paper-inline-support-row">
+                <div className="paper-inline-support-row paper-inline-support-row-full">
                   <span>{note.copy}</span>
                 </div>
               </div>
@@ -1707,6 +1738,7 @@ function TradeOutcomeModal({ open, outcome, onClose }) {
 function FlashLoanQuoteModal({
   open,
   product,
+  isHedgeQuote = false,
   baseNotional,
   targetNotional,
   maxBorrowNotional,
@@ -1737,14 +1769,24 @@ function FlashLoanQuoteModal({
         </button>
         <div className="section-head wealth-modal-head">
           <div>
-            <div className="eyebrow">Flash liquidity quote</div>
-            <h2>{product.ticker} flash notional</h2>
+            <div className="eyebrow">{isHedgeQuote ? 'Hedge loan quote' : 'Flash liquidity quote'}</div>
+            <h2>{product.ticker} {isHedgeQuote ? 'hedge loan' : 'flash notional'}</h2>
             <div className="paper-float-modal-copy paper-float-modal-copy-flash">
-              Normal venue credit usually cannot tell whether borrowed notional is truly opening leverage or just becoming reusable cash, so it has to price in more risk.
-              <br />
-              In this replay desk, <strong>ticket-bound flash</strong> stays attached to an attested exchange route, so eligible same-purpose products can still prove the borrow is being used for the current leverage or hedge objective. Because the use is provable, the risk lane is lower and the fee can be lower too.
-              <br />
-              <strong>Broad flash</strong> is not restricted to the provable route. It may be used away from this exchange or outside the signed purpose, so it keeps the higher surcharge.
+              {isHedgeQuote ? (
+                <>
+                  The sleeve notional above stays wallet-funded. This quote attaches borrowed notional only to the protective hedge ticket.
+                  <br />
+                  Confirm the quote amount here first; MetaMask then asks for a borrowing signature before the loan is attached to the hedge leg.
+                </>
+              ) : (
+                <>
+                  Normal venue credit usually cannot tell whether borrowed notional is truly opening leverage or just becoming reusable cash, so it has to price in more risk.
+                  <br />
+                  In this replay desk, <strong>ticket-bound flash</strong> stays attached to an attested exchange route, so eligible same-purpose products can still prove the borrow is being used for the current leverage or hedge objective. Because the use is provable, the risk lane is lower and the fee can be lower too.
+                  <br />
+                  <strong>Broad flash</strong> is not restricted to the provable route. It may be used away from this exchange or outside the signed purpose, so it keeps the higher surcharge.
+                </>
+              )}
             </div>
           </div>
           <div className="paper-float-modal-actions">
@@ -1762,7 +1804,7 @@ function FlashLoanQuoteModal({
 
         <div className="paper-float-modal-stat-grid">
           <div className="paper-inline-desk-metric tall">
-            <div className="k">Wallet-backed notional</div>
+            <div className="k">{isHedgeQuote ? 'Wallet-backed hedge' : 'Wallet-backed notional'}</div>
             <div className="v">{formatNotional(baseNotional)} PT</div>
           </div>
           <div className="paper-inline-desk-metric tall">
@@ -1878,11 +1920,11 @@ function FlashLoanQuoteModal({
                 <strong>Boosts this ticket only</strong>
               </div>
               <div className="paper-inline-support-row">
-                <span>Risk acknowledgement</span>
-                <strong>Requested when the long or short opens</strong>
+                <span>Borrowing signature</span>
+                <strong>Requested when quote is confirmed</strong>
               </div>
               <div className="paper-inline-support-row">
-                <span>Extra flash ceiling</span>
+                <span>{isHedgeQuote ? 'Hedge loan ceiling' : 'Extra flash ceiling'}</span>
                 <strong>{formatNotional(maxBorrowNotional)} PT</strong>
               </div>
             </div>
@@ -2820,17 +2862,6 @@ function getMaxBuyNotionalForFunding(product, cash = 0, principalLoanBudget = 0)
   }
 
   return roundNumber(low, 2);
-}
-
-function getPrincipalLoanForBuy({ product, notional = 0, cash = 0, principalLoanBudget = 0 }) {
-  const safeNotional = Math.max(0, Number(notional || 0));
-  const safeCash = Math.max(0, Number(cash || 0));
-  const safeLoanBudget = Math.max(0, Number(principalLoanBudget || 0));
-  if (!product || safeNotional <= 0 || safeLoanBudget <= 0) return 0;
-
-  const costs = calculateTradeCosts({ product, side: 'buy', notional: safeNotional });
-  const cashAfterUpfrontDrag = Math.max(0, safeCash - Number(costs.nonTaxCost || 0));
-  return roundNumber(Math.min(safeLoanBudget, safeNotional, Math.max(0, safeNotional - cashAfterUpfrontDrag)), 2);
 }
 
 function buildLeveragedReplaySnapshot({
@@ -3943,7 +3974,7 @@ const REPLAY_ROUTE_FOCUS_OPTIONS = {
       walkthrough: [
         { number: '1', title: 'Buy the sleeve first', detail: 'Use the same chart to open the spot or wrapper exposure that needs protection.' },
         { number: '2', title: 'Play replay into risk', detail: 'Let the replay move forward. Pause when the sleeve starts looking weak, crowded, or event-risky.' },
-        { number: '3', title: 'Open hedge', detail: 'Size the hedge as a percent of principal, quote any top-up, then open the protective short leg.' },
+        { number: '3', title: 'Open hedge', detail: 'Size the hedge as a percent of principal, quote any hedge-ticket loan, then open the protective short leg.' },
         { number: '4', title: 'Close hedge, then sleeve', detail: 'Unwind the hedge when the risk window passes. If the thesis is over, close the underlying sleeve too.' }
       ]
     },
@@ -5680,16 +5711,12 @@ function getReplayPracticePreviewOptions(options = {}) {
     ...options,
     previewMode: true,
     notional: roundNumber(Math.max(MIN_PAPER_TRADE, Number(options?.notional || 0)), 2),
-    marginCapital: quantizeReplayPreviewSize(options?.marginCapital, REPLAY_PRACTICE_PREVIEW_SIZE_QUANTUM, 0),
-    flashLoanAmount: quantizeReplayPreviewSize(options?.flashLoanAmount, REPLAY_PRACTICE_PREVIEW_SIZE_QUANTUM, 0),
-    flashLoanFee: quantizeReplayPreviewSize(options?.flashLoanFee, 100, 0),
-    hedgeSleeveNotional: quantizeReplayPreviewSize(options?.hedgeSleeveNotional ?? options?.notional),
-    hedgeTicketNotional: quantizeReplayPreviewSize(options?.hedgeTicketNotional ?? options?.notional),
-    hedgeMarginCapital: quantizeReplayPreviewSize(
-      options?.hedgeMarginCapital ?? options?.marginCapital,
-      REPLAY_PRACTICE_PREVIEW_SIZE_QUANTUM,
-      0
-    ),
+    marginCapital: roundNumber(Math.max(0, Number(options?.marginCapital || 0)), 2),
+    flashLoanAmount: roundNumber(Math.max(0, Number(options?.flashLoanAmount || 0)), 2),
+    flashLoanFee: roundNumber(Math.max(0, Number(options?.flashLoanFee || 0)), 2),
+    hedgeSleeveNotional: roundNumber(Math.max(MIN_PAPER_TRADE, Number(options?.hedgeSleeveNotional ?? options?.notional ?? 0)), 2),
+    hedgeTicketNotional: roundNumber(Math.max(MIN_PAPER_TRADE, Number(options?.hedgeTicketNotional ?? options?.notional ?? 0)), 2),
+    hedgeMarginCapital: roundNumber(Math.max(0, Number(options?.hedgeMarginCapital ?? options?.marginCapital ?? 0)), 2),
     hedgeLeverage: roundNumber(Number(options?.hedgeLeverage || options?.leverage || 1), 2),
     leverage: roundNumber(Number(options?.leverage || 1), 2),
     strategyControls: {
@@ -5703,9 +5730,28 @@ function getReplayPracticePreviewOptions(options = {}) {
   };
 }
 
-function getReplayPracticeScenarioCacheKey(bars = [], mode = 'spot', options = {}) {
+function getReplayPracticeScenarioOptions(options = {}) {
   const previewOptions = getReplayPracticePreviewOptions(options);
-  const controls = previewOptions?.strategyControls || {};
+
+  return {
+    ...previewOptions,
+    notional: quantizeReplayPreviewSize(previewOptions.notional),
+    marginCapital: quantizeReplayPreviewSize(previewOptions.marginCapital, REPLAY_PRACTICE_PREVIEW_SIZE_QUANTUM, 0),
+    flashLoanAmount: quantizeReplayPreviewSize(previewOptions.flashLoanAmount, REPLAY_PRACTICE_PREVIEW_SIZE_QUANTUM, 0),
+    flashLoanFee: quantizeReplayPreviewSize(previewOptions.flashLoanFee, 100, 0),
+    hedgeSleeveNotional: quantizeReplayPreviewSize(previewOptions.hedgeSleeveNotional),
+    hedgeTicketNotional: quantizeReplayPreviewSize(previewOptions.hedgeTicketNotional),
+    hedgeMarginCapital: quantizeReplayPreviewSize(
+      previewOptions.hedgeMarginCapital,
+      REPLAY_PRACTICE_PREVIEW_SIZE_QUANTUM,
+      0
+    )
+  };
+}
+
+function getReplayPracticeScenarioCacheKey(bars = [], mode = 'spot', options = {}) {
+  const scenarioOptions = getReplayPracticeScenarioOptions(options);
+  const controls = scenarioOptions?.strategyControls || {};
   const strategyControlKey = [
     controls.downsidePct,
     controls.profitHarvestPct,
@@ -5718,19 +5764,19 @@ function getReplayPracticeScenarioCacheKey(bars = [], mode = 'spot', options = {
 
   return [
     getReplayPracticeBarsCacheId(bars),
-    'scenario-v6',
+    'scenario-v7',
     mode,
-    previewOptions?.product?.id || '',
-    roundNumber(Number(previewOptions?.notional || 0), 2),
-    roundNumber(Number(previewOptions?.marginCapital || 0), 2),
-    roundNumber(Number(previewOptions?.flashLoanAmount || 0), 2),
-    roundNumber(Number(previewOptions?.flashLoanFee || 0), 2),
-    roundNumber(Number(previewOptions?.hedgeSleeveNotional || 0), 2),
-    roundNumber(Number(previewOptions?.hedgeTicketNotional || 0), 2),
-    roundNumber(Number(previewOptions?.hedgeMarginCapital || 0), 2),
-    roundNumber(Number(previewOptions?.hedgeLeverage || 1), 1),
-    roundNumber(Number(previewOptions?.leverage || 1), 1),
-    previewOptions?.strategyTemplateId || '',
+    scenarioOptions?.product?.id || '',
+    roundNumber(Number(scenarioOptions?.notional || 0), 2),
+    roundNumber(Number(scenarioOptions?.marginCapital || 0), 2),
+    roundNumber(Number(scenarioOptions?.flashLoanAmount || 0), 2),
+    roundNumber(Number(scenarioOptions?.flashLoanFee || 0), 2),
+    roundNumber(Number(scenarioOptions?.hedgeSleeveNotional || 0), 2),
+    roundNumber(Number(scenarioOptions?.hedgeTicketNotional || 0), 2),
+    roundNumber(Number(scenarioOptions?.hedgeMarginCapital || 0), 2),
+    roundNumber(Number(scenarioOptions?.hedgeLeverage || 1), 1),
+    roundNumber(Number(scenarioOptions?.leverage || 1), 1),
+    scenarioOptions?.strategyTemplateId || '',
     strategyControlKey
   ].join('|');
 }
@@ -5936,7 +5982,8 @@ function buildReplayPracticeCasesFast(bars = [], mode = 'spot', options = {}) {
 
 function buildReplayPracticeCasesPreviewCached(bars = [], mode = 'spot', options = {}) {
   const previewOptions = getReplayPracticePreviewOptions(options);
-  const scenarioKey = getReplayPracticeScenarioCacheKey(bars, mode, previewOptions);
+  const scenarioOptions = getReplayPracticeScenarioOptions(previewOptions);
+  const scenarioKey = getReplayPracticeScenarioCacheKey(bars, mode, scenarioOptions);
   const safeBars = getSafeReplayPracticeBars(bars);
   const cachedDescriptors = readLimitedCacheEntry(replayPracticeScenarioCache, scenarioKey);
 
@@ -5948,7 +5995,7 @@ function buildReplayPracticeCasesPreviewCached(bars = [], mode = 'spot', options
       .filter(Boolean);
   }
 
-  const fastCases = buildReplayPracticeCasesFast(bars, mode, previewOptions);
+  const fastCases = buildReplayPracticeCasesFast(bars, mode, scenarioOptions);
   const descriptors = fastCases
     .map((practiceCase) => {
       const startSafeIndex = safeBars.findIndex((bar) => bar.index === practiceCase.startIndex);
@@ -5975,7 +6022,11 @@ function buildReplayPracticeCasesPreviewCached(bars = [], mode = 'spot', options
     rememberLimitedCacheEntry(replayPracticeScenarioCache, scenarioKey, descriptors, REPLAY_PRACTICE_SCENARIO_CACHE_LIMIT);
   }
 
-  return fastCases;
+  return descriptors
+    .map((descriptor) =>
+      buildReplayPracticeCaseFromCandidate(bars, safeBars, { ...descriptor, cacheState: 'computed' }, mode, previewOptions)
+    )
+    .filter(Boolean);
 }
 
 function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}) {
@@ -6576,6 +6627,16 @@ function buildReplayPracticeCasesCached(bars = [], mode = 'spot', options = {}) 
 
 function buildReplayPracticeCase(bars = [], mode = 'spot', options = {}) {
   return buildReplayPracticeCasesCached(bars, mode, options)[0] || null;
+}
+
+function sortLearningRouteOptions(options = []) {
+  return [...options].sort((left, right) => {
+    const leftIndex = LEARNING_ROUTE_VALUE_ORDER.indexOf(left.value);
+    const rightIndex = LEARNING_ROUTE_VALUE_ORDER.indexOf(right.value);
+    const leftRank = leftIndex >= 0 ? leftIndex : LEARNING_ROUTE_VALUE_ORDER.length;
+    const rightRank = rightIndex >= 0 ? rightIndex : LEARNING_ROUTE_VALUE_ORDER.length;
+    return leftRank - rightRank;
+  });
 }
 
 function formatHoldingPresetLabel(days) {
@@ -7702,13 +7763,6 @@ function PaperTradingInner() {
   const [diligencePagerIndex, setDiligencePagerIndex] = useState(0);
   const [hedgeRatio, setHedgeRatio] = useState(0.5);
   const hedgeTypeOverride = 'auto';
-  const [hedgePrincipalFlashEnabled, setHedgePrincipalFlashEnabled] = useState(false);
-  const [hedgePrincipalLoanApproval, setHedgePrincipalLoanApproval] = useState({
-    key: '',
-    signature: '',
-    signedAt: '',
-    maxNotional: 0
-  });
   const [hedgePreviewSleeveNotional, setHedgePreviewSleeveNotional] = useState(2500);
   const [hedgePreviewSleeveInput, setHedgePreviewSleeveInput] = useState('2500');
   const [hedgeDiligencePulse, setHedgeDiligencePulse] = useState(false);
@@ -8964,7 +9018,7 @@ function PaperTradingInner() {
   const advancedRoutesUnlocked = replayDeveloperModeActive || replayTaskGateOpen;
   const advancedActivityEnabled = replayDeveloperModeActive || replayTaskGateOpen;
   const isReplayRouteLocked = (routeId) => routeId !== 'spot' && !advancedRoutesUnlocked;
-  const learningRouteOptions = availableReplayRoutes.flatMap((route) => {
+  const learningRouteOptions = sortLearningRouteOptions(availableReplayRoutes.flatMap((route) => {
     const actionLocked = isReplayRouteLocked(route.id);
     const routeUi = getReplayRouteUi(route.id);
 
@@ -8993,7 +9047,7 @@ function PaperTradingInner() {
         actionLocked
       }
     ];
-  });
+  }));
   const selectedLearningRouteValue = selectedAdvancedRoute === 'perp' ? `perp:${selectedPerpFocusId}` : selectedAdvancedRoute;
   const selectedLearningRouteOption =
     learningRouteOptions.find((option) => option.value === selectedLearningRouteValue) ||
@@ -9622,54 +9676,19 @@ function PaperTradingInner() {
         : [],
     [availableCash, hedgeFocusActive, leverageRouteActive, routeLeverageMultiple, wealthDeskState]
   );
-  const principalFlashBaseCaps = useMemo(
-    () => Object.fromEntries(principalFlashBaseRows.map((row) => [row.id, row.maxAvailableNotional])),
-    [principalFlashBaseRows]
-  );
   const principalFlashTotalBudget = leverageRouteActive && hedgeFocusActive
     ? getFlashLiquidityTotalBudget(principalFlashBaseRows)
     : 0;
   const hedgeHasLiveSleeveForFunding = hedgeFocusActive && selectedPosition.units > 0 && Number(selectedMarketValue || 0) >= 1;
   const hedgeExistingPrincipalFundingBase = hedgeHasLiveSleeveForFunding ? roundNumber(Number(selectedMarketValue || 0), 2) : 0;
-  const hedgeExistingPrincipalLoan = hedgeHasLiveSleeveForFunding
-    ? roundNumber(Math.max(0, Number(selectedPosition.principalLoan || 0)), 2)
-    : 0;
-  const hedgePrincipalLoanApprovalKey = [
-    selectedProductId,
-    selectedAdvancedRoute,
-    routeLeverageMultiple,
-    roundNumber(Number(availableCash || 0), 2),
-    roundNumber(principalFlashTotalBudget, 2)
-  ].join('|');
-  const hedgePrincipalLoanApprovalValid =
-    hedgePrincipalLoanApproval.key === hedgePrincipalLoanApprovalKey &&
-    Number(hedgePrincipalLoanApproval.maxNotional || 0) > 0 &&
-    principalFlashTotalBudget > 0;
-  const hedgePrincipalSignedLoanBudget = hedgePrincipalLoanApprovalValid
-    ? roundNumber(Math.min(Number(hedgePrincipalLoanApproval.maxNotional || 0), principalFlashTotalBudget), 2)
-    : 0;
-  const hedgePrincipalCommittedLoanBudget = roundNumber(
-    Math.max(hedgeExistingPrincipalLoan, hedgePrincipalFlashEnabled ? hedgePrincipalSignedLoanBudget : 0),
-    2
-  );
-  const hedgePrincipalLoanRemainingForFunding = leverageRouteActive && hedgeFocusActive
-    ? roundNumber(Math.max(0, hedgePrincipalCommittedLoanBudget - hedgeExistingPrincipalLoan), 2)
-    : 0;
   const hedgePrincipalWalletIncrementMax = hedgeFocusActive
     ? getMaxBuyNotionalForFunding(selectedProduct, availableCash, 0)
-    : 0;
-  const hedgePrincipalLoanIncrementMax = hedgeFocusActive
-    ? getMaxBuyNotionalForFunding(selectedProduct, availableCash, hedgePrincipalLoanRemainingForFunding)
     : 0;
   const hedgePrincipalWalletMaxForFunding = hedgeFocusActive
     ? roundNumber(hedgeExistingPrincipalFundingBase + hedgePrincipalWalletIncrementMax, 2)
     : 0;
   const hedgePrincipalPreviewMaxForFunding = hedgeFocusActive
-    ? roundNumber(
-        hedgeExistingPrincipalFundingBase +
-          (hedgePrincipalFlashEnabled ? hedgePrincipalLoanIncrementMax : hedgePrincipalWalletIncrementMax),
-        2
-      )
+    ? roundNumber(hedgeExistingPrincipalFundingBase + hedgePrincipalWalletIncrementMax, 2)
     : 0;
   const hedgePrincipalPreviewNotional = hedgeFocusActive
     ? roundNumber(Math.min(Math.max(0, Number(hedgePreviewSleeveNotional || 0)), hedgePrincipalPreviewMaxForFunding), 2)
@@ -9690,28 +9709,6 @@ function PaperTradingInner() {
   const hedgePrincipalCashReserved = hedgeFocusActive
     ? roundNumber(Math.min(Math.max(0, Number(availableCash || 0) - hedgePrincipalUpfrontCost), hedgePrincipalIncrementalNeed), 2)
     : 0;
-  const hedgePrincipalFlashNotional = hedgeFocusActive
-    ? roundNumber(Math.min(hedgePrincipalLoanRemainingForFunding, Math.max(0, hedgePrincipalIncrementalNeed - hedgePrincipalCashReserved)), 2)
-    : 0;
-  const hedgePrincipalFlashReservedNotional = hedgeFocusActive
-    ? roundNumber(hedgeExistingPrincipalLoan + hedgePrincipalFlashNotional, 2)
-    : 0;
-  const hedgePrincipalFlashAllocatedByLane = useMemo(() => {
-    if (!hedgeFocusActive || hedgePrincipalFlashReservedNotional <= 0) return {};
-
-    const requestedById = Object.fromEntries(principalFlashBaseRows.map((row) => [row.id, hedgePrincipalFlashReservedNotional]));
-    return allocateFlashQuotesByRate(
-      requestedById,
-      hedgePrincipalFlashReservedNotional,
-      principalFlashBaseRows,
-      principalFlashBaseCaps
-    );
-  }, [
-    hedgeFocusActive,
-    hedgePrincipalFlashReservedNotional,
-    principalFlashBaseCaps,
-    principalFlashBaseRows
-  ]);
   const routeFundingCashAvailable = leverageRouteActive
     ? roundNumber(Math.max(0, Number(availableCash || 0) - hedgePrincipalCashReserved), 2)
     : Number(availableCash || 0);
@@ -9722,9 +9719,7 @@ function PaperTradingInner() {
   const routeSizingTargetNotional = leverageRouteActive
     ? roundNumber(routeRequestedTicketNotional + routeFlashExtensionNotional, 2)
     : routeRequestedTicketNotional;
-  const routeTotalFlashNotional = leverageRouteActive
-    ? roundNumber(hedgePrincipalFlashReservedNotional + flashLoanAppliedInputNotional, 2)
-    : 0;
+  const routeTotalFlashNotional = leverageRouteActive ? flashLoanAppliedInputNotional : 0;
   const routeMarginBufferRate = getPerpMarginBufferRate(routeSizingTargetNotional, routeLeverageMultiple);
   const routeInitialMarginRate = getPerpInitialMarginRate(routeSizingTargetNotional, routeLeverageMultiple);
   const routeFlashReserveCapital = leverageRouteActive
@@ -9778,8 +9773,6 @@ function PaperTradingInner() {
             routeBaseNotional,
             availableCash: Number(availableCash || 0),
             reserveBackingValue: routeFlashReserveBackingValue,
-            reservedNotionalById: hedgePrincipalFlashAllocatedByLane,
-            reservedTotalNotional: hedgePrincipalFlashReservedNotional,
             wealthDeskState,
             draftQuotes: flashLoanDraftQuotes,
             appliedQuotes: flashLoanAppliedQuotes
@@ -9788,8 +9781,6 @@ function PaperTradingInner() {
     [
       flashLoanAppliedQuotes,
       flashLoanDraftQuotes,
-      hedgePrincipalFlashAllocatedByLane,
-      hedgePrincipalFlashReservedNotional,
       availableCash,
       leverageRouteActive,
       routeBaseNotional,
@@ -9808,16 +9799,12 @@ function PaperTradingInner() {
             routeBaseNotional: 0,
             availableCash: Number(availableCash || 0),
             reserveBackingValue: routeFlashReserveBackingValue,
-            reservedNotionalById: hedgePrincipalFlashAllocatedByLane,
-            reservedTotalNotional: hedgePrincipalFlashReservedNotional,
             wealthDeskState,
             draftQuotes: {},
             appliedQuotes: {}
           })
         : [],
     [
-      hedgePrincipalFlashAllocatedByLane,
-      hedgePrincipalFlashReservedNotional,
       availableCash,
       leverageRouteActive,
       routeLeverageMultiple,
@@ -9977,23 +9964,19 @@ function PaperTradingInner() {
         reserveBackingValue: routeFlashReserveBackingValue
       })
     : routeMaxWalletBackedNotional;
-  const hedgePrincipalFlashBudgetLeft = leverageRouteActive && hedgeFocusActive
-    ? roundNumber(Math.max(0, principalFlashTotalBudget - hedgePrincipalFlashReservedNotional), 2)
-    : 0;
   const hedgeLoanBudgetUsed = leverageRouteActive && hedgeFocusActive
-    ? roundNumber(hedgePrincipalFlashReservedNotional + flashLoanAppliedInputNotional, 2)
+    ? roundNumber(flashLoanAppliedInputNotional, 2)
     : flashLoanAppliedInputNotional;
   const hedgeLoanBudgetLeftAfterApplied = leverageRouteActive && hedgeFocusActive
     ? roundNumber(Math.max(0, principalFlashTotalBudget - hedgeLoanBudgetUsed), 2)
     : 0;
-  const hedgePrincipalFundingModeLabel = hedgePrincipalFlashReservedNotional > 0 ? 'Principal loan on' : 'Wallet principal only';
-  const hedgePrincipalFundingCopy = hedgePrincipalFlashEnabled
-    ? `${selectedProduct.ticker} sleeve uses wallet PT first and uses the signed principal-loan agreement only for the extra principal, so the later hedge can still borrow only what remains.`
-    : `${selectedProduct.ticker} sleeve uses wallet PT only. Want more opens a wallet-signed principal-loan agreement before the sleeve can borrow.`;
+  const hedgePrincipalFundingModeLabel = 'Sleeve wallet only';
+  const hedgePrincipalFundingCopy =
+    `${selectedProduct.ticker} sleeve uses wallet PT only. Borrowing is reserved for the hedge ticket below, where the quote shows capacity before the wallet signs.`;
   const hedgeLoanCapacityCopy =
     flashLoanQuoteMaxNotional <= 0
-      ? 'No hedge loan left after sleeve principal. Lower principal, lower hedge size, or turn off principal loan.'
-      : `Hedge can still borrow up to ${formatNotional(flashLoanQuoteMaxNotional)} PT after the ${selectedProduct.ticker} sleeve principal.`;
+      ? 'No hedge-ticket loan capacity is left under the current margin reserve. Lower sleeve notional, lower hedge size, or add wallet PT.'
+      : `Hedge ticket can borrow up to ${formatNotional(flashLoanQuoteMaxNotional)} PT from the fixed pool after wallet-only sleeve funding.`;
   const routeWalletBackedSetupMarginRate =
     leverageRouteActive && routeMaxWalletBackedNotional > 0
       ? roundNumber(Math.max(0, routeFundingCashAvailable) / routeMaxWalletBackedNotional, 4)
@@ -10055,9 +10038,9 @@ function PaperTradingInner() {
     : 0;
   const hedgeFlashQuoteButtonLabel = flashLoanAppliedTicketNotional > 0
     ? hedgeFlashTopUpRemaining > 0
-      ? 'Top up quote'
-      : 'Edit flash'
-    : 'Quote top-up';
+      ? 'Top up hedge loan'
+      : 'Edit loan quote'
+    : 'Quote hedge loan';
   const hedgeFlashTopUpLabel = flashLoanAppliedTicketNotional > 0
     ? hedgeFlashTopUpRemaining > 0
       ? `${formatNotional(flashLoanAppliedTicketNotional)} PT applied, ${formatNotional(hedgeFlashTopUpRemaining)} PT left`
@@ -10366,7 +10349,7 @@ function PaperTradingInner() {
           value: `${formatNotional(hedgeWalletBackedTicketNotional)} PT`
         },
         {
-          label: hedgeFlashTopUpNotional > 0 ? 'Flash top-up' : 'Flash needed',
+          label: hedgeFlashTopUpNotional > 0 ? 'Hedge loan' : 'Loan needed',
           value: `${formatNotional(hedgeFlashTopUpNotional > 0 ? hedgeFlashTopUpNotional : hedgeFlashTopUpNeed)} PT`,
           tone: hedgeFlashTopUpNotional > 0 || hedgeFlashTopUpNeed > 0 ? 'risk-medium' : ''
         },
@@ -10424,7 +10407,7 @@ function PaperTradingInner() {
       step: '1',
       title: 'Principal notional',
       value: hedgeSizingReady ? `${formatNotional(hedgeProtectedSleeveNotional)} PT` : selectedProduct.ticker,
-      copy: 'Wallet and upfront drag first. Want more requires a signed principal-loan agreement before this sleeve can borrow.'
+      copy: 'Wallet and upfront drag only. The sleeve stays principal-funded; any borrowing belongs to the hedge ticket.'
     },
     {
       step: '2',
@@ -10440,10 +10423,10 @@ function PaperTradingInner() {
     },
     {
       step: '4',
-      title: 'Flash top-up',
+      title: 'Hedge loan',
       value: hedgeSizingReady ? `${formatNotional(hedgeFlashTopUpNotional > 0 ? hedgeFlashTopUpNotional : hedgeFlashTopUpNeed)} PT` : '--',
       copy: hedgeFlashTopUpNotional > 0
-        ? 'This is the hedge loan after any principal loan has already reserved capacity.'
+        ? 'This is the hedge-ticket loan attached after quote and borrowing signature.'
         : 'Only appears when the hedge ticket is larger than remaining hedge cash.'
     }
   ];
@@ -10477,7 +10460,6 @@ function PaperTradingInner() {
     routeLeverageMultiple,
     roundNumber(Number(tradeAmount || 0), 2),
     roundNumber(Number(availableCash || 0), 2),
-    roundNumber(hedgePrincipalFlashReservedNotional, 2),
     roundNumber(hedgeFlashTopUpRequiredNotional, 2)
   ].join('|');
   const flashLoanCollateralSupport = flashLoanQuoteRows[0]?.collateralSupport || 0;
@@ -11071,13 +11053,6 @@ function PaperTradingInner() {
     setPendingPerpTradeConfirm(null);
     setPendingPerpRiskConfirm(null);
     setPendingBuyTrade(null);
-    setHedgePrincipalFlashEnabled(false);
-    setHedgePrincipalLoanApproval({
-      key: '',
-      signature: '',
-      signedAt: '',
-      maxNotional: 0
-    });
     flashLoanQuoteContextRef.current = '';
     setPerpRiskApproval({
       key: '',
@@ -11095,13 +11070,6 @@ function PaperTradingInner() {
       setPendingPerpDirectionAfterQuote(null);
       setPendingPerpTradeConfirm(null);
       setPendingPerpRiskConfirm(null);
-      setHedgePrincipalFlashEnabled(false);
-      setHedgePrincipalLoanApproval({
-        key: '',
-        signature: '',
-        signedAt: '',
-        maxNotional: 0
-      });
       flashLoanQuoteContextRef.current = '';
       setPerpRiskApproval({
         key: '',
@@ -11160,19 +11128,6 @@ function PaperTradingInner() {
     flashLoanQuoteContextRef.current = '';
     setFeedback('Principal, hedge ticket, or leverage changed. Flash quote was cleared, so please requote for this hedge ticket.');
   }, [currentFlashLoanContextKey, hasFlashLoanQuoteState]);
-
-  useEffect(() => {
-    if (!hedgePrincipalFlashEnabled) return;
-    if (hedgePrincipalLoanApprovalValid) return;
-
-    setHedgePrincipalFlashEnabled(false);
-    setHedgePrincipalLoanApproval({
-      key: '',
-      signature: '',
-      signedAt: '',
-      maxNotional: 0
-    });
-  }, [hedgePrincipalFlashEnabled, hedgePrincipalLoanApprovalValid]);
 
   useEffect(() => {
     if (!perpRiskApproval.key) return;
@@ -11364,97 +11319,6 @@ function PaperTradingInner() {
   function handleHedgePreviewSleeveSliderChange(nextValue) {
     const nextAmount = Math.max(0, roundNumber(Number(nextValue || 0), 2));
     scheduleHedgeSleeveSliderCommit(nextAmount);
-  }
-
-  async function handleToggleHedgePrincipalFlash() {
-    setTradeAmountMaxApplied(false);
-
-    if (!hedgePrincipalFlashEnabled && hedgePrincipalLoanApprovalValid && hedgePrincipalSignedLoanBudget > hedgeExistingPrincipalLoan + 0.01) {
-      setHedgePrincipalFlashEnabled(true);
-      setFeedback(
-        `Principal loan is on under the signed agreement. The sleeve can borrow up to ${formatNotional(
-          hedgePrincipalSignedLoanBudget
-        )} PT from the fixed pool before the hedge quote uses the remainder.`
-      );
-      return;
-    }
-
-    if (!hedgePrincipalFlashEnabled) {
-      if (!advancedActivityEnabled) {
-        setFeedback(advancedActivityUnlockCopy);
-        return;
-      }
-
-      if (principalFlashTotalBudget <= hedgeExistingPrincipalLoan + 0.01) {
-        setFeedback('The fixed loan pool has no unused capacity for sleeve principal. Lower the sleeve or close existing borrowed principal first.');
-        return;
-      }
-
-      if (!isConnected || !address) {
-        setFeedback('Connect MetaMask first so the principal-loan agreement can be signed before Want more increases sleeve size.');
-        return;
-      }
-
-      const maxPrincipalLoan = roundNumber(Math.max(0, principalFlashTotalBudget), 2);
-      const requestedPrincipalLoan = roundNumber(
-        Math.min(
-          maxPrincipalLoan,
-          Math.max(0, Number(hedgePreviewSleeveNotional || 0) - hedgePrincipalWalletMaxForFunding)
-        ),
-        2
-      );
-
-      try {
-        const signature = await signMessageAsync({
-          message: [
-            'RiskLens hedge sleeve principal-loan agreement',
-            `Wallet: ${address}`,
-            `Product: ${selectedProduct.ticker}`,
-            `Sleeve principal target: ${formatNotional(hedgePreviewSleeveNotional)} PT`,
-            `Wallet sleeve max after upfront drag: ${formatNotional(hedgePrincipalWalletMaxForFunding)} PT`,
-            `Requested principal loan now: ${formatNotional(requestedPrincipalLoan)} PT`,
-            `Maximum signed principal loan: ${formatNotional(maxPrincipalLoan)} PT`,
-            `Fixed loan pool shared with hedge top-up: ${formatNotional(principalFlashTotalBudget)} PT`,
-            'This is a replay-only agreement. It lets sleeve principal borrow from the fixed pool, and the later hedge can only borrow what remains.'
-          ].join('\n')
-        });
-
-        setHedgePrincipalLoanApproval({
-          key: hedgePrincipalLoanApprovalKey,
-          signature,
-          signedAt: new Date().toISOString(),
-          maxNotional: maxPrincipalLoan
-        });
-        setHedgePrincipalFlashEnabled(true);
-        setFeedback(
-          `Principal-loan agreement signed. Sleeve principal can now borrow up to ${formatNotional(
-            maxPrincipalLoan
-          )} PT from the fixed pool; the hedge top-up will be capped by what remains.`
-        );
-      } catch (loanError) {
-        const loanMessage = String(loanError?.shortMessage || loanError?.message || '');
-        setHedgePrincipalFlashEnabled(false);
-        setFeedback(
-          loanMessage.toLowerCase().includes('rejected')
-            ? 'Principal-loan agreement was rejected in MetaMask, so Want more stayed off.'
-            : loanMessage || 'MetaMask could not sign the principal-loan agreement.'
-        );
-      }
-      return;
-    }
-
-    setHedgePrincipalFlashEnabled(false);
-
-    const walletOnlyPrincipal = roundNumber(
-      Math.min(
-        Math.max(0, Number(hedgePreviewSleeveNotional || 0)),
-        Math.max(0, Number(hedgePrincipalWalletMaxForFunding || 0))
-      ),
-      2
-    );
-    setHedgePreviewSleeveNotional(walletOnlyPrincipal);
-    setHedgePreviewSleeveInput(String(walletOnlyPrincipal));
-    setFeedback('Principal is back to wallet PT only. The fixed loan pool is reserved for the hedge leg again.');
   }
 
   function handleHedgePreviewSleeveBlur() {
@@ -11719,7 +11583,11 @@ function PaperTradingInner() {
     }
     setWalletError('');
     setWalletNicknameFeedback('');
-    setPendingWalletNickname(normalizeWalletNickname(walletNicknameDraft) || null);
+    const pendingNickname = normalizeWalletNickname(walletNicknameDraft);
+    setPendingWalletNickname(pendingNickname || null);
+    if (pendingNickname) {
+      setWalletNicknameFeedback(`Nickname "${pendingNickname}" will be saved to the wallet that approves this connection.`);
+    }
     connect({ connector: metaMaskConnector });
   }
 
@@ -12100,15 +11968,7 @@ function PaperTradingInner() {
         side: 'buy',
         notional: fillNotional
       });
-      sleevePrincipalLoanAppliedForExecution =
-        hedgeFocusActive && hedgePrincipalFlashEnabled && hedgePrincipalLoanApprovalValid
-          ? getPrincipalLoanForBuy({
-              product: selectedProduct,
-              notional: fillNotional,
-              cash: availableCash,
-              principalLoanBudget: hedgePrincipalLoanRemainingForFunding
-            })
-          : 0;
+      sleevePrincipalLoanAppliedForExecution = 0;
       walletCashRequiredForExecution = roundNumber(
         Math.max(0, fillNotional - sleevePrincipalLoanAppliedForExecution) + buyCostsForExecution.nonTaxCost,
         2
@@ -12118,7 +11978,7 @@ function PaperTradingInner() {
         const sleeveMessage = hedgeFocusActive
           ? `The sleeve did not open because ${formatNotional(fillNotional)} PT plus about ${formatNotional(
               buyCostsForExecution.nonTaxCost
-            )} PT of upfront drag needs ${formatNotional(walletCashRequiredForExecution)} PT of wallet cash after the signed principal loan. Lower the sleeve notional or sign Want more before opening the hedge.`
+            )} PT of upfront drag needs ${formatNotional(walletCashRequiredForExecution)} PT of wallet cash. Lower the sleeve notional; hedge-ticket borrowing is quoted below and does not fund this sleeve.`
           : 'Not enough replay buying power after fees and routing drag.';
         if (hedgeFocusActive) {
           showReplayDeskToast(sleeveMessage);
@@ -12476,15 +12336,7 @@ function PaperTradingInner() {
         side: 'buy',
         notional: requestedTradeNotional
       });
-      const previewPrincipalLoan =
-        hedgeFocusActive && hedgePrincipalFlashEnabled && hedgePrincipalLoanApprovalValid
-          ? getPrincipalLoanForBuy({
-              product: selectedProduct,
-              notional: requestedTradeNotional,
-              cash: availableCash,
-              principalLoanBudget: hedgePrincipalLoanRemainingForFunding
-            })
-          : 0;
+      const previewPrincipalLoan = 0;
       const previewWalletCashRequired = roundNumber(
         Math.max(0, requestedTradeNotional - previewPrincipalLoan) + buyCostsPreview.nonTaxCost,
         2
@@ -12497,7 +12349,7 @@ function PaperTradingInner() {
               buyCostsPreview.nonTaxCost
             )} PT of upfront drag needs ${formatNotional(
               previewWalletCashRequired
-            )} PT of wallet cash after the signed principal loan. Lower the sleeve notional, then buy it before opening the hedge.`
+            )} PT of wallet cash. Lower the sleeve notional, then buy it before opening the hedge; the loan quote belongs to the hedge ticket only.`
           );
           setFeedback('');
         } else {
@@ -12885,12 +12737,12 @@ function PaperTradingInner() {
     }
 
     if (!Number.isFinite(Number(tradeAmount)) || Number(tradeAmount) <= 0) {
-      setFeedback('Set a hedge ticket above 0 PT first, then confirm that ticket before quoting flash liquidity.');
+      setFeedback(hedgeFocusActive ? 'Set a hedge ticket above 0 PT first, then quote the hedge loan.' : 'Set a ticket above 0 PT first, then confirm it before quoting flash liquidity.');
       return;
     }
 
     if (flashLoanQuoteMaxNotional <= 0) {
-      setFeedback('The current wallet and collateral state leaves 0 PT flash capacity for this route.');
+      setFeedback(hedgeFocusActive ? 'The current wallet and collateral state leaves 0 PT hedge-loan capacity for this ticket.' : 'The current wallet and collateral state leaves 0 PT flash capacity for this route.');
       return;
     }
 
@@ -12898,10 +12750,15 @@ function PaperTradingInner() {
       setFeedback(
         hedgeFocusActive
           ? hedgeFlashTopUpRemaining > 0
-            ? 'This hedge needs more flash top-up, but the current margin reserve leaves 0 PT of attachable flash capacity.'
-            : 'This hedge ticket is already wallet-backed. Increase the hedge ticket size above the wallet-backed route before quoting a flash top-up.'
+            ? 'This hedge needs more loan support, but the current margin reserve leaves 0 PT of attachable hedge-loan capacity.'
+            : 'This hedge ticket is already wallet-backed. Increase the hedge ticket size above the wallet-backed route before quoting a hedge loan.'
           : 'This wallet and collateral state leaves 0 PT of route-bound flash capacity for the leverage leg. Add cash, pledge wealth collateral, or lower the current route reserve first.'
       );
+      return;
+    }
+
+    if (hedgeFocusActive) {
+      handleFlashLoanPreview();
       return;
     }
 
@@ -12937,9 +12794,9 @@ function PaperTradingInner() {
     setFeedback(
       Number(flashLoanQuoteCaps.ticket || 0) > 0 || Number(flashLoanQuoteCaps.general || 0) > 0
         ? hedgeFocusActive && flashLoanAppliedTicketNotional > 0 && hedgeFlashTopUpRemaining > 0
-          ? `Flash quote opened for the remaining ${formatNotional(hedgeFlashTopUpRemaining)} PT top-up.`
+          ? `Hedge loan quote opened for the remaining ${formatNotional(hedgeFlashTopUpRemaining)} PT.`
           : hedgeFocusActive
-            ? 'Flash quote opened. It can top up the hedge ticket after the sleeve has consumed wallet PT and loan pool capacity.'
+            ? 'Hedge loan quote opened. The sleeve remains wallet-only; this quote shows how much the protective leg can borrow before signature.'
             : 'Flash quote opened. In leverage mode, confirmed flash now stacks on top of the wallet-backed route exposure, so changing the flash amount changes modeled take-home.'
         : 'Flash quote opened. The current wallet shows 0 available flash capacity, so the modal will explain what reserve or collateral support is missing.'
     );
@@ -12981,13 +12838,49 @@ function PaperTradingInner() {
       return;
     }
 
+    if (!isConnected || !address) {
+      setFeedback('Connect MetaMask first so this wallet can sign the borrowing quote before it attaches to the ticket.');
+      return;
+    }
+
+    try {
+      setFeedback('Quote staged. MetaMask will ask this wallet to sign the borrowing terms before the loan attaches.');
+      await signMessageAsync({
+        message: [
+          hedgeFocusActive ? 'RiskLens hedge ticket borrowing quote' : 'RiskLens leverage ticket borrowing quote',
+          `Wallet: ${address}`,
+          `Product: ${selectedProduct.ticker}`,
+          `Route: ${hedgeFocusActive ? 'hedge ticket' : 'leverage ticket'}`,
+          `Direction: ${pendingPerpDirectionAfterQuote || leverageDirection}`,
+          `Wallet-backed ticket: ${formatNotional(routeBaseNotional)} PT`,
+          `Requested ticket: ${formatNotional(routeRequestedTicketNotional)} PT`,
+          `Borrow quote attached: ${formatNotional(totalApplied)} PT`,
+          `${hedgeFocusActive ? 'Fixed hedge loan pool' : 'Fixed loan pool'}: ${formatNotional(principalFlashTotalBudget)} PT`,
+          `Estimated premium: ${formatNotional(flashLoanDraftPremiumEstimate)} PT`,
+          `Quote context: ${currentFlashLoanContextKey}`,
+          `Signed at: ${new Date().toISOString()}`,
+          hedgeFocusActive
+            ? 'This replay-only signature attaches borrowing to the hedge ticket only. It does not increase the sleeve principal notional.'
+            : 'This replay-only signature attaches borrowing to the current leveraged ticket only.'
+        ].join('\n')
+      });
+    } catch (quoteError) {
+      const quoteMessage = String(quoteError?.shortMessage || quoteError?.message || '');
+      setFeedback(
+        quoteMessage.toLowerCase().includes('rejected')
+          ? 'Borrowing signature was rejected in MetaMask, so the quote stayed in draft and no loan was attached.'
+          : quoteMessage || 'MetaMask could not sign the borrowing quote.'
+      );
+      return;
+    }
+
     setFlashLoanAppliedQuotes(nextApplied);
     setFlashLoanDraftQuotes(nextApplied);
     setFlashLoanQuoteOpen(false);
     flashLoanQuoteContextRef.current = currentFlashLoanContextKey;
     setFeedback(
       hedgeFocusActive
-        ? `Flash quote attached: ${formatNotional(totalApplied)} PT notional. In hedge mode it tops up the staged hedge ticket only, so it stays capped by the hedge size you are trying to open.`
+        ? `Borrowing quote signed and attached: ${formatNotional(totalApplied)} PT notional. It tops up the staged hedge ticket only; the sleeve remains wallet-funded.`
         : `Flash quote attached: ${formatNotional(totalApplied)} PT notional. Attested route credit prices first because eligible same-purpose products inside this exchange can be proven by the signed route. Broad flash keeps the higher surcharge because the use is not restricted or proven. In leverage mode this flash now adds route-bound exposure on top of the wallet-backed leg, so the modeled take-home updates with the attached amount.`
     );
 
@@ -13363,11 +13256,11 @@ function PaperTradingInner() {
       setFeedback(
         tradeAmountMaxMode === 'ticket' || hedgeFocusActive
           ? hedgeFocusActive
-            ? 'Hedge confirmed. Stage the attested flash quote next, then MetaMask will ask for the hedge signature before the leg opens.'
-            : 'Trade confirmed. Stage the attested flash quote next, then MetaMask will ask for the leverage signature before the long or short opens.'
+            ? 'Hedge confirmed. Stage the loan quote next, sign the borrowing quote, then MetaMask will ask for the hedge signature before the leg opens.'
+            : 'Trade confirmed. Stage the attested flash quote next, sign the borrowing quote, then MetaMask will ask for the leverage signature before the long or short opens.'
           : hedgeFocusActive
-            ? 'Hedge confirmed. Stage the broad flash quote next, then MetaMask will ask for the hedge signature before the leg opens.'
-            : 'Trade confirmed. Stage the broad flash quote next, then MetaMask will ask for the leverage signature before the long or short opens.'
+            ? 'Hedge confirmed. Stage the broad loan quote next, sign the borrowing quote, then MetaMask will ask for the hedge signature before the leg opens.'
+            : 'Trade confirmed. Stage the broad flash quote next, sign the borrowing quote, then MetaMask will ask for the leverage signature before the long or short opens.'
       );
       handleOpenFlashLoanConfirm();
       return;
@@ -13912,7 +13805,7 @@ function PaperTradingInner() {
                     </div>
                     {flashLoanAppliedTicketNotional > 0 ? (
                       <div className="guide-chip">
-                        <div className="k">Flash top-up</div>
+                        <div className="k">{hedgeFocusActive ? 'Hedge loan' : 'Flash top-up'}</div>
                         <div className="v">{formatNotional(flashLoanAppliedTicketNotional)} PT</div>
                         <div className="muted">
                           Premium about {formatNotional(flashLoanPremiumEstimate)} PT. This boosts the current ticket notional directly, but it still stays route-bound instead of becoming wallet cash.
@@ -14262,36 +14155,51 @@ function PaperTradingInner() {
   const deferredRoutePracticeHedgeSleeveNotional = useDeferredValue(debouncedRoutePracticeHedgeSleeveNotional);
   const deferredRoutePracticeHedgeTicketNotional = useDeferredValue(debouncedRoutePracticeHedgeTicketNotional);
   const deferredStrategyControlValues = useDeferredValue(debouncedStrategyControlValues);
+  const routePracticeUsesExactSize = strategyWorkspaceRouteActive || hedgeFocusActive;
+  const routePracticeSizingNotional = routePracticeUsesExactSize ? routePracticeNotional : deferredRoutePracticeNotional;
+  const routePracticeSizingFlashNotional = routePracticeUsesExactSize ? routePracticeFlashNotional : deferredRoutePracticeFlashNotional;
+  const routePracticeSizingFlashPremium = routePracticeUsesExactSize
+    ? routePracticeFlashPremiumEstimate
+    : deferredRoutePracticeFlashPremiumEstimate;
+  const routePracticeSizingHedgeSleeve = routePracticeUsesExactSize
+    ? routePracticeHedgeSleeveNotional
+    : deferredRoutePracticeHedgeSleeveNotional;
+  const routePracticeSizingHedgeTicket = routePracticeUsesExactSize
+    ? routePracticeHedgeTicketNotional
+    : deferredRoutePracticeHedgeTicketNotional;
+  const routePracticeSizingStrategyControls = routePracticeUsesExactSize
+    ? strategyControlValues
+    : deferredStrategyControlValues;
   const routePracticeCases = useMemo(
     () =>
       buildReplayPracticeCasesCached(selectedView?.bars || [], routePracticeMode, {
         product: selectedProduct,
-        notional: deferredRoutePracticeNotional,
+        notional: routePracticeSizingNotional,
         leverage: routeLeverageMultiple,
         marginCapital: routePostedBaseMarginCapital,
-        flashLoanAmount: deferredRoutePracticeFlashNotional,
-        flashLoanFee: deferredRoutePracticeFlashPremiumEstimate,
-        hedgeSleeveNotional: deferredRoutePracticeHedgeSleeveNotional,
-        hedgeTicketNotional: deferredRoutePracticeHedgeTicketNotional,
+        flashLoanAmount: routePracticeSizingFlashNotional,
+        flashLoanFee: routePracticeSizingFlashPremium,
+        hedgeSleeveNotional: routePracticeSizingHedgeSleeve,
+        hedgeTicketNotional: routePracticeSizingHedgeTicket,
         hedgeMarginCapital: routePostedBaseMarginCapital,
         hedgeLeverage: routeLeverageMultiple,
         strategyTemplateId: selectedStrategyTemplateId,
-        strategyControls: deferredStrategyControlValues,
+        strategyControls: routePracticeSizingStrategyControls,
         previewMode: true
       }),
     [
-      deferredRoutePracticeFlashNotional,
-      deferredRoutePracticeFlashPremiumEstimate,
+      routePracticeSizingFlashNotional,
+      routePracticeSizingFlashPremium,
       routeLeverageMultiple,
       routePostedBaseMarginCapital,
-      deferredRoutePracticeHedgeSleeveNotional,
-      deferredRoutePracticeHedgeTicketNotional,
-      deferredRoutePracticeNotional,
+      routePracticeSizingHedgeSleeve,
+      routePracticeSizingHedgeTicket,
+      routePracticeSizingNotional,
       routePracticeMode,
       selectedStrategyTemplateId,
       selectedProduct,
       selectedView?.bars,
-      deferredStrategyControlValues
+      routePracticeSizingStrategyControls
     ]
   );
   useEffect(() => {
@@ -14552,10 +14460,15 @@ function PaperTradingInner() {
     strategyWorkspaceRouteActive
       ? timedExitTargetBar || routePracticeCase?.endBar || replayFocus.bar
       : null;
+  const strategyPreviewNotional = Math.max(
+    MIN_PAPER_TRADE,
+    Number(selectedPosition.principal || routePracticeSizingNotional || tradeAmount || MIN_PAPER_TRADE)
+  );
   const optionStrategyPreview = useMemo(() => {
     if (!strategyWorkspaceRouteActive) return null;
     const cachedStrategyOutcome =
-      routePracticeCase?.strategyOutcome?.templateId === selectedStrategyTemplateId
+      routePracticeCase?.strategyOutcome?.templateId === selectedStrategyTemplateId &&
+      roundNumber(Number(routePracticeCase.strategyOutcome.notional || 0), 2) === roundNumber(strategyPreviewNotional, 2)
         ? routePracticeCase.strategyOutcome
         : null;
 
@@ -14564,20 +14477,21 @@ function PaperTradingInner() {
         product: selectedProduct,
         startBar: strategyPreviewAnchorBar,
         endBar: strategyPreviewTargetBar,
-        notional: Math.max(MIN_PAPER_TRADE, Number(selectedPosition.principal || deferredRoutePracticeNotional || tradeAmount || MIN_PAPER_TRADE)),
+        notional: strategyPreviewNotional,
         templateId: selectedStrategyTemplateId,
-        controls: deferredStrategyControlValues
+        controls: routePracticeSizingStrategyControls
       });
   }, [
-    deferredRoutePracticeNotional,
-    deferredStrategyControlValues,
+    routePracticeSizingStrategyControls,
     routePracticeCase?.strategyOutcome,
+    routePracticeSizingNotional,
     strategyWorkspaceRouteActive,
     selectedPosition.principal,
     selectedProduct,
     selectedStrategyTemplateId,
     strategyPreviewAnchorBar,
     strategyPreviewTargetBar,
+    strategyPreviewNotional,
     tradeAmount
   ]);
   const strategyAiTemplateOptions = useMemo(
@@ -15089,10 +15003,14 @@ function PaperTradingInner() {
             copy: `Modeled across about ${timedExitActualHoldingDays || 0}D before the timed ${hedgeFocusActive ? 'unwind' : 'close'}.`
           },
           {
-            label: 'Flash premium',
+            label: hedgeFocusActive ? 'Hedge loan premium' : 'Flash premium',
             value: timedExitLeveragedSnapshot?.flashLoanFee || 0,
             isCost: true,
-            copy: flashLoanAppliedTicketNotional > 0 ? 'Charged upfront when extra ticket notional is attached.' : 'Optional until a flash top-up is attached.'
+            copy: flashLoanAppliedTicketNotional > 0
+              ? 'Charged upfront when extra ticket notional is attached.'
+              : hedgeFocusActive
+                ? 'Optional until a hedge loan quote is attached.'
+                : 'Optional until a flash top-up is attached.'
           },
           {
             label: 'Management fee',
@@ -15222,6 +15140,69 @@ function PaperTradingInner() {
               ? `Close in ${timedExitRequestedDays}D`
               : `Auto-sell in ${timedExitRequestedDays}D`;
   const hedgeStatCards = hedgeFocusProfile?.statCards || [];
+
+  function renderStrategyTemplateLeaderboardCard({
+    className = '',
+    title = 'Strategy / combo leaderboard',
+    limit = 4,
+    emptyCopy = 'Upload a suggested combo or AI template to start the board.'
+  } = {}) {
+    return (
+      <div className={`paper-shelf-learning-case-card paper-desk-practice-case-card paper-strategy-board-desk-slot ${className}`.trim()}>
+        <div className="paper-strategy-board">
+          <div className="paper-strategy-board-head">
+            <span>{title}</span>
+            <strong>{strategyTemplateLeaderboardRows.length} entr{strategyTemplateLeaderboardRows.length === 1 ? 'y' : 'ies'}</strong>
+          </div>
+          {strategyTemplateLeaderboardRows.length ? (
+            <div className="paper-strategy-board-list">
+              {strategyTemplateLeaderboardRows.slice(0, limit).map((entry, index) => (
+                <div
+                  key={`strategy-board-${entry.id}`}
+                  className="paper-strategy-board-row"
+                  role="button"
+                  tabIndex={0}
+                  title="Copy this leaderboard entry to combo or AI template controls"
+                  onClick={() => handleApplyStrategyTemplateLeaderboardEntry(entry)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      handleApplyStrategyTemplateLeaderboardEntry(entry);
+                    }
+                  }}
+                >
+                  <div className="paper-strategy-board-rank">#{index + 1}</div>
+                  <div className="paper-strategy-board-main">
+                    <strong>
+                      <span className="paper-strategy-board-type">
+                        {entry.entryType === 'portfolio-combo' ? 'Combo' : 'AI'}
+                      </span>
+                      {entry.title}
+                    </strong>
+                    <span>
+                      {entry.entryType === 'portfolio-combo'
+                        ? `${entry.productLabel} / ${entry.dateRange || entry.strategyLabel}`
+                        : `${entry.productLabel} / ${entry.variantLabel || entry.strategyLabel}`}
+                    </span>
+                  </div>
+                  <div className="paper-strategy-board-metrics">
+                    <span>{entry.winRate}% win</span>
+                    <span>{formatSignedPercent(entry.expectedReturnPct, 1)} return</span>
+                    <span>-{entry.maxDrawdownPct.toFixed(1)}% DD</span>
+                    <span>{Math.round(entry.templateScore)}/100 score</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="paper-inline-note-box paper-inline-route-capacity-note">
+              {emptyCopy}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   function renderRoutePracticeCaseCard(extraClassName = '') {
     return (
@@ -16012,7 +15993,15 @@ function PaperTradingInner() {
               </div>
             ) : null}
 
-            {renderRoutePracticeCaseCard('paper-desk-practice-case-card-inline')}
+            {comboFocusActive || strategyAiRouteActive
+              ? renderStrategyTemplateLeaderboardCard({
+                  className: 'paper-desk-practice-case-card-inline',
+                  title: comboFocusActive ? 'Combo / AI leaderboard' : 'Strategy / combo leaderboard',
+                  emptyCopy: comboFocusActive
+                    ? 'Upload a suggested combo or AI template to start the board.'
+                    : 'Generate an AI template or upload a portfolio combo to rank by score, expected return, and drawdown.'
+                })
+              : renderRoutePracticeCaseCard('paper-desk-practice-case-card-inline')}
             {comboFocusActive ? renderPortfolioComboLab('paper-portfolio-combo-card paper-portfolio-combo-card-desk') : null}
           </div>
         </div>
@@ -16030,23 +16019,7 @@ function PaperTradingInner() {
                   <div className="paper-inline-route-paper-notional paper-inline-route-paper-notional-inline">
                     <div className="paper-inline-route-paper-notional-head">
                       <span>Sleeve notional to protect</span>
-                      <div className="paper-inline-route-principal-actions">
-                        <strong>{formatNotional(hedgePrincipalPreviewNotional)} PT</strong>
-                        <button
-                          type="button"
-                          className={`ghost-btn compact ${
-                            hedgePrincipalFlashEnabled || hedgePrincipalFlashReservedNotional > 0 ? 'active-toggle' : ''
-                          }`.trim()}
-                          onClick={handleToggleHedgePrincipalFlash}
-                          disabled={isRiskSigning}
-                        >
-                          {isRiskSigning
-                            ? 'Await wallet'
-                            : hedgePrincipalFlashEnabled || hedgePrincipalFlashReservedNotional > 0
-                              ? 'Loan on'
-                              : 'Want more?'}
-                        </button>
-                      </div>
+                      <strong>{formatNotional(hedgePrincipalPreviewNotional)} PT</strong>
                     </div>
                     <div className="paper-inline-route-paper-notional-row">
                       <input
@@ -16058,7 +16031,7 @@ function PaperTradingInner() {
                         onBlur={handleHedgePreviewSleeveBlur}
                       />
                       <div className="paper-inline-route-paper-notional-cap">
-                        <span>{hedgePrincipalFlashEnabled ? 'Wallet + loan sleeve max' : 'Wallet sleeve max'}</span>
+                        <span>Wallet sleeve max</span>
                         <strong>{formatNotional(hedgePreviewSleeveMax)} PT</strong>
                       </div>
                     </div>
@@ -16076,33 +16049,6 @@ function PaperTradingInner() {
                         ? `Live sleeve mark: ${formatNotional(hedgeLiveSleeveNotional)} PT. ${hedgePrincipalFundingCopy}`
                         : hedgePrincipalFundingCopy}
                       {' '}Close sleeve removes this {selectedProduct.ticker} exposure; it is not just a label change.
-                    </div>
-                    <div className="paper-inline-route-flash-card">
-                      <div className="paper-inline-route-flash-top">
-                        <div>
-                          <span>Fixed loan pool</span>
-                          <strong>{formatNotional(hedgeLoanBudgetUsed)} / {formatNotional(principalFlashTotalBudget)} PT used</strong>
-                        </div>
-                        <button
-                          type="button"
-                          className="ghost-btn compact"
-                          onClick={handleOpenFlashLoanConfirm}
-                          disabled={!hedgeSizingReady}
-                        >
-                          {hedgeFlashQuoteButtonLabel}
-                        </button>
-                      </div>
-                      <div className="paper-inline-route-flash-meta">
-                        <span>{hedgePrincipalFundingModeLabel}</span>
-                        <span>Sleeve wallet {formatNotional(hedgePrincipalCashReserved)} PT</span>
-                        <span>Sleeve loan {formatNotional(hedgePrincipalFlashReservedNotional)} PT</span>
-                        <span>Hedge loan cap {formatNotional(flashLoanQuoteMaxNotional)} PT</span>
-                        <span>Left after quote {formatNotional(hedgeLoanBudgetLeftAfterApplied)} PT</span>
-                        <span>Hedge need {formatNotional(hedgeDisplayedLoanNeed)} PT</span>
-                        {hedgeFlashTopUpRemaining > 0 && flashLoanAppliedTicketNotional > 0 ? <span>Top-up left {formatNotional(hedgeFlashTopUpRemaining)} PT</span> : null}
-                        {hedgeSuggestedFundingGap > 0 ? <span>Suggested gap {formatNotional(hedgeSuggestedFundingGap)} PT</span> : null}
-                        {hedgeFullCoverageFundingGap > 0 ? <span>100% uncovered {formatNotional(hedgeFullCoverageFundingGap)} PT</span> : null}
-                      </div>
                     </div>
                   </div>
                 ) : null}
@@ -16130,13 +16076,13 @@ function PaperTradingInner() {
                               Wealth receipt support {formatNotional(fundingBreakdown.wealthReceiptSupport)} PT is separate: it can raise certain route caps after a pledge, but it is not added to wallet cash and it should not flow into Wealth PnL.
                             </div>
                             <div>
-                              Principal uses wallet {formatNotional(hedgePrincipalCashReserved)} PT after upfront drag, then loan {formatNotional(hedgePrincipalFlashNotional)} PT if a principal-loan agreement is signed.
+                              Sleeve principal is wallet-only: {formatNotional(hedgePrincipalCashReserved)} PT is reserved for the sleeve after upfront drag.
                             </div>
                             <div>
                               Hedge cash left {formatNotional(routeFundingCashAvailable)} PT gives wallet ticket cap {formatNotional(routeMaxWalletBackedNotional)} PT at the current margin setup.
                             </div>
                             <div>
-                              Fixed loan pool {formatNotional(principalFlashTotalBudget)} PT - principal loan {formatNotional(hedgePrincipalFlashReservedNotional)} PT = {formatNotional(hedgePrincipalFlashBudgetLeft)} PT raw pool left; usable hedge loan cap is {formatNotional(flashLoanQuoteMaxNotional)} PT after lane support.
+                              Fixed hedge loan pool {formatNotional(principalFlashTotalBudget)} PT - attached hedge quote {formatNotional(flashLoanAppliedInputNotional)} PT = {formatNotional(hedgeLoanBudgetLeftAfterApplied)} PT raw pool left; usable hedge loan cap is {formatNotional(flashLoanQuoteMaxNotional)} PT after lane support.
                             </div>
                             <div>
                               Hedge funding cap solves wallet ticket + remaining loan under this margin/reserve rule: {formatNotional(selectedTradeAmountMaxValue)} PT.
@@ -16511,8 +16457,29 @@ function PaperTradingInner() {
                         />
                       </label>
                       {timedExitRangeToast ? <div className="paper-inline-toast paper-inline-toast-inline">{timedExitRangeToast}</div> : null}
+                      {leverageRouteActive ? (
+                        <div className="paper-inline-structure-strip paper-inline-structure-strip-compact paper-inline-holding-presets paper-inline-auto-close-presets">
+                          {timedExitPresetDays.map((days) => {
+                            const isMaxPreset = days === timedExitMaxHoldingDays;
+                            const label = isMaxPreset ? `Max ${formatHoldingPresetLabel(days)}` : formatHoldingPresetLabel(days);
+
+                            return (
+                              <button
+                                key={days}
+                                type="button"
+                                className={`ghost-btn compact ${simulationHoldingDays === days ? 'active-toggle' : ''}`}
+                                onClick={() => updateSimulationHoldingDays(days, { showToast: false })}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : null}
                       <div className="paper-inline-muted-help">
-                        Use the floating auto-sell timeline for the shared slider, 7D / 14D / 30D presets, and multi-position estimates.
+                        {leverageRouteActive
+                          ? 'Pick a common close window here, or use the floating timeline when several products need the same hold.'
+                          : 'Use the floating auto-sell timeline for the shared slider, 7D / 14D / 30D presets, and multi-position estimates.'}
                       </div>
                       <div className="paper-inline-action-metric-grid">
                         <div className="paper-inline-action-metric">
@@ -16639,6 +16606,33 @@ function PaperTradingInner() {
                         <span><i className="current" />Staged / live hedge</span>
                       </div>
                     </div>
+                    <div className="paper-inline-route-flash-card paper-inline-hedge-loan-card">
+                      <div className="paper-inline-route-flash-top">
+                        <div>
+                          <span>Fixed hedge loan pool</span>
+                          <strong>{formatNotional(hedgeLoanBudgetUsed)} / {formatNotional(principalFlashTotalBudget)} PT used</strong>
+                        </div>
+                        <button
+                          type="button"
+                          className="ghost-btn compact"
+                          onClick={handleOpenFlashLoanConfirm}
+                          disabled={!hedgeSizingReady || isRiskSigning}
+                        >
+                          {isRiskSigning ? 'Await wallet' : hedgeFlashQuoteButtonLabel}
+                        </button>
+                      </div>
+                      <div className="paper-inline-route-flash-meta">
+                        <span>{hedgePrincipalFundingModeLabel}</span>
+                        <span>Sleeve wallet {formatNotional(hedgePrincipalCashReserved)} PT</span>
+                        <span>Hedge loan cap {formatNotional(flashLoanQuoteMaxNotional)} PT</span>
+                        <span>Applied quote {formatNotional(flashLoanAppliedTicketNotional)} PT</span>
+                        <span>Left after quote {formatNotional(hedgeLoanBudgetLeftAfterApplied)} PT</span>
+                        <span>Hedge need {formatNotional(hedgeDisplayedLoanNeed)} PT</span>
+                        {hedgeFlashTopUpRemaining > 0 && flashLoanAppliedTicketNotional > 0 ? <span>Top-up left {formatNotional(hedgeFlashTopUpRemaining)} PT</span> : null}
+                        {hedgeSuggestedFundingGap > 0 ? <span>Suggested gap {formatNotional(hedgeSuggestedFundingGap)} PT</span> : null}
+                        {hedgeFullCoverageFundingGap > 0 ? <span>100% uncovered {formatNotional(hedgeFullCoverageFundingGap)} PT</span> : null}
+                      </div>
+                    </div>
                     <div className="paper-inline-support-list compact paper-inline-hedge-risk-list">
                       {hedgeRiskRows.map((row) => (
                         <div key={row.label} className="paper-inline-support-row">
@@ -16650,7 +16644,7 @@ function PaperTradingInner() {
                   </>
                 ) : (
                   <div className="paper-inline-note-box paper-inline-route-capacity-note">
-                    Pick an anchor bar and set principal notional. Then this card will show hedge ticket, protection estimate, flash top-up, net sleeve left, and status in one place.
+                    Pick an anchor bar and set principal notional. Then this card will show hedge ticket, protection estimate, hedge loan, net sleeve left, and status in one place.
                   </div>
                 )}
               </div>
@@ -16779,58 +16773,6 @@ function PaperTradingInner() {
                   >
                     {strategyTemplateUploadedForCurrentPrompt ? 'Upload again' : 'Upload to strategy board'}
                   </button>
-                </div>
-
-                <div className="paper-strategy-board">
-                  <div className="paper-strategy-board-head">
-                    <span>Strategy / combo leaderboard</span>
-                    <strong>{strategyTemplateLeaderboardRows.length} entr{strategyTemplateLeaderboardRows.length === 1 ? 'y' : 'ies'}</strong>
-                  </div>
-                  {strategyTemplateLeaderboardRows.length ? (
-                    <div className="paper-strategy-board-list">
-                    {strategyTemplateLeaderboardRows.slice(0, 4).map((entry, index) => (
-                        <div
-                          key={entry.id}
-                          className="paper-strategy-board-row"
-                          role="button"
-                          tabIndex={0}
-                          title="Copy this leaderboard entry to the strategy template board"
-                          onClick={() => handleApplyStrategyTemplateLeaderboardEntry(entry)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault();
-                              handleApplyStrategyTemplateLeaderboardEntry(entry);
-                            }
-                          }}
-                        >
-                          <div className="paper-strategy-board-rank">#{index + 1}</div>
-                          <div className="paper-strategy-board-main">
-                            <strong>
-                              <span className="paper-strategy-board-type">
-                                {entry.entryType === 'portfolio-combo' ? 'Combo' : 'AI'}
-                              </span>
-                              {entry.title}
-                            </strong>
-                            <span>
-                              {entry.entryType === 'portfolio-combo'
-                                ? `${entry.productLabel} / ${entry.dateRange || entry.strategyLabel}`
-                                : `${entry.productLabel} / ${entry.variantLabel || entry.strategyLabel}`}
-                            </span>
-                          </div>
-                          <div className="paper-strategy-board-metrics">
-                            <span>{entry.winRate}% win</span>
-                            <span>{formatSignedPercent(entry.expectedReturnPct, 1)} return</span>
-                            <span>-{entry.maxDrawdownPct.toFixed(1)}% DD</span>
-                            <span>{Math.round(entry.templateScore)}/100 score</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="paper-inline-note-box paper-inline-route-capacity-note">
-                      No strategy or combo entries uploaded yet. Generate an AI template or upload a portfolio combo to rank by score, expected return, and drawdown.
-                    </div>
-                  )}
                 </div>
               </div>
             ) : null}
@@ -17077,6 +17019,7 @@ function PaperTradingInner() {
         <FlashLoanQuoteModal
           open={flashLoanQuoteOpen}
           product={selectedProduct}
+          isHedgeQuote={hedgeFocusActive}
           baseNotional={routeBaseNotional}
           targetNotional={Math.max(Number(tradeAmount || 0), routeEffectiveTicketNotional)}
           maxBorrowNotional={flashLoanAttachableMaxNotional}
@@ -17496,58 +17439,6 @@ function PaperTradingInner() {
             })}
           </div>
         ) : null}
-
-        <div className="paper-strategy-board paper-strategy-board-combo">
-          <div className="paper-strategy-board-head">
-            <span>Combo / AI leaderboard</span>
-            <strong>{strategyTemplateLeaderboardRows.length} entr{strategyTemplateLeaderboardRows.length === 1 ? 'y' : 'ies'}</strong>
-          </div>
-          {strategyTemplateLeaderboardRows.length ? (
-            <div className="paper-strategy-board-list">
-              {strategyTemplateLeaderboardRows.slice(0, 3).map((entry, index) => (
-                <div
-                  key={`combo-board-${entry.id}`}
-                  className="paper-strategy-board-row"
-                  role="button"
-                  tabIndex={0}
-                  title="Copy this leaderboard entry to combo or AI template controls"
-                  onClick={() => handleApplyStrategyTemplateLeaderboardEntry(entry)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      handleApplyStrategyTemplateLeaderboardEntry(entry);
-                    }
-                  }}
-                >
-                  <div className="paper-strategy-board-rank">#{index + 1}</div>
-                  <div className="paper-strategy-board-main">
-                    <strong>
-                      <span className="paper-strategy-board-type">
-                        {entry.entryType === 'portfolio-combo' ? 'Combo' : 'AI'}
-                      </span>
-                      {entry.title}
-                    </strong>
-                    <span>
-                      {entry.entryType === 'portfolio-combo'
-                        ? `${entry.productLabel} / ${entry.dateRange || entry.strategyLabel}`
-                        : `${entry.productLabel} / ${entry.variantLabel || entry.strategyLabel}`}
-                    </span>
-                  </div>
-                  <div className="paper-strategy-board-metrics">
-                    <span>{entry.winRate}% win</span>
-                    <span>{formatSignedPercent(entry.expectedReturnPct, 1)} return</span>
-                    <span>-{entry.maxDrawdownPct.toFixed(1)}% DD</span>
-                    <span>{Math.round(entry.templateScore)}/100 score</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="paper-inline-note-box paper-inline-route-capacity-note">
-              Upload a suggested combo or AI template to start the board.
-            </div>
-          )}
-        </div>
 
         {portfolioComboAnalysis.topSingles.length ? (
           <div className="paper-portfolio-combo-single-strip">

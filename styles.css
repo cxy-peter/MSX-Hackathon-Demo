@@ -548,7 +548,7 @@ select option {
   position: relative;
   width: min(1080px, 100%);
   min-height: 500px;
-  max-height: min(880px, calc(100vh - 40px));
+  max-height: min(760px, calc(100vh - 24px));
   background:
     radial-gradient(circle at top left, rgba(34,109,64,0.08), transparent 28%),
     linear-gradient(180deg, rgba(17, 27, 36, 0.98), rgba(8, 14, 22, 0.98));
@@ -562,7 +562,7 @@ select option {
 }
 
 .wallet-modal-pane {
-  padding: 36px 28px;
+  padding: 28px 24px;
   min-height: 0;
 }
 
@@ -586,11 +586,18 @@ select option {
 
 .wallet-modal-main-connected {
   align-content: flex-start;
-  padding-top: 36px;
+  padding-top: 28px;
   padding-bottom: 24px;
 }
 
-.wallet-modal-main-connected .wallet-modal-hero {
+.wallet-modal-main-has-backup {
+  align-content: flex-start;
+  padding-top: 28px;
+  padding-bottom: 24px;
+}
+
+.wallet-modal-main-connected .wallet-modal-hero,
+.wallet-modal-main-has-backup .wallet-modal-hero {
   width: 68px;
   height: 68px;
   border-radius: 20px;
@@ -710,6 +717,32 @@ select option {
   font-size: 13px;
 }
 
+.wallet-modal-backup-card.profile-backup-card {
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 260px);
+  gap: 12px;
+  margin-top: 6px;
+  padding: 14px;
+}
+
+.wallet-modal-backup-card .wealth-profile-storage-title {
+  font-size: 17px;
+  margin-bottom: 6px;
+}
+
+.wallet-modal-backup-card .profile-backup-policy-grid {
+  display: none;
+}
+
+.wallet-modal-backup-card .profile-backup-stat-grid {
+  gap: 8px;
+}
+
+.wallet-modal-backup-card .profile-backup-stat-card,
+.wallet-modal-backup-card .profile-backup-state,
+.wallet-modal-backup-card .profile-backup-history {
+  padding: 10px;
+}
+
 .wallet-modal-backup-note {
   margin-top: 12px;
 }
@@ -720,6 +753,22 @@ select option {
   gap: 10px;
   justify-content: flex-end;
   align-items: center;
+}
+
+.wallet-disconnect-confirm {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(0,0,0,0.16);
+}
+
+.wallet-disconnect-confirm-copy {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .wallet-nickname-panel,
@@ -6422,11 +6471,18 @@ label {
 }
 
 .paper-inline-desk-route-headline {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px 18px;
   align-items: flex-start;
-  flex-wrap: wrap;
+}
+
+.paper-inline-desk-route-headline > .paper-route-selector {
+  width: min(525px, 100%);
+}
+
+.paper-inline-desk-route-headline .paper-route-select-wrap {
+  width: 100%;
 }
 
 .paper-inline-desk-route-title {
@@ -7572,6 +7628,14 @@ label {
   color: var(--muted);
   font-size: 12px;
   min-width: 0;
+}
+
+.paper-inline-support-row-full {
+  grid-template-columns: 1fr;
+}
+
+.paper-inline-support-row-full span {
+  grid-column: 1 / -1;
 }
 
 .paper-inline-support-row span {
@@ -10256,17 +10320,17 @@ label {
 .wealth-product-type-panel,
 .wealth-recommended-panel {
   margin-top: 2px;
-  padding: 14px;
-  border-radius: 18px;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(255,255,255,0.024);
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.09);
+  background: rgba(255,255,255,0.026);
 }
 
 .wealth-product-type-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
@@ -10276,32 +10340,42 @@ label {
 
 .wealth-product-type-group-stack {
   display: grid;
-  gap: 6px;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 10px;
   margin-top: 10px;
 }
 
 .wealth-product-type-group {
   display: grid;
-  grid-template-columns: 108px minmax(0, 1fr);
-  gap: 8px;
-  align-items: center;
+  gap: 7px;
+  align-items: start;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.075);
+  border-radius: 10px;
+  background: rgba(0,0,0,0.13);
 }
 
 .wealth-product-type-group-label {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 900;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .wealth-product-type-chip-row {
   margin-top: 0;
+  gap: 7px;
 }
 
 .wealth-product-type-chip {
-  padding: 7px 10px;
-  border-radius: 12px;
+  min-height: 34px;
+  padding: 8px 11px;
+  border-radius: 9px;
+  font-size: 14px;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 .wealth-product-type-chip.active {
@@ -10331,6 +10405,11 @@ label {
   transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
+.wealth-recommended-chip:focus-visible {
+  outline: 2px solid rgba(164,255,47,0.32);
+  outline-offset: 2px;
+}
+
 .wealth-recommended-chip:hover,
 .wealth-opportunity-card.clickable:hover {
   transform: translateY(-1px);
@@ -10344,6 +10423,39 @@ label {
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.wealth-recommended-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.wealth-recommended-risk {
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  letter-spacing: 0.03em;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.wealth-recommended-risk.risk-low {
+  color: var(--green);
+  background: rgba(164,255,47,0.09);
+  border-color: rgba(164,255,47,0.22);
+}
+
+.wealth-recommended-risk.risk-medium {
+  color: #ffd166;
+  background: rgba(255,209,102,0.1);
+  border-color: rgba(255,209,102,0.22);
+}
+
+.wealth-recommended-risk.risk-high {
+  color: #ff8a9a;
+  background: rgba(255,96,122,0.1);
+  border-color: rgba(255,96,122,0.22);
 }
 
 .wealth-recommended-chip strong {
@@ -10751,6 +10863,10 @@ label {
   .wealth-position-head-actions .ghost-btn,
   .wealth-activity-row .ghost-btn {
     justify-self: start;
+  }
+
+  .wealth-product-type-group-stack {
+    grid-template-columns: 1fr;
   }
 
   .wealth-product-type-group {

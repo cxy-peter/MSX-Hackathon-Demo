@@ -565,9 +565,9 @@ function getAnalyticsEventMeta(eventName) {
   if (eventName.startsWith('badge_mint_')) {
     const badgeId = eventName.replace('badge_mint_', '');
     return {
-      label: `Mint task badge: ${badgeId}`,
-      section: 'Badge actions',
-      takeaway: 'The user tried to turn a finished task into an onchain badge.'
+      label: `Mint wallet collectible: ${badgeId}`,
+      section: 'Wallet collectible actions',
+      takeaway: 'The user tried to turn a finished task into a wallet collectible.'
     };
   }
 
@@ -579,8 +579,8 @@ function getAnalyticsEventMeta(eventName) {
 }
 
 const quests = [
-  { title: 'Connect wallet', copy: 'Authenticate with a wallet before any live-style action is unlocked.', reward: 'Starter badge' },
-  { title: 'Mint welcome badge on Sepolia', copy: 'Submit one real testnet transaction so the first reward feels onchain, not simulated.', reward: 'Collectible unlock' },
+  { title: 'Connect wallet', copy: 'Authenticate with a wallet before any live-style action is unlocked.', reward: 'Starter unlock' },
+  { title: 'Mint welcome collectible on Sepolia', copy: 'Submit one real testnet transaction so the first reward feels onchain, not simulated.', reward: 'Collectible unlock' },
   {
     title: `Review ${RISK_REVIEW_REQUIRED} product briefings`,
     copy: 'Use the actual Wealth and Paper product lanes to explain ownership, return source, and first disclosure in plain language.',
@@ -669,7 +669,7 @@ const onboardingFlows = {
     choices: {
       trading: {
         title: 'Show me what to do',
-        copy: 'Great. We will guide this user through wallet setup, badge tasks, and then unlock paper trading in a cleaner order.',
+        copy: 'Great. We will guide this user through wallet setup, collectible tasks, and then unlock paper trading in a cleaner order.',
         primary: 'Start wallet tasks',
         primaryHref: '#learnEarn',
         secondary: 'See paper trading',
@@ -961,7 +961,7 @@ function ProfileBackupCard({
         <div className="profile-backup-policy-grid">
           <div className="guide-chip profile-backup-policy-card">
             <div className="k">What it saves</div>
-            <div className="v">PT balance, badge progress, replay context, and wealth state for this wallet on this device.</div>
+            <div className="v">PT balance, collectible progress, replay context, and wealth state for this wallet on this device.</div>
           </div>
           <div className="guide-chip profile-backup-policy-card">
             <div className="k">What it does not save</div>
@@ -1068,7 +1068,22 @@ function WalletModal({
   onSelectedProfileBackupAddressChange,
   onRecoverSelectedProfileBackup
 }) {
+  const [disconnectConfirmOpen, setDisconnectConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    setDisconnectConfirmOpen(false);
+  }, [isConnected, open]);
+
   if (!open) return null;
+
+  function requestDisconnect() {
+    setDisconnectConfirmOpen(true);
+  }
+
+  function confirmDisconnect() {
+    setDisconnectConfirmOpen(false);
+    onDisconnect?.();
+  }
 
   return (
     <div className="wallet-modal-backdrop" onClick={(event) => event.target === event.currentTarget && !isPending && onClose()}>
@@ -1081,7 +1096,7 @@ function WalletModal({
           <div className="wallet-modal-subtitle">Welcome Layer</div>
           <button
             className={`wallet-option ${isConnected ? 'connected' : ''} ${isPending || (!isConnected && !hasMetaMaskInstalled) ? 'disabled' : ''}`}
-            onClick={isConnected ? onDisconnect : onConnect}
+            onClick={isConnected ? requestDisconnect : onConnect}
             disabled={isPending || (!isConnected && !hasMetaMaskInstalled)}
           >
             <MetaMaskIcon className="wallet-option-icon" />
@@ -1098,6 +1113,21 @@ function WalletModal({
               </div>
             </div>
           </button>
+          {isConnected && disconnectConfirmOpen ? (
+            <div className="wallet-disconnect-confirm">
+              <div className="wallet-disconnect-confirm-copy">
+                Disconnect this browser session? Your nickname and signed backups stay saved for the wallet address.
+              </div>
+              <div className="toolbar">
+                <button type="button" className="ghost-btn compact" onClick={() => setDisconnectConfirmOpen(false)}>
+                  Cancel
+                </button>
+                <button type="button" className="secondary-btn compact" onClick={confirmDisconnect}>
+                  Confirm disconnect
+                </button>
+              </div>
+            </div>
+          ) : null}
           {!hasMetaMaskInstalled ? (
             <div className="wallet-install-card">
               <div className="wallet-install-title">MetaMask not detected</div>
@@ -1115,7 +1145,7 @@ function WalletModal({
             </div>
           ) : null}
         </div>
-        <div className={`wallet-modal-pane wallet-modal-main ${isConnected ? 'wallet-modal-main-connected' : ''}`}>
+        <div className={`wallet-modal-pane wallet-modal-main ${isConnected ? 'wallet-modal-main-connected' : ''} ${profileBackupAccounts.length ? 'wallet-modal-main-has-backup' : ''}`}>
           <MetaMaskIcon className="wallet-modal-hero wallet-modal-hero-metamask" />
           <div className="wallet-modal-status">
             {isConnected
@@ -1196,7 +1226,7 @@ function WalletModal({
             </div>
           )}
           {isConnected ? (
-            <button className="secondary-btn" onClick={onDisconnect}>
+            <button className="secondary-btn" onClick={requestDisconnect}>
               Disconnect wallet
             </button>
           ) : null}
@@ -1791,7 +1821,7 @@ export default function App() {
   const developerTrackedSectionCount = new Set(developerAnalyticsRows.map((row) => row.section)).size;
   const developerOnboardingShare = analyticsSnapshot.total
     ? developerAnalyticsRows
-        .filter((row) => ['Wallet onboarding', 'Quest wall', 'Risk review', 'Quiz', 'Badge actions'].includes(row.section))
+        .filter((row) => ['Wallet onboarding', 'Quest wall', 'Risk review', 'Quiz', 'Wallet collectible actions'].includes(row.section))
         .reduce((sum, row) => sum + row.count, 0) / analyticsSnapshot.total
     : 0;
   const completedBoxes = [walletQuestDone, welcomeGateCompleted, riskTaskDone].filter(Boolean).length;
@@ -1854,9 +1884,9 @@ export default function App() {
       copy: 'Click-through from Home into Wealth or Paper.'
     },
     {
-      label: 'Badges',
+      label: 'Collectibles',
       value: developerAnalyticsRows.filter((row) => row.name.startsWith('badge_mint_')).reduce((sum, row) => sum + row.count, 0),
-      copy: 'Task badge mint attempts captured locally.'
+      copy: 'Wallet collectible mint attempts captured locally.'
     }
   ];
   const developerDetailPanels = [
@@ -1910,10 +1940,10 @@ export default function App() {
   const onSepolia = effectiveChainId === SEPOLIA_CHAIN_ID;
   const hasSepoliaGas = Boolean(sepoliaBalance?.value && sepoliaBalance.value > 0n);
   const badgeDeploymentLabel = badgeContractConfigured
-    ? `Sepolia badge ${shortAddress(BADGE_CONTRACT_ADDRESS)}`
-    : 'Demo mode - onchain badge not connected';
+    ? `Sepolia collectible ${shortAddress(BADGE_CONTRACT_ADDRESS)}`
+    : 'Demo mode - onchain collectible not connected';
   const badgeDeploymentHelper = badgeContractConfigured
-    ? 'Vercel build detected the badge contract address, so judges can mint and verify the first badge on Sepolia.'
+    ? 'Vercel build detected the collectible contract address, so judges can mint and verify the first wallet collectible on Sepolia.'
     : 'The demo still works with wallet-based local progress. To enable judge-visible onchain minting, add VITE_BADGE_CONTRACT_ADDRESS in Vercel and redeploy.';
   const mintReady =
     isConnected &&
@@ -1928,7 +1958,7 @@ export default function App() {
   const paperTradeCompleted = paperTradesCompleted > 0;
   const remainingPaperPrereqs = [
     walletQuestDone ? null : 'connect wallet',
-    welcomeGateCompleted ? null : badgeContractConfigured ? 'mint welcome badge' : 'connect wallet',
+    welcomeGateCompleted ? null : badgeContractConfigured ? 'mint welcome collectible' : 'connect wallet',
     riskTaskDone ? null : 'review product briefings'
   ].filter(Boolean);
   const paperUnlockChecklist = [
@@ -1940,14 +1970,14 @@ export default function App() {
     },
     {
       id: 'mint',
-      label: 'Welcome badge minted',
+      label: 'Welcome collectible minted',
       done: welcomeGateCompleted,
       helper: badgeContractConfigured
         ? badgeMintCompleted
-          ? 'The welcome badge is already minted for this wallet.'
+          ? 'The welcome collectible is already minted for this wallet.'
           : 'Finish the Sepolia welcome mint in step 2 first.'
         : walletQuestDone
-          ? 'Onchain badge minting is not connected in this deployment, so the demo uses the connected wallet as the gate.'
+          ? 'Onchain collectible minting is not connected in this deployment, so the demo uses the connected wallet as the gate.'
           : 'Connect a wallet to continue in demo mode.'
     },
     {
@@ -1987,7 +2017,7 @@ export default function App() {
     if (activeMintTaskKey !== taskKey) return '';
     if (isMinting) return 'Confirm mint in MetaMask';
     if (isConfirmingMint) return 'Waiting for Sepolia confirmation';
-    if (mintConfirmed) return 'Refreshing badge status';
+    if (mintConfirmed) return 'Refreshing collectible status';
     return '';
   }
 
@@ -2008,14 +2038,14 @@ export default function App() {
       coverAccent: 'green',
       coverKicker: 'RiskLens Starter Task',
       coverTitle: walletTaskBadgeMinted ? 'Wallet task' : 'Connect wallet',
-      coverSubtitle: 'Open the guided wallet path first so every later badge and PT reward stays tied to one account.'
+      coverSubtitle: 'Open the guided wallet path first so every later collectible and PT reward stays tied to one account.'
     },
     {
       id: 'mint',
       title: badgeContractConfigured
         ? badgeMintCompleted
-          ? 'Welcome badge minted'
-          : 'Mint welcome badge'
+          ? 'Welcome collectible minted'
+          : 'Mint welcome collectible'
         : walletQuestDone
           ? 'Wallet linked for demo'
           : 'Connect wallet for demo',
@@ -2036,10 +2066,10 @@ export default function App() {
         ? walletQuestDone
           ? 'Submit one Sepolia action after connect.'
           : 'Unlocks after wallet connection.'
-        : 'Onchain badge minting is optional for this deployment; wallet connection carries the demo state.',
+        : 'Onchain collectible minting is optional for this deployment; wallet connection carries the demo state.',
       coverAccent: 'teal',
       coverKicker: 'RiskLens Collectible Gate',
-      coverTitle: badgeContractConfigured ? 'Welcome badge' : 'Demo gate',
+      coverTitle: badgeContractConfigured ? 'Welcome collectible' : 'Demo gate',
       coverSubtitle: badgeContractConfigured
         ? 'Mint one Sepolia welcome collectible so the first reward feels onchain instead of purely local.'
         : 'This deployment keeps the welcome gate in demo mode, but the same wallet still carries the unlock state.'
@@ -2078,7 +2108,7 @@ export default function App() {
       coverAccent: 'green',
       coverKicker: 'RiskLens Replay Task',
       coverTitle: 'Paper trading',
-      coverSubtitle: 'Practice with replay mode only after the wallet, welcome badge, and product briefing path are in place.'
+      coverSubtitle: 'Practice with replay mode only after the wallet, welcome collectible, and product briefing path are in place.'
     }
   ];
 
@@ -2130,9 +2160,6 @@ export default function App() {
 
   const firstPendingLearnQuest =
     learnQuestCards.find((item) => item.status === 'Done' || item.status === 'To do' || item.status === 'Requires wallet' || item.status === 'Checking' || item.status.includes('/3'))?.id || 'wallet';
-  const collectibleHelperCopy =
-    'Beginner note: when a homepage badge is minted, look for it in the connected wallet collectibles / NFT view. Wealth keeps reading the same wallet-linked progress.';
-
   useEffect(() => {
     if (activeCoreQuest !== null && !['wallet', 'mint'].includes(activeCoreQuest)) {
       setActiveCoreQuest('wallet');
@@ -2180,11 +2207,11 @@ export default function App() {
       : !onSepolia
         ? 'Switch to Sepolia'
       : !badgeContractConfigured
-        ? 'Badge contract not connected'
+        ? 'Collectible contract not connected'
         : badgeMintCompleted
-          ? 'Welcome badge minted'
+          ? 'Welcome collectible minted'
         : activeMintTaskKey === 'welcome' && mintConfirmed
-          ? 'Refreshing badge status'
+          ? 'Refreshing collectible status'
         : welcomeBadgeChecking
           ? 'Checking this wallet account'
         : isSwitchingChain
@@ -2250,7 +2277,11 @@ export default function App() {
     }
     setWalletError('');
     setWalletNicknameFeedback('');
-    setPendingWalletNickname(normalizeWalletNickname(walletNicknameDraft) || null);
+    const pendingNickname = normalizeWalletNickname(walletNicknameDraft);
+    setPendingWalletNickname(pendingNickname || null);
+    if (pendingNickname) {
+      setWalletNicknameFeedback(`Nickname "${pendingNickname}" will be saved to the wallet that approves this connection.`);
+    }
     connect({ connector: metaMaskConnector });
   }
 
@@ -2299,19 +2330,19 @@ export default function App() {
 
     if (previousStates.addressKey === connectedAddressKey) {
       if (!previousStates.welcome && currentStates.welcome) {
-        setTaskCompletionNotice('Congrats - welcome badge finished. The wallet task claim is open now.');
+        setTaskCompletionNotice('Congrats - welcome collectible finished. The wallet collectible mint is open now.');
         setTaskCompletionNoticeTarget('core');
         focusLearnQuest('wallet');
       } else if (!previousStates.risk && currentStates.risk) {
         setTaskCompletionNotice(
           currentStates.paper && !previousStates.paper
-            ? 'Congrats - risk review completed. The risk badge is ready to claim, and paper trading just unlocked below.'
-            : 'Congrats - risk review completed. The risk badge claim is open now.'
+            ? 'Congrats - risk review completed. The risk collectible is ready to mint, and paper trading just unlocked below.'
+            : 'Congrats - risk review completed. The risk collectible mint is open now.'
         );
         setTaskCompletionNoticeTarget('optional');
         focusLearnQuest('risk');
       } else if (!previousStates.quiz && currentStates.quiz) {
-        setTaskCompletionNotice('Congrats - quiz completed. The quiz badge claim is open now.');
+        setTaskCompletionNotice('Congrats - quiz completed. The quiz collectible mint is open now.');
         setTaskCompletionNoticeTarget('optional');
         focusLearnQuest('quiz');
       } else if (!previousStates.paper && currentStates.paper) {
@@ -2690,7 +2721,7 @@ export default function App() {
 
   async function handleMintTaskBadge(taskKey) {
     if (!isConnected || !address) {
-      setWalletError('Connect a wallet before minting a task badge.');
+      setWalletError('Connect a wallet before minting a wallet collectible.');
       return;
     }
 
@@ -2703,7 +2734,7 @@ export default function App() {
       }
 
       if (!badgeContractConfigured) {
-        setWalletError('Add VITE_BADGE_CONTRACT_ADDRESS to enable real task badge minting.');
+        setWalletError('Add VITE_BADGE_CONTRACT_ADDRESS to enable real wallet collectible minting.');
         return;
       }
 
@@ -2722,7 +2753,7 @@ export default function App() {
       setMintTaskKey('welcome');
       const message = String(err?.message || err || '');
       if (message.toLowerCase().includes('rejected')) {
-        setWalletError('Task badge mint was cancelled in MetaMask.');
+        setWalletError('Wallet collectible mint was cancelled in MetaMask.');
         return;
       }
       setWalletError(message);
@@ -2908,8 +2939,8 @@ export default function App() {
                     </div>
                     <div>
                       {t(
-                        `You start with ${STARTING_PAPER_TOKENS} PT, each completed badge adds ${BADGE_REWARD_TOKENS} PT, and no real funds are involved.`,
-                        `初始会发放 ${STARTING_PAPER_TOKENS} PT，每完成一个徽章再增加 ${BADGE_REWARD_TOKENS} PT，全程不涉及真实资金。`
+                        `You start with ${STARTING_PAPER_TOKENS} PT, each completed wallet collectible adds ${BADGE_REWARD_TOKENS} PT, and no real funds are involved.`,
+                        `初始会发放 ${STARTING_PAPER_TOKENS} PT，每完成一个钱包收藏品再增加 ${BADGE_REWARD_TOKENS} PT，全程不涉及真实资金。`
                       )}
                     </div>
                     <div>
@@ -3171,9 +3202,6 @@ export default function App() {
                     </div>
                     <div className="learn-quest-tile-title">{quest.title}</div>
                     <div className="learn-quest-tile-copy">{quest.hint}</div>
-                    {index === 1 ? (
-                      <div className="wealth-inline-note paper-inline-note home-second-task-note">{collectibleHelperCopy}</div>
-                    ) : null}
                   </button>
                 ))}
               </div>
@@ -3195,19 +3223,18 @@ export default function App() {
                 {visibleCoreQuest === 'wallet' ? (
                 <div className="quest-detail-panel">
                   <div className="quest-side-panel">
-                    <div className="quest-panel-title">{walletTaskBadgeMinted ? 'Wallet task completed' : walletQuestDone ? 'Wallet connected' : 'Connect wallet badge'}</div>
+                    <div className="quest-panel-title">{walletTaskBadgeMinted ? 'Wallet task completed' : walletQuestDone ? 'Wallet connected' : 'Connect wallet'}</div>
                     <div className="muted">
-                      Connect once with MetaMask to unlock this task. After the welcome badge is minted in step 2, this wallet task can claim its own badge and keep the reward state.
+                      Connect once with MetaMask to unlock this task. After the welcome collectible is minted in step 2, this wallet task can mint its own wallet collectible and keep the reward state.
                     </div>
-                    <div className="wealth-inline-note paper-inline-note">{collectibleHelperCopy}</div>
                     <button className="secondary-btn" onClick={openWalletModal}>
                       {walletQuestDone ? 'Wallet connected' : 'Open MetaMask connect'}
                     </button>
                     <div className="mint-action-box inline-mint-action task-badge-mint-box">
                       <div>
-                        <div className="product-title">Mint wallet task badge</div>
+                        <div className="product-title">Mint wallet collectible</div>
                         <div className="muted">
-                          This task badge opens only after the welcome badge is minted. Finish step 2 first, then mint the wallet-task collectible for this account.
+                          This wallet collectible opens only after the welcome collectible is minted. Finish step 2 first, then mint it for this account.
                         </div>
                       </div>
                       <div className="mint-status-stack">
@@ -3224,7 +3251,7 @@ export default function App() {
                               ? 'Connect wallet first'
                               : !badgeMintCompleted
                                 ? 'Finish welcome mint first'
-                                : 'Mint wallet task badge'}
+                                : 'Mint wallet collectible'}
                         </button>
                       </div>
                     </div>
@@ -3236,7 +3263,7 @@ export default function App() {
                 <div className={`quest-detail-panel ${badgeMintCompleted ? 'completed' : ''}`}>
                   <div className="quest-side-panel">
                     <div className="quest-panel-title">Mint checklist</div>
-                    <div className="muted">This minted badge also unlocks another +{BADGE_REWARD_TOKENS} paper tokens for the simulation wallet.</div>
+                    <div className="muted">This mint also unlocks another +{BADGE_REWARD_TOKENS} paper tokens for the simulation wallet.</div>
                     <div className="checklist-list">
                       {mintChecklist.map((item) => (
                         <div className={`checklist-item ${item.done ? 'done' : ''}`} key={item.label}>
@@ -3290,17 +3317,17 @@ export default function App() {
 
                     <div className={`mint-action-box inline-mint-action ${badgeContractConfigured ? 'contract-live' : 'contract-demo'}`}>
                       <div>
-                        <div className="product-title">{badgeContractConfigured ? 'Mint Welcome Badge' : 'Demo wallet gate active'}</div>
+                        <div className="product-title">{badgeContractConfigured ? 'Mint welcome collectible' : 'Demo wallet gate active'}</div>
                         <div className="muted">
                           {badgeContractConfigured
                             ? `Sepolia ETH is testnet gas only. Use a faucet, then submit one mint transaction. Minimum paper trade later is ${MIN_PAPER_TRADE} PT.`
-                            : 'Onchain badge minting is disabled in this deployment, so the connected wallet unlocks demo progress without showing judges a setup error.'}
+                            : 'Onchain collectible minting is disabled in this deployment, so the connected wallet unlocks demo progress without showing judges a setup error.'}
                         </div>
                       </div>
                       <button className="secondary-btn" onClick={handleMintBadge} disabled={!walletQuestDone || !mintReady}>
                         {badgeContractConfigured
                           ? mintReady
-                            ? 'Mint welcome badge on Sepolia'
+                            ? 'Mint welcome collectible on Sepolia'
                             : mintStatusText
                           : walletQuestDone
                             ? 'Demo gate active'
@@ -3339,7 +3366,7 @@ export default function App() {
                         <div className="v">{isConnected ? chainName(effectiveChainId) : 'Connect wallet first'}</div>
                       </div>
                       <div className="guide-chip">
-                        <div className="k">Badge state</div>
+                        <div className="k">Wallet collectible state</div>
                         <div className="v">
                           {badgeContractConfigured
                             ? badgeMintCompleted
@@ -3465,11 +3492,11 @@ export default function App() {
                     <div className="env-hint">
                       {riskTaskBadgeMinted ? (
                         <>
-                          <strong>Completed:</strong> This wallet already minted the risk task badge.
+                          <strong>Completed:</strong> This wallet already minted the risk collectible.
                         </>
                       ) : riskTaskDone ? (
                         <>
-                          <strong>Ready:</strong> {RISK_REVIEW_REQUIRED} product briefings were already reviewed for this wallet. You can mint the risk task badge now.
+                          <strong>Ready:</strong> {RISK_REVIEW_REQUIRED} product briefings were already reviewed for this wallet. You can mint the risk collectible now.
                         </>
                       ) : (
                         <>
@@ -3479,9 +3506,9 @@ export default function App() {
                     </div>
                     <div className="mint-action-box inline-mint-action task-badge-mint-box">
                       <div>
-                        <div className="product-title">Mint risk task badge</div>
+                        <div className="product-title">Mint risk collectible</div>
                         <div className="muted">
-                          Once {RISK_REVIEW_REQUIRED} product briefings are reviewed, this task can mint its own badge for the current wallet account.
+                          Once {RISK_REVIEW_REQUIRED} product briefings are reviewed, this task can mint its wallet collectible for the current wallet account.
                         </div>
                       </div>
                       <div className="mint-status-stack">
@@ -3495,12 +3522,11 @@ export default function App() {
                             : mintForCurrentAccountBusy
                               ? getMintTaskStatus('risk') || 'Finish current mint first'
                               : riskTaskDone
-                                ? 'Mint risk task badge'
+                                ? 'Mint risk collectible'
                                 : `Review ${RISK_REVIEW_REQUIRED} briefings first`}
                         </button>
                       </div>
                     </div>
-                    <div className="wealth-inline-note paper-inline-note">{collectibleHelperCopy}</div>
                   </div>
                 </div>
                 ) : null}
@@ -3549,7 +3575,7 @@ export default function App() {
                       </label>
                     ))}
                     <button className="secondary-btn" onClick={handleQuizSubmit} disabled={!quizAllQuestionsAnswered}>
-                      {quizTaskBadgeMinted ? 'Quiz completed' : quizTaskDone ? 'Quiz passed, mint badge' : 'Check 3-question quiz'}
+                      {quizTaskBadgeMinted ? 'Quiz completed' : quizTaskDone ? 'Quiz passed, mint collectible' : 'Check 3-question quiz'}
                     </button>
                     {quizSubmitted ? (
                       <div className={`env-hint ${quizPassed ? '' : 'quiz-error'}`}>
@@ -3561,9 +3587,9 @@ export default function App() {
                     ) : null}
                     <div className="mint-action-box inline-mint-action task-badge-mint-box">
                       <div>
-                        <div className="product-title">Mint quiz task badge</div>
+                        <div className="product-title">Mint quiz collectible</div>
                         <div className="muted">
-                          After the 3-question product briefing quiz is passed, this module can mint its own task badge for the connected wallet.
+                          After the 3-question product briefing quiz is passed, this module can mint its wallet collectible for the connected wallet.
                         </div>
                       </div>
                       <div className="mint-status-stack">
@@ -3577,12 +3603,11 @@ export default function App() {
                             : mintForCurrentAccountBusy
                               ? getMintTaskStatus('quiz') || 'Finish current mint first'
                               : quizTaskDone
-                                ? 'Mint quiz task badge'
+                                ? 'Mint quiz collectible'
                                 : 'Pass quiz first'}
                         </button>
                       </div>
                     </div>
-                    <div className="wealth-inline-note paper-inline-note">{collectibleHelperCopy}</div>
                   </div>
                 </div>
                 ) : null}
@@ -3593,7 +3618,7 @@ export default function App() {
                     <div>
                       <div className="product-title">Paper trading preview</div>
                       <div className="muted">
-                        This module should only open after the three prerequisite onboarding tasks are finished. When all three are done, this task can mint its own badge.
+                        This module should only open after the three prerequisite onboarding tasks are finished. When all three are done, this task can mint its wallet collectible.
                       </div>
                     </div>
                     <span className={`pill ${paperTaskBadgeMinted ? 'risk-low' : paperTradingUnlocked ? 'risk-low' : 'risk-medium'}`}>
@@ -3612,13 +3637,13 @@ export default function App() {
                       },
                       {
                         id: 'mint',
-                        label: 'Step 2: Mint welcome badge',
+                        label: 'Step 2: Mint welcome collectible',
                         done: welcomeGateCompleted,
                         helper: welcomeGateCompleted
                           ? badgeContractConfigured
-                            ? 'The welcome badge has already been minted on Sepolia.'
+                            ? 'The welcome collectible has already been minted on Sepolia.'
                             : 'This deployment uses the connected wallet as the demo welcome gate.'
-                          : 'Submit the welcome badge mint before paper trading unlocks.'
+                          : 'Submit the welcome collectible mint before paper trading unlocks.'
                       },
                       {
                         id: 'risk',
@@ -3641,13 +3666,13 @@ export default function App() {
 
                   <div className="mint-action-box inline-mint-action task-badge-mint-box">
                     <div>
-                      <div className="product-title">Mint paper trading preview badge</div>
+                      <div className="product-title">Mint paper trading preview collectible</div>
                       <div className="muted">
                         {paperTaskBadgeMinted
-                          ? 'This wallet already minted the paper trading preview badge.'
+                          ? 'This wallet already minted the paper trading preview collectible.'
                           : paperTradingUnlocked
-                            ? 'All three prerequisite tasks are complete. You can now mint the paper trading preview badge for this wallet.'
-                            : 'Finish the three prerequisite tasks above first, then mint the paper trading preview badge.'}
+                            ? 'All three prerequisite tasks are complete. You can now mint the paper trading preview collectible for this wallet.'
+                            : 'Finish the three prerequisite tasks above first, then mint the paper trading preview collectible.'}
                       </div>
                     </div>
                     <div className="mint-status-stack">
@@ -3661,12 +3686,11 @@ export default function App() {
                           : mintForCurrentAccountBusy
                             ? getMintTaskStatus('paper') || 'Finish current mint first'
                             : paperTradingUnlocked
-                              ? 'Mint paper trading badge'
+                              ? 'Mint paper trading collectible'
                               : 'Finish 3 tasks first'}
                       </button>
                     </div>
                   </div>
-                  <div className="wealth-inline-note paper-inline-note">{collectibleHelperCopy}</div>
 
                   {paperTradingUnlocked ? (
                     <div className="mint-action-box inline-mint-action task-badge-mint-box">
@@ -3791,7 +3815,7 @@ export default function App() {
                     <div className="value">{remainingPaperTokens.toLocaleString()} PT</div>
                   </div>
                   <div className="paper-balance-box">
-                    <div className="label">Reward per badge</div>
+                    <div className="label">Reward per collectible</div>
                     <div className="value">+{BADGE_REWARD_TOKENS} PT</div>
                   </div>
                   <div className="paper-balance-box">
@@ -3803,8 +3827,8 @@ export default function App() {
                   <div className="home-surface-card">
                     <div className="eyebrow">Replay entry</div>
                     <div className="entry-title">Starter simulation</div>
-                    <div className="entry-copy">Practice with treasury-style or managed products before using any live wallet flow. Badge rewards increase the available simulation budget.</div>
-                    <div className="home-surface-foot">Budget expands as homepage badges are completed.</div>
+                    <div className="entry-copy">Practice with treasury-style or managed products before using any live wallet flow. Collectible rewards increase the available simulation budget.</div>
+                    <div className="home-surface-foot">Budget expands as wallet collectibles are completed.</div>
                   </div>
                   <div className="home-surface-card">
                     <div className="eyebrow">Education state</div>
@@ -3825,9 +3849,9 @@ export default function App() {
                   </div>
                   <div className="mint-action-box inline-mint-action task-badge-mint-box">
                     <div>
-                      <div className="product-title">Mint paper trading task badge</div>
+                      <div className="product-title">Mint paper trading collectible</div>
                       <div className="muted">
-                        After the three onboarding prerequisites are finished, this paper trading preview can mint its own badge for the current wallet.
+                        After the three onboarding prerequisites are finished, this paper trading preview can mint its wallet collectible for the current wallet.
                       </div>
                     </div>
                     <div className="mint-status-stack">
@@ -3841,7 +3865,7 @@ export default function App() {
                           : mintForCurrentAccountBusy
                             ? getMintTaskStatus('paper') || 'Finish current mint first'
                             : paperTradingUnlocked
-                              ? 'Mint paper task badge'
+                              ? 'Mint paper collectible'
                               : 'Finish wallet tutorial first'}
                       </button>
                     </div>
@@ -3984,7 +4008,7 @@ export default function App() {
                         <div className="eyebrow">Feature override</div>
                         <div className="wealth-profile-storage-title">Enable all local onboarding and replay gates</div>
                         <div className="muted">
-                          Writes completed guide, quiz, paper unlock, and admin override progress for the connected wallet. Onchain badge minting still remains a real Sepolia action.
+                          Writes completed guide, quiz, paper unlock, and admin override progress for the connected wallet. Onchain collectible minting still remains a real Sepolia action.
                         </div>
                       </div>
                       <button className="primary-btn" onClick={handleDeveloperUnlockAll}>

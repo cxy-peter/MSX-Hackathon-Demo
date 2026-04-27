@@ -3,8 +3,12 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
+import "@openzeppelin/contracts/utils/Base64.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
 
 contract MSXUnifiedDemoHub is ERC1155, Ownable {
+    using Strings for uint256;
+
     uint8 public constant HOME_WELCOME = 1;
     uint8 public constant HOME_WALLET = 2;
     uint8 public constant HOME_RISK = 3;
@@ -23,8 +27,10 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
 
     uint256 public constant BPS = 10_000;
     uint8 public constant ASSET_DECIMALS = 6;
+    uint16 public constant DEFAULT_WEALTH_PRODUCT_ID = 1;
     uint256 private constant HOME_TOKEN_OFFSET = 100;
     uint256 private constant WEALTH_TOKEN_OFFSET = 200;
+    uint256 private constant WEALTH_RECEIPT_TOKEN_OFFSET = 1000;
 
     uint256 public nextHomeTokenId = 1;
     uint256 public navBps = BPS;
@@ -44,6 +50,8 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
     mapping(bytes32 => bool) public approvedUnderlyingHash;
     mapping(address => ReplayScore) public replayScoreOf;
     mapping(address => bool) public hasSubmittedScore;
+    mapping(address => mapping(uint16 => uint256)) public wealthReceiptShares;
+    mapping(uint16 => string) public productReceiptLabel;
     address[] private scoredAccounts;
 
     struct ReplayScore {
@@ -73,6 +81,28 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
     event AttestationUpdated(bytes32 attestationRoot, uint256 timestamp);
     event Subscribed(address indexed investor, uint256 assetAmount, uint256 shareAmount);
     event Redeemed(address indexed investor, uint256 shareAmount, uint256 assetAmount);
+    event ProductReceiptSubscribed(
+        address indexed investor,
+        uint16 indexed productId,
+        uint256 indexed tokenId,
+        uint256 assetAmount,
+        uint256 shareAmount
+    );
+    event ProductReceiptRedeemed(
+        address indexed investor,
+        uint16 indexed productId,
+        uint256 indexed tokenId,
+        uint256 shareAmount,
+        uint256 assetAmount
+    );
+    event ProductReceiptSettled(
+        address indexed investor,
+        uint16 indexed fromProductId,
+        uint16 indexed toProductId,
+        uint256 burnAmount,
+        uint256 mintAmount
+    );
+    event ProductReceiptLabelUpdated(uint16 indexed productId, string label);
 
     constructor(string memory baseUri) ERC1155(baseUri) Ownable() {
         vaultLabel = "RiskLens Unified Demo Vault";
@@ -178,6 +208,12 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
         _setURI(nextUri);
     }
 
+    function setProductReceiptLabel(uint16 productId, string calldata label) external onlyOwner {
+        require(productId > 0, "Invalid product");
+        productReceiptLabel[productId] = label;
+        emit ProductReceiptLabelUpdated(productId, label);
+    }
+
     function setInvestorEligibility(address investor, bool allowed, uint8 tier) external onlyOwner {
         eligibleInvestor[investor] = allowed;
         riskTier[investor] = tier;
@@ -228,38 +264,302 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
     }
 
     function subscribe(uint256 assetAmount) external returns (uint256 shareAmount) {
-        require(!subscriptionsPaused, "Subscriptions paused");
-        require(assetAmount >= minSubscription, "Below minimum");
+        return _subscribeProduct(msg.sender, DEFAULT_WEALTH_PRODUCT_ID, assetAmount);
+    }
 
-        shareAmount = previewShares(assetAmount);
-        require(shareAmount > 0, "Zero shares");
-
-        _mint(msg.sender, _wealthTokenTypeId(WEALTH_BUY_RECEIPT), shareAmount, "");
-        wealthTaskCompleted[msg.sender][WEALTH_BUY_RECEIPT] = true;
-
-        emit Subscribed(msg.sender, assetAmount, shareAmount);
-        emit WealthTaskCompleted(msg.sender, WEALTH_BUY_RECEIPT);
+    function subscribeProduct(uint16 productId, uint256 assetAmount) external returns (uint256 shareAmount) {
+        return _subscribeProduct(msg.sender, productId, assetAmount);
     }
 
     function redeem(uint256 shareAmount) external returns (uint256 assetAmount) {
+        return _redeemProduct(msg.sender, DEFAULT_WEALTH_PRODUCT_ID, shareAmount);
+    }
+
+    function redeemProduct(uint16 productId, uint256 shareAmount) external returns (uint256 assetAmount) {
+        return _redeemProduct(msg.sender, productId, shareAmount);
+    }
+
+    function settleProduct(
+        uint16 fromProductId,
+        uint16 toProductId,
+        uint256 burnAmount,
+        uint256 mintAmount
+    ) external returns (uint256 assetAmount, uint256 mintedAmount) {
+        assetAmount = _redeemProduct(msg.sender, fromProductId, burnAmount);
+
+        if (toProductId > 0 && mintAmount > 0) {
+            mintedAmount = _subscribeProduct(msg.sender, toProductId, mintAmount);
+        }
+
+        _completeWealthTask(msg.sender, WEALTH_SETTLE_OR_PLEDGE);
+        emit ProductReceiptSettled(msg.sender, fromProductId, toProductId, burnAmount, mintAmount);
+    }
+
+    function receiptTokenId(uint16 productId) public pure returns (uint256) {
+        require(productId > 0, "Invalid product");
+        return WEALTH_RECEIPT_TOKEN_OFFSET + uint256(productId);
+    }
+
+    function _subscribeProduct(
+        address investor,
+        uint16 productId,
+        uint256 assetAmount
+    ) internal returns (uint256 shareAmount) {
+        require(!subscriptionsPaused, "Subscriptions paused");
+        require(productId > 0, "Invalid product");
+        require(assetAmount >= minSubscription, "Below minimum");
+
+        shareAmount = assetAmount;
         require(shareAmount > 0, "Zero shares");
 
-        assetAmount = previewAssets(shareAmount);
-        _burn(msg.sender, _wealthTokenTypeId(WEALTH_BUY_RECEIPT), shareAmount);
+        uint256 tokenId = receiptTokenId(productId);
+        _mint(investor, tokenId, shareAmount, "");
+        wealthReceiptShares[investor][productId] += shareAmount;
+        _completeWealthTask(investor, WEALTH_BUY_RECEIPT);
 
-        emit Redeemed(msg.sender, shareAmount, assetAmount);
+        emit Subscribed(investor, assetAmount, shareAmount);
+        emit ProductReceiptSubscribed(investor, productId, tokenId, assetAmount, shareAmount);
+    }
+
+    function _redeemProduct(
+        address investor,
+        uint16 productId,
+        uint256 shareAmount
+    ) internal returns (uint256 assetAmount) {
+        require(productId > 0, "Invalid product");
+        require(shareAmount > 0, "Zero shares");
+
+        assetAmount = shareAmount;
+        uint256 tokenId = receiptTokenId(productId);
+        _burn(investor, tokenId, shareAmount);
+        uint256 heldShares = wealthReceiptShares[investor][productId];
+        wealthReceiptShares[investor][productId] = shareAmount >= heldShares ? 0 : heldShares - shareAmount;
+
+        emit Redeemed(investor, shareAmount, assetAmount);
+        emit ProductReceiptRedeemed(investor, productId, tokenId, shareAmount, assetAmount);
     }
 
     function markWealthTask(uint8 taskId) external {
         require(_isSupportedWealthTask(taskId), "Invalid wealth task");
-        wealthTaskCompleted[msg.sender][taskId] = true;
-        _mint(msg.sender, _wealthTokenTypeId(taskId), 1, "");
-        emit WealthTaskCompleted(msg.sender, taskId);
+        require(balanceOf(msg.sender, _wealthTokenTypeId(taskId)) == 0, "Already claimed");
+        _completeWealthTask(msg.sender, taskId);
     }
 
     function hasWealthTask(address holder, uint8 taskId) external view returns (bool) {
         require(_isSupportedWealthTask(taskId), "Invalid wealth task");
         return wealthTaskCompleted[holder][taskId];
+    }
+
+    function uri(uint256 tokenId) public view override returns (string memory) {
+        bytes memory metadata = abi.encodePacked(
+            '{"name":"',
+            _tokenName(tokenId),
+            '","description":"',
+            _tokenDescription(tokenId),
+            '","image":"data:image/svg+xml;base64,',
+            Base64.encode(bytes(_buildTokenSvg(tokenId))),
+            '","attributes":[{"trait_type":"Surface","value":"',
+            _tokenSurface(tokenId),
+            '"},{"trait_type":"Network","value":"Sepolia"},{"trait_type":"Token ID","value":"',
+            tokenId.toString(),
+            '"}]}'
+        );
+
+        return string(abi.encodePacked("data:application/json;base64,", Base64.encode(metadata)));
+    }
+
+    function _tokenName(uint256 tokenId) internal view returns (string memory) {
+        if (_isSupportedHomeToken(tokenId)) {
+            uint8 badgeType = _homeBadgeType(tokenId);
+            if (badgeType == HOME_WELCOME) return "RiskLens Welcome Collectible";
+            if (badgeType == HOME_WALLET) return "RiskLens Wallet Collectible";
+            if (badgeType == HOME_RISK) return "RiskLens Risk Review Collectible";
+            if (badgeType == HOME_QUIZ) return "RiskLens Product Quiz Collectible";
+            return "RiskLens Paper Preview Collectible";
+        }
+        if (_isSupportedWealthTaskToken(tokenId)) {
+            uint8 taskId = _wealthTaskType(tokenId);
+            if (taskId == WEALTH_BUY_RECEIPT) return "RiskLens Wealth Receipt Badge";
+            return "RiskLens Wealth Lifecycle Badge";
+        }
+        if (_isSupportedPaperAchievement(tokenId)) {
+            if (tokenId == PAPER_BASE_CHECK) return "RiskLens Paper Base Check";
+            if (tokenId == PAPER_LEADERBOARD) return "RiskLens Paper Leaderboard";
+            if (tokenId == PAPER_SPOT_LOOP) return "RiskLens Spot Loop";
+            if (tokenId == PAPER_PERP_LEVERAGE) return "RiskLens Perp Leverage";
+            return "RiskLens Protective Hedge";
+        }
+        if (_isSupportedWealthReceiptToken(tokenId)) {
+            return string(
+                abi.encodePacked("RiskLens Wealth Receipt - ", _receiptLabel(_receiptProductId(tokenId)))
+            );
+        }
+        return "RiskLens Demo Collectible";
+    }
+
+    function _tokenDescription(uint256 tokenId) internal view returns (string memory) {
+        if (_isSupportedWealthReceiptToken(tokenId)) {
+            return string(
+                abi.encodePacked(
+                    "Sepolia Wealth receipt for ",
+                    _receiptLabel(_receiptProductId(tokenId)),
+                    ". Settle or redeem burns matching units."
+                )
+            );
+        }
+        if (_isSupportedPaperAchievement(tokenId)) {
+            return "Sepolia paper-trading achievement for RiskLens.";
+        }
+        if (_isSupportedWealthTaskToken(tokenId)) {
+            return "Sepolia Wealth workflow collectible.";
+        }
+        if (_isSupportedHomeToken(tokenId)) {
+            return "Sepolia onboarding collectible for RiskLens.";
+        }
+        return "A Sepolia collectible for the RiskLens demo hub.";
+    }
+
+    function _tokenSurface(uint256 tokenId) internal pure returns (string memory) {
+        if (_isSupportedHomeToken(tokenId)) return "Home";
+        if (_isSupportedWealthTaskToken(tokenId)) return "Wealth Task";
+        if (_isSupportedPaperAchievement(tokenId)) return "Paper Trading";
+        if (_isSupportedWealthReceiptToken(tokenId)) return "Wealth Receipt";
+        return "Demo";
+    }
+
+    function _buildTokenSvg(uint256 tokenId) internal pure returns (string memory) {
+        return string(
+            abi.encodePacked(
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600"><defs><linearGradient id="g" x1="36" y1="22" x2="560" y2="578"><stop stop-color="#12221A"/><stop offset=".55" stop-color="#111827"/><stop offset="1" stop-color="#12333A"/></linearGradient></defs><rect width="600" height="600" rx="44" fill="#0B111C"/><rect x="28" y="28" width="544" height="544" rx="34" fill="url(#g)" stroke="',
+                _accent(tokenId),
+                '" stroke-width="2"/><circle cx="92" cy="92" r="18" fill="',
+                _accent(tokenId),
+                '"/><text x="126" y="101" fill="',
+                _accent(tokenId),
+                '" font-size="18" font-weight="800" font-family="Arial">',
+                _tokenKicker(tokenId),
+                '</text><text x="58" y="284" fill="#F6F8FB" font-size="48" font-weight="900" font-family="Arial">',
+                _tokenLineOne(tokenId),
+                '</text><text x="58" y="344" fill="#F6F8FB" font-size="48" font-weight="900" font-family="Arial">',
+                _tokenLineTwo(tokenId),
+                '</text><text x="58" y="410" fill="#AAB8C7" font-size="20" font-family="Arial">',
+                _tokenSubtitleOne(tokenId),
+                '</text><text x="58" y="440" fill="#AAB8C7" font-size="20" font-family="Arial">',
+                _tokenSubtitleTwo(tokenId),
+                '</text><text x="58" y="520" fill="#6F8095" font-size="18" font-weight="700" font-family="Arial">TOKEN #',
+                tokenId.toString(),
+                '</text></svg>'
+            )
+        );
+    }
+
+    function _tokenKicker(uint256 tokenId) internal pure returns (string memory) {
+        if (_isSupportedWealthReceiptToken(tokenId)) return "RiskLens Wealth Receipt";
+        if (_isSupportedWealthTaskToken(tokenId)) return "RiskLens Wealth";
+        if (_isSupportedPaperAchievement(tokenId)) return "RiskLens Paper Trading";
+        return "RiskLens Wallet Collectible";
+    }
+
+    function _tokenLineOne(uint256 tokenId) internal pure returns (string memory) {
+        if (_isSupportedWealthReceiptToken(tokenId)) return "WEALTH";
+        if (_isSupportedWealthTaskToken(tokenId)) return "WEALTH";
+        if (_isSupportedPaperAchievement(tokenId)) return "PAPER";
+        return "WALLET";
+    }
+
+    function _tokenLineTwo(uint256 tokenId) internal pure returns (string memory) {
+        if (_isSupportedWealthReceiptToken(tokenId)) {
+            return string(abi.encodePacked("RECEIPT #", uint256(_receiptProductId(tokenId)).toString()));
+        }
+        if (_isSupportedWealthTaskToken(tokenId)) {
+            return _wealthTaskType(tokenId) == WEALTH_BUY_RECEIPT ? "RECEIPT BADGE" : "LIFECYCLE BADGE";
+        }
+        if (_isSupportedPaperAchievement(tokenId)) {
+            if (tokenId == PAPER_BASE_CHECK) return "BASE CHECK";
+            if (tokenId == PAPER_LEADERBOARD) return "LEADERBOARD";
+            if (tokenId == PAPER_SPOT_LOOP) return "SPOT LOOP";
+            if (tokenId == PAPER_PERP_LEVERAGE) return "LEVERAGE";
+            return "HEDGE";
+        }
+        if (_isSupportedHomeToken(tokenId)) {
+            uint8 badgeType = _homeBadgeType(tokenId);
+            if (badgeType == HOME_WELCOME) return "WELCOME";
+            if (badgeType == HOME_WALLET) return "CONNECT";
+            if (badgeType == HOME_RISK) return "RISK REVIEW";
+            if (badgeType == HOME_QUIZ) return "PRODUCT QUIZ";
+            return "PAPER PREVIEW";
+        }
+        return "COLLECTIBLE";
+    }
+
+    function _tokenSubtitleOne(uint256 tokenId) internal pure returns (string memory) {
+        if (_isSupportedWealthReceiptToken(tokenId)) return "Subscription receipt shares live";
+        if (_isSupportedWealthTaskToken(tokenId)) return "Workflow milestone recorded";
+        if (_isSupportedPaperAchievement(tokenId)) return "Replay achievement recorded";
+        return "Onboarding milestone recorded";
+    }
+
+    function _tokenSubtitleTwo(uint256 tokenId) internal pure returns (string memory) {
+        if (_isSupportedWealthReceiptToken(tokenId)) return "in the connected wallet";
+        if (_isSupportedWealthTaskToken(tokenId)) return "for the Wealth flow";
+        if (_isSupportedPaperAchievement(tokenId)) return "for the simulation wallet";
+        return "for the RiskLens hub";
+    }
+
+    function _accent(uint256 tokenId) internal pure returns (string memory) {
+        if (_isSupportedWealthReceiptToken(tokenId)) return "#C8FF6B";
+        if (_isSupportedWealthTaskToken(tokenId)) return "#49D6C4";
+        if (_isSupportedPaperAchievement(tokenId)) return "#76A9FF";
+        if (_isSupportedHomeToken(tokenId) && _homeBadgeType(tokenId) == HOME_QUIZ) return "#FFB36B";
+        if (_isSupportedHomeToken(tokenId) && _homeBadgeType(tokenId) == HOME_RISK) return "#FFD166";
+        return "#B6FF43";
+    }
+
+    function _accentTwo(uint256 tokenId) internal pure returns (string memory) {
+        if (_isSupportedWealthReceiptToken(tokenId)) return "#49D6C4";
+        if (_isSupportedWealthTaskToken(tokenId)) return "#B6FF43";
+        if (_isSupportedPaperAchievement(tokenId)) return "#A7F0FF";
+        return "#6FA5FF";
+    }
+
+    function _receiptLabel(uint16 productId) internal view returns (string memory) {
+        string memory label = productReceiptLabel[productId];
+        if (bytes(label).length > 0) return label;
+        return string(abi.encodePacked("Wealth Product #", uint256(productId).toString()));
+    }
+
+    function _isSupportedHomeToken(uint256 tokenId) internal pure returns (bool) {
+        return tokenId > HOME_TOKEN_OFFSET && tokenId <= HOME_TOKEN_OFFSET + HOME_PAPER;
+    }
+
+    function _isSupportedWealthTaskToken(uint256 tokenId) internal pure returns (bool) {
+        return tokenId > WEALTH_TOKEN_OFFSET && tokenId <= WEALTH_TOKEN_OFFSET + WEALTH_SETTLE_OR_PLEDGE;
+    }
+
+    function _isSupportedWealthReceiptToken(uint256 tokenId) internal pure returns (bool) {
+        return tokenId > WEALTH_RECEIPT_TOKEN_OFFSET && tokenId <= WEALTH_RECEIPT_TOKEN_OFFSET + type(uint16).max;
+    }
+
+    function _homeBadgeType(uint256 tokenId) internal pure returns (uint8) {
+        return uint8(tokenId - HOME_TOKEN_OFFSET);
+    }
+
+    function _wealthTaskType(uint256 tokenId) internal pure returns (uint8) {
+        return uint8(tokenId - WEALTH_TOKEN_OFFSET);
+    }
+
+    function _receiptProductId(uint256 tokenId) internal pure returns (uint16) {
+        return uint16(tokenId - WEALTH_RECEIPT_TOKEN_OFFSET);
+    }
+
+    function _completeWealthTask(address account, uint8 taskId) internal {
+        wealthTaskCompleted[account][taskId] = true;
+        uint256 tokenId = _wealthTokenTypeId(taskId);
+
+        if (balanceOf(account, tokenId) == 0) {
+            _mint(account, tokenId, 1, "");
+            emit WealthTaskCompleted(account, taskId);
+        }
     }
 
     function _isSupportedHomeBadge(uint8 badgeType) internal pure returns (bool) {
