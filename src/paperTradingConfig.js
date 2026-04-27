@@ -6,6 +6,7 @@ export const BADGE_REWARD_TOKENS = 5000;
 export const MIN_PAPER_TRADE = 100;
 
 export const PAPER_LANE_OPTIONS = [
+  { id: 'all', label: 'All' },
   { id: 'spot', label: 'Spot' },
   { id: 'public', label: 'xStock' }
 ];

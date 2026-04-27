@@ -105,6 +105,7 @@ const DEV_MODE_PASSWORD = 'msx2026';
 const DEV_AUTH_STORAGE_KEY = 'msx-dev-auth';
 const WEALTH_TASK_TOKEN_OFFSET = 200;
 const WEALTH_RECEIPT_TOKEN_OFFSET = 1000;
+const WEALTH_SUPPORT_TOKEN_OFFSET = 3000;
 const SETTLEMENT_ACTION_OPTIONS = [
   { id: 'roll', label: 'Roll into next term', helper: 'Settle the current receipt at the projected NAV, then reopen the same product with a new basis. This is the demo rollover path.' },
   { id: 'transfer', label: 'Transfer into another product', helper: 'Settle this receipt first, then remint the released value into the transfer target you pick below.' },
@@ -856,6 +857,31 @@ function getWealthReceiptTokenId(product) {
   return WEALTH_RECEIPT_TOKEN_OFFSET + getWealthReceiptProductId(product);
 }
 
+function getWealthSupportTokenId(product) {
+  return WEALTH_SUPPORT_TOKEN_OFFSET + getWealthReceiptProductId(product);
+}
+
+function buildSupportLineProof({ address, product, amount, shares, termMode, mintedAt }) {
+  const payload = JSON.stringify({
+    kind: 'risklens.wealth-support-line.v1',
+    address: String(address || '').toLowerCase(),
+    productId: product?.id || '',
+    productName: product?.name || '',
+    shareToken: product?.shareToken || '',
+    supportTokenId: getWealthSupportTokenId(product),
+    amount: roundNumber(Number(amount || 0), 2),
+    shares: roundNumber(Number(shares || 0), 6),
+    termMode,
+    mintedAt
+  });
+  let hash = 0;
+  for (let index = 0; index < payload.length; index += 1) {
+    hash = (hash << 5) - hash + payload.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(16).padStart(16, '0');
+}
+
 function toVaultUnitAmount(value) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue) || numericValue <= 0) return 0n;
@@ -893,6 +919,258 @@ function buildLocalReceiptProof({ address, product, amount, shares, receiptMode,
     hash |= 0;
   }
   return Math.abs(hash).toString(16).padStart(16, '0');
+}
+
+function normalizeWealthReceiptProofMode(value) {
+  const mode = String(value || '').trim().toLowerCase();
+  if (mode === 'onchain' || mode === 'mixed') return mode;
+  return 'local';
+}
+
+function combineWealthReceiptProofModes(currentMode, nextMode) {
+  const current = normalizeWealthReceiptProofMode(currentMode);
+  const next = normalizeWealthReceiptProofMode(nextMode);
+  if (current === next) return current;
+  return 'mixed';
+}
+
+function getWealthReceiptProofModeLabel(mode) {
+  const normalizedMode = normalizeWealthReceiptProofMode(mode);
+  if (normalizedMode === 'onchain') return 'Sepolia receipt';
+  if (normalizedMode === 'mixed') return 'Mixed proof';
+  return 'Local proof';
+}
+
+function buildWealthReceiptLot({
+  id,
+  product,
+  amount = 0,
+  shares = 0,
+  entryNav = 0,
+  receiptProofMode = 'local',
+  receiptProofHash = '',
+  receiptTokenId = 0,
+  receiptUnitAmount = '',
+  receiptProductDetail = '',
+  receiptProductDetailCopy = '',
+  receiptPurchasedAt = ''
+} = {}) {
+  const numericShares = Number(shares || 0);
+  const numericPrincipal = Number(amount || 0);
+  const safePurchasedAt = receiptPurchasedAt || new Date().toISOString();
+  const safeEntryNav = Number(entryNav || 0) || (numericShares > 0 ? numericPrincipal / numericShares : Number(product?.nav || 0));
+
+  return {
+    id: id || `${safePurchasedAt}-${normalizeWealthReceiptProofMode(receiptProofMode)}-${Math.round(numericPrincipal)}`,
+    productId: product?.id || '',
+    shares: roundNumber(Math.max(0, numericShares), 6),
+    principal: roundNumber(Math.max(0, numericPrincipal), 2),
+    entryNav: roundNumber(Math.max(0, safeEntryNav), 6),
+    receiptProofMode: normalizeWealthReceiptProofMode(receiptProofMode),
+    receiptProofHash: String(receiptProofHash || ''),
+    receiptTokenId: Number(receiptTokenId || (product ? getWealthReceiptTokenId(product) : 0)),
+    receiptUnitAmount: String(receiptUnitAmount || ''),
+    receiptProductDetail: String(receiptProductDetail || ''),
+    receiptProductDetailCopy: String(receiptProductDetailCopy || ''),
+    receiptPurchasedAt: safePurchasedAt
+  };
+}
+
+function normalizeWealthReceiptLots(value = [], fallbackPosition = {}, product = null) {
+  const rawLots = Array.isArray(value) ? value : [];
+  const normalizedLots = rawLots
+    .map((lot) =>
+      buildWealthReceiptLot({
+        ...lot,
+        product,
+        amount: lot?.principal ?? lot?.amount,
+        shares: lot?.shares,
+        entryNav: lot?.entryNav,
+        receiptProofMode: lot?.receiptProofMode,
+        receiptProofHash: lot?.receiptProofHash,
+        receiptTokenId: lot?.receiptTokenId,
+        receiptUnitAmount: lot?.receiptUnitAmount,
+        receiptProductDetail: lot?.receiptProductDetail,
+        receiptProductDetailCopy: lot?.receiptProductDetailCopy,
+        receiptPurchasedAt: lot?.receiptPurchasedAt
+      })
+    )
+    .filter((lot) => lot.shares > 0);
+
+  if (normalizedLots.length) return normalizedLots;
+
+  const fallbackShares = Number(fallbackPosition?.shares || 0);
+  const fallbackPrincipal = Number(fallbackPosition?.principal || 0);
+  if (!Number.isFinite(fallbackShares) || fallbackShares <= 0) return [];
+
+  return [
+    buildWealthReceiptLot({
+      product,
+      amount: Number.isFinite(fallbackPrincipal) ? fallbackPrincipal : 0,
+      shares: fallbackShares,
+      entryNav: fallbackPosition?.entryNav,
+      receiptProofMode: fallbackPosition?.receiptProofMode,
+      receiptProofHash: fallbackPosition?.receiptProofHash,
+      receiptTokenId: fallbackPosition?.receiptTokenId,
+      receiptUnitAmount: fallbackPosition?.receiptUnitAmount,
+      receiptProductDetail: fallbackPosition?.receiptProductDetail,
+      receiptProductDetailCopy: fallbackPosition?.receiptProductDetailCopy,
+      receiptPurchasedAt: fallbackPosition?.receiptPurchasedAt || fallbackPosition?.entryTs || ''
+    })
+  ];
+}
+
+function summarizeWealthReceiptProofMode(lots = [], fallbackMode = 'local') {
+  const activeLots = lots.filter((lot) => Number(lot?.shares || 0) > 0);
+  if (!activeLots.length) return normalizeWealthReceiptProofMode(fallbackMode);
+  return activeLots
+    .map((lot) => normalizeWealthReceiptProofMode(lot.receiptProofMode))
+    .reduce((current, next) => (current ? combineWealthReceiptProofModes(current, next) : next), '');
+}
+
+function getLatestWealthReceiptLot(lots = []) {
+  return [...lots]
+    .filter((lot) => Number(lot?.shares || 0) > 0)
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.receiptPurchasedAt || '');
+      const rightTime = Date.parse(right.receiptPurchasedAt || '');
+      return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+    })[0] || null;
+}
+
+function getWealthReceiptLotSummary(lots = []) {
+  const activeLots = lots.filter((lot) => Number(lot?.shares || 0) > 0);
+  return {
+    total: activeLots.length,
+    onchain: activeLots.filter((lot) => normalizeWealthReceiptProofMode(lot.receiptProofMode) === 'onchain').length,
+    local: activeLots.filter((lot) => normalizeWealthReceiptProofMode(lot.receiptProofMode) === 'local').length
+  };
+}
+
+function consumeWealthReceiptLots(lots = [], sharesToConsume = 0) {
+  const safeSharesToConsume = Math.max(0, Number(sharesToConsume || 0));
+  let remainingToConsume = safeSharesToConsume;
+  const consumedLots = [];
+  const remainingLots = [];
+  const orderedLots = [...lots].sort((left, right) => {
+    const leftTime = Date.parse(left.receiptPurchasedAt || '');
+    const rightTime = Date.parse(right.receiptPurchasedAt || '');
+    return (Number.isFinite(leftTime) ? leftTime : 0) - (Number.isFinite(rightTime) ? rightTime : 0);
+  });
+
+  orderedLots.forEach((lot) => {
+    const lotShares = roundNumber(Math.max(0, Number(lot?.shares || 0)), 6);
+    if (lotShares <= 0) return;
+
+    if (remainingToConsume <= 0) {
+      remainingLots.push(lot);
+      return;
+    }
+
+    const consumedShares = roundNumber(Math.min(lotShares, remainingToConsume), 6);
+    const consumedRatio = lotShares > 0 ? consumedShares / lotShares : 0;
+    const consumedPrincipal = roundNumber(Number(lot?.principal || 0) * consumedRatio, 2);
+    const remainingShares = roundNumber(Math.max(0, lotShares - consumedShares), 6);
+    const remainingPrincipal = roundNumber(Math.max(0, Number(lot?.principal || 0) - consumedPrincipal), 2);
+
+    consumedLots.push({
+      ...lot,
+      shares: consumedShares,
+      principal: consumedPrincipal
+    });
+
+    if (remainingShares > 0) {
+      remainingLots.push({
+        ...lot,
+        shares: remainingShares,
+        principal: remainingPrincipal
+      });
+    }
+
+    remainingToConsume = roundNumber(Math.max(0, remainingToConsume - consumedShares), 6);
+  });
+
+  return {
+    consumedLots,
+    remainingLots,
+    consumedShares: roundNumber(consumedLots.reduce((sum, lot) => sum + Number(lot.shares || 0), 0), 6),
+    consumedPrincipal: roundNumber(consumedLots.reduce((sum, lot) => sum + Number(lot.principal || 0), 0), 2),
+    unfilledShares: remainingToConsume
+  };
+}
+
+function getWealthReceiptLotSplit(lots = [], projectedNav = 0) {
+  const split = {
+    onchainPrincipal: 0,
+    onchainValue: 0,
+    localPrincipal: 0,
+    localValue: 0,
+    mixedPrincipal: 0,
+    mixedValue: 0
+  };
+  const nav = Math.max(0, Number(projectedNav || 0));
+
+  lots.forEach((lot) => {
+    const mode = normalizeWealthReceiptProofMode(lot.receiptProofMode);
+    const principal = Number(lot.principal || 0);
+    const value = roundNumber(Number(lot.shares || 0) * nav, 2);
+    if (mode === 'onchain') {
+      split.onchainPrincipal += principal;
+      split.onchainValue += value;
+    } else if (mode === 'mixed') {
+      split.mixedPrincipal += principal;
+      split.mixedValue += value;
+    } else {
+      split.localPrincipal += principal;
+      split.localValue += value;
+    }
+  });
+
+  Object.keys(split).forEach((key) => {
+    split[key] = roundNumber(split[key], 2);
+  });
+
+  return split;
+}
+
+function buildReceiptReplacementLotsByProofMode({
+  sourceLots = [],
+  sourceProjectedNav = 0,
+  targetProduct,
+  receiptProductDetail = '',
+  receiptProductDetailCopy = '',
+  purchasedAt = ''
+} = {}) {
+  if (!targetProduct) return [];
+  const nav = Math.max(0, Number(sourceProjectedNav || 0));
+  const now = purchasedAt || new Date().toISOString();
+  const buckets = new Map();
+
+  sourceLots.forEach((lot) => {
+    const mode = normalizeWealthReceiptProofMode(lot.receiptProofMode);
+    const bucket = buckets.get(mode) || { mode, shares: 0, value: 0 };
+    bucket.shares = roundNumber(bucket.shares + Number(lot.shares || 0), 6);
+    bucket.value = roundNumber(bucket.value + Number(lot.shares || 0) * nav, 2);
+    buckets.set(mode, bucket);
+  });
+
+  return [...buckets.values()]
+    .filter((bucket) => bucket.value > 0)
+    .map((bucket) =>
+      buildWealthReceiptLot({
+        product: targetProduct,
+        amount: bucket.value,
+        shares: targetProduct.nav > 0 ? roundNumber(bucket.value / targetProduct.nav, 6) : 0,
+        entryNav: targetProduct.nav,
+        receiptProofMode: bucket.mode,
+        receiptProofHash: `rolled-${bucket.mode}-${now}`,
+        receiptTokenId: getWealthReceiptTokenId(targetProduct),
+        receiptUnitAmount: toVaultUnitAmount(bucket.value).toString(),
+        receiptProductDetail,
+        receiptProductDetailCopy,
+        receiptPurchasedAt: now
+      })
+    );
 }
 
 function normalizeEvidenceValue(value) {
@@ -1063,6 +1341,9 @@ function normalizeWealthState(value) {
         const principal = Number(position?.principal || 0);
 
         if (!Number.isFinite(shares) || shares <= 0) return null;
+        const receiptLots = normalizeWealthReceiptLots(position?.receiptLots, position);
+        const latestReceiptLot = getLatestWealthReceiptLot(receiptLots) || {};
+        const receiptProofMode = summarizeWealthReceiptProofMode(receiptLots, position?.receiptProofMode);
 
         return [
           productId,
@@ -1071,7 +1352,15 @@ function normalizeWealthState(value) {
             principal: roundNumber(Number.isFinite(principal) ? principal : 0, 2),
             entryNav: Number(position?.entryNav || 0),
             entryTs: position?.entryTs || '',
-            lastActivityTs: position?.lastActivityTs || position?.lastSubscribeTs || position?.entryTs || ''
+            lastActivityTs: position?.lastActivityTs || position?.lastSubscribeTs || position?.entryTs || '',
+            receiptProofMode,
+            receiptProofHash: String(latestReceiptLot.receiptProofHash || position?.receiptProofHash || ''),
+            receiptTokenId: Number(latestReceiptLot.receiptTokenId || position?.receiptTokenId || 0),
+            receiptUnitAmount: String(latestReceiptLot.receiptUnitAmount || position?.receiptUnitAmount || ''),
+            receiptProductDetail: String(latestReceiptLot.receiptProductDetail || position?.receiptProductDetail || ''),
+            receiptProductDetailCopy: String(latestReceiptLot.receiptProductDetailCopy || position?.receiptProductDetailCopy || ''),
+            receiptPurchasedAt: latestReceiptLot.receiptPurchasedAt || position?.receiptPurchasedAt || position?.entryTs || '',
+            receiptLots
           }
         ];
       })
@@ -1094,6 +1383,9 @@ function normalizeWealthState(value) {
             advanceRate: Number(entry?.advanceRate || 0),
             termMode: entry?.termMode || 'flex',
             apy: Number(entry?.apy || 0),
+            supportTokenId: Number(entry?.supportTokenId || 0),
+            supportProofHash: String(entry?.supportProofHash || ''),
+            supportMintedAt: String(entry?.supportMintedAt || entry?.updatedAt || ''),
             updatedAt: entry?.updatedAt || '',
             supportOnly: Boolean(entry?.supportOnly)
           }
@@ -3998,6 +4290,7 @@ function WealthInner() {
   const [pledgeTermMode, setPledgeTermMode] = useState('flex');
   const [collateralBorrowInput, setCollateralBorrowInput] = useState(0);
   const [isSubscribeModalOpen, setIsSubscribeModalOpen] = useState(false);
+  const [subscriptionActionInFlight, setSubscriptionActionInFlight] = useState(false);
   const [subscriptionReceiptProofMode, setSubscriptionReceiptProofMode] = useState('local');
   const [progressState, setProgressState] = useState({
     guideCompleted: false,
@@ -4068,7 +4361,7 @@ function WealthInner() {
     [address, walletNickname]
   );
   const connectedAddressKey = useMemo(() => (address ? address.toLowerCase() : ''), [address]);
-  const wealthWalletActionPending = isWealthSigning || isWealthReceiptSubmitting;
+  const wealthWalletActionPending = isWealthSigning || isWealthReceiptSubmitting || subscriptionActionInFlight;
   const profileBackupAccounts = useMemo(
     () => listProfileBackupAccounts(),
     [connectedAddressKey, profileBackupStatus, walletNickname]
@@ -5091,6 +5384,8 @@ function WealthInner() {
 
           const currentValue = roundNumber(position.shares * product.nav, 2);
           const pnl = roundNumber(currentValue - position.principal, 2);
+          const receiptLots = normalizeWealthReceiptLots(position.receiptLots, position, product);
+          const receiptLotSummary = getWealthReceiptLotSummary(receiptLots);
 
           return {
             ...product,
@@ -5099,6 +5394,15 @@ function WealthInner() {
             entryTs: position.entryTs || '',
             entryNav: position.entryNav || product.nav,
             lastActivityTs: position.lastActivityTs || position.entryTs || '',
+            receiptProofMode: normalizeWealthReceiptProofMode(position.receiptProofMode),
+            receiptProofHash: position.receiptProofHash || '',
+            receiptTokenId: Number(position.receiptTokenId || getWealthReceiptTokenId(product)),
+            receiptUnitAmount: String(position.receiptUnitAmount || ''),
+            receiptProductDetail: position.receiptProductDetail || '',
+            receiptProductDetailCopy: position.receiptProductDetailCopy || '',
+            receiptPurchasedAt: position.receiptPurchasedAt || position.entryTs || '',
+            receiptLots,
+            receiptLotSummary,
             currentValue,
             pnl
           };
@@ -5133,7 +5437,28 @@ function WealthInner() {
   );
   const strategyValue = roundNumber(portfolioRows.filter((row) => row.bucket === 'strategy').reduce((sum, row) => sum + row.currentValue, 0), 2);
 
-  const selectedPosition = displayWealthState.positions[selectedProduct.id] || { shares: 0, principal: 0 };
+  const selectedPosition = displayWealthState.positions[selectedProduct.id] || { shares: 0, principal: 0, receiptLots: [] };
+  const selectedReceiptLots = normalizeWealthReceiptLots(selectedPosition.receiptLots, selectedPosition, selectedProduct);
+  const selectedLatestReceiptLot = getLatestWealthReceiptLot(selectedReceiptLots);
+  const selectedReceiptLotSummary = getWealthReceiptLotSummary(selectedReceiptLots);
+  const selectedLatestSubscribeActivity = getLatestWealthActivity(displayWealthState, ['subscribe'], selectedProduct.id);
+  const selectedReceiptProofMode = normalizeWealthReceiptProofMode(
+    summarizeWealthReceiptProofMode(
+      selectedReceiptLots,
+      selectedPosition.receiptProofMode || selectedLatestSubscribeActivity?.receiptProofMode
+    )
+  );
+  const selectedReceiptProofIsOnchain = selectedReceiptProofMode === 'onchain';
+  const selectedReceiptProofIsMixed = selectedReceiptProofMode === 'mixed';
+  const selectedReceiptTokenId = Number(
+    selectedLatestReceiptLot?.receiptTokenId ||
+      selectedPosition.receiptTokenId ||
+      selectedLatestSubscribeActivity?.receiptTokenId ||
+      getWealthReceiptTokenId(selectedProduct)
+  );
+  const selectedReceiptProofHash =
+    selectedLatestReceiptLot?.receiptProofHash || selectedPosition.receiptProofHash || selectedLatestSubscribeActivity?.receiptProofHash || '';
+  const selectedReceiptRequiresOnchainTx = wealthVaultConfigured && selectedReceiptProofIsOnchain;
   const selectedTimelineNav = getForwardProjectedNav(selectedProduct, Number(settlementDays));
   const selectedPositionValue = roundNumber(selectedPosition.shares * selectedProduct.nav, 2);
   const selectedPositionPnl = roundNumber(selectedPositionValue - selectedPosition.principal, 2);
@@ -5154,6 +5479,11 @@ function WealthInner() {
   const selectedPotentialMaxBorrowValue = roundNumber(selectedPotentialCollateralValue * selectedCollateralAdvanceRate, 2);
   const selectedRemainingBorrowCapacity = roundNumber(Math.max(0, selectedPotentialMaxBorrowValue - selectedBorrowedAmount), 2);
   const selectedCollateralLtv = selectedCollateralValue > 0 ? selectedBorrowedAmount / selectedCollateralValue : 0;
+  const selectedSupportLineActive = selectedPledgedShares > 0 || selectedBorrowedAmount > 0;
+  const selectedSupportMaxValue = selectedPotentialMaxBorrowValue;
+  const selectedSupportTargetAtMax = Math.abs(Number(collateralBorrowInput || 0) - selectedSupportMaxValue) < 0.01;
+  const selectedSupportTokenId = selectedCollateralState.supportTokenId || getWealthSupportTokenId(selectedProduct);
+  const selectedSupportProofHash = selectedCollateralState.supportProofHash || '';
   const selectedMinimumTicket = getProductMinimumTicket(selectedProduct);
   const selectedSettlementPolicy = getSettlementPolicy(selectedProduct);
   const selectedRedeemAllowed = isRedeemableProduct(selectedProduct);
@@ -5855,14 +6185,10 @@ function WealthInner() {
   const selectedProductCashMessage = selectedProductUnaffordable
     ? getInsufficientProductCashMessage(selectedProduct, availableCash)
     : '';
-  const selectedSubscribeBlockMessage =
-    wealthReceiptGateBlocked
-      ? wealthReceiptGateMessage
-      : selectedProductCashMessage || subscriptionValidationMessage || '';
+  const selectedSubscribeBlockMessage = selectedProductCashMessage || subscriptionValidationMessage || '';
   const selectedSubscribeDisabled = Boolean(
     selectedProductLocked ||
       wealthWalletActionPending ||
-      wealthReceiptGateBlocked ||
       selectedProductCashMessage ||
       subscriptionValidationMessage
   );
@@ -6201,6 +6527,7 @@ function WealthInner() {
     setFeedback(
       `Wealth ${taskLabel} collectible ${sourceLabel === 'onchain' ? 'confirmed' : 'claimed'} for this wallet. +${WEALTH_MILESTONE_BONUS.toLocaleString()} PT now carries into Wealth and Paper.`
     );
+    setSelectedWealthTaskId(null);
   }
 
   function recordPledgeDeskOpen(productId) {
@@ -6641,10 +6968,6 @@ function WealthInner() {
   function handleOpenSubscribeModal(productOverride = selectedProduct, event) {
     event?.stopPropagation?.();
     const product = productOverride || selectedProduct;
-    if (wealthReceiptGateBlocked) {
-      setFeedback(wealthReceiptGateMessage);
-      return;
-    }
     const currentAmount = Number(allocationAmount);
     const productMinimumTicket = getProductMinimumTicket(product);
     const requestedAmount =
@@ -6759,6 +7082,10 @@ function WealthInner() {
   }
 
   async function handleConfirmSubscribe() {
+    if (subscriptionActionInFlight) return;
+    setSubscriptionActionInFlight(true);
+
+    try {
     const requestedAmount = Number(allocationAmount);
 
     if (subscriptionValidationMessage) {
@@ -6774,6 +7101,11 @@ function WealthInner() {
     const receiptPurchasedAt = new Date().toISOString();
     const receiptProductDetail = selectedSettlementPolicy.timing;
     const receiptProductDetailCopy = selectedSettlementPolicy.detail || selectedProduct.redemption || selectedSettlementPolicy.label;
+    if (wantsOnchainReceipt && wealthReceiptGateBlocked) {
+      setFeedback(wealthReceiptGateMessage);
+      return;
+    }
+
     const receiptProofHash = buildLocalReceiptProof({
       address,
       product: selectedProduct,
@@ -6801,6 +7133,8 @@ function WealthInner() {
 
     if (!signed) return;
 
+    setIsSubscribeModalOpen(false);
+
     const receiptMinted = wantsOnchainReceipt
       ? await submitWealthReceiptTransaction({
           functionName: 'subscribeProduct',
@@ -6821,11 +7155,28 @@ function WealthInner() {
     }
 
     setWealthState((current) => {
-      const currentPosition = current.positions[selectedProduct.id] || { shares: 0, principal: 0 };
+      const currentPosition = current.positions[selectedProduct.id] || { shares: 0, principal: 0, receiptLots: [] };
       const nextShares = roundNumber(currentPosition.shares + sharesMinted, 6);
       const nextPrincipal = roundNumber(currentPosition.principal + requestedAmount, 2);
       const nextEntryNav = nextShares > 0 ? roundNumber(nextPrincipal / nextShares, 6) : selectedProduct.nav;
       const now = new Date().toISOString();
+      const nextReceiptLot = buildWealthReceiptLot({
+        product: selectedProduct,
+        amount: requestedAmount,
+        shares: sharesMinted,
+        entryNav: selectedProduct.nav,
+        receiptProofMode: wantsOnchainReceipt ? 'onchain' : 'local',
+        receiptProofHash,
+        receiptTokenId,
+        receiptUnitAmount: receiptUnitAmount.toString(),
+        receiptProductDetail,
+        receiptProductDetailCopy,
+        receiptPurchasedAt,
+        receiptLots: [nextReceiptLot]
+      });
+      const currentReceiptLots = normalizeWealthReceiptLots(currentPosition.receiptLots, currentPosition, selectedProduct);
+      const nextReceiptLots = [...currentReceiptLots, nextReceiptLot];
+      const nextReceiptProofMode = summarizeWealthReceiptProofMode(nextReceiptLots, wantsOnchainReceipt ? 'onchain' : 'local');
       const nextState = {
         ...current,
         cash: roundNumber(current.cash - requestedAmount, 2),
@@ -6836,7 +7187,15 @@ function WealthInner() {
             principal: nextPrincipal,
             entryNav: nextEntryNav,
             entryTs: currentPosition.entryTs || now,
-            lastActivityTs: now
+            lastActivityTs: now,
+            receiptProofMode: nextReceiptProofMode,
+            receiptProofHash,
+            receiptTokenId,
+            receiptUnitAmount: receiptUnitAmount.toString(),
+            receiptProductDetail,
+            receiptProductDetailCopy,
+            receiptPurchasedAt: currentPosition.receiptPurchasedAt || receiptPurchasedAt,
+            receiptLots: nextReceiptLots
           }
         }
       };
@@ -6866,7 +7225,9 @@ function WealthInner() {
       }${sharesMinted.toLocaleString()} ${selectedProduct.shareToken} shares are now live in the demo wallet.`
     );
     setSettlementDays(0);
-    setIsSubscribeModalOpen(false);
+    } finally {
+      setSubscriptionActionInFlight(false);
+    }
   }
 
   async function handleUseAsCollateral() {
@@ -6881,7 +7242,7 @@ function WealthInner() {
       return;
     }
 
-    if (wealthReceiptGateBlocked) {
+    if (selectedReceiptRequiresOnchainTx && wealthReceiptGateBlocked) {
       setFeedback(wealthReceiptGateMessage);
       return;
     }
@@ -6907,7 +7268,7 @@ function WealthInner() {
     }
 
     if (nextBorrowTarget <= selectedBorrowedAmount) {
-      setFeedback('This support target is not above the current line. Use Release support when you want to unwind the collateral flow.');
+      setFeedback('This support target is not above the current line. Use Burn / release support when you want to unwind the collateral flow.');
       return;
     }
 
@@ -6919,13 +7280,25 @@ function WealthInner() {
     }
 
     const borrowDelta = roundNumber(nextBorrowTarget - selectedBorrowedAmount, 2);
+    const supportMintedAt = new Date().toISOString();
+    const supportTokenId = getWealthSupportTokenId(selectedProduct);
+    const supportProofHash = buildSupportLineProof({
+      address,
+      product: selectedProduct,
+      amount: nextBorrowTarget,
+      shares: collateralShares,
+      termMode: pledgeTermMode,
+      mintedAt: supportMintedAt
+    });
     const signed = await ensureWealthActionSignature({
-      action: 'pledge receipt support',
+      action: selectedSupportLineActive ? 'increase support-line receipt' : 'mint support-line receipt',
       amount: nextBorrowTarget,
       shares: collateralShares,
       extraLines: [
         `Collateral value: ${formatValue(collateralValue, false)}`,
         `Advance rate: ${(selectedCollateralAdvanceRate * 100).toFixed(0)}%`,
+        `Support token: #${supportTokenId}`,
+        `Support proof: ${supportProofHash}`,
         `Pledge term: ${pledgeTermMode === 'fixed' ? 'Fixed term' : 'Flexible'}`,
         pledgeTermMode === 'fixed'
           ? `Timeline lock: ${selectedPledgeLockStatus.lockDays}D fixed pledge; release is blocked until the timeline reaches that window.`
@@ -6949,7 +7322,10 @@ function WealthInner() {
             termMode: pledgeTermMode,
             apy: selectedCollateralApy,
             lockDays: pledgeTermMode === 'fixed' ? selectedPledgeLockStatus.lockDays : 0,
-            updatedAt: new Date().toISOString(),
+            supportTokenId,
+            supportProofHash,
+            supportMintedAt,
+            updatedAt: supportMintedAt,
             supportOnly: true
           }
         }
@@ -6961,12 +7337,18 @@ function WealthInner() {
         productName: selectedProduct.name,
         amount: nextBorrowTarget,
         shares: collateralShares,
+        action: selectedSupportLineActive ? 'increase-support' : 'mint-support',
+        supportTokenId,
+        supportProofHash,
+        supportMintedAt,
+        supportDelta: borrowDelta,
         isDualInvestment: isDualInvestmentProduct(selectedProduct)
       });
     });
 
+    setCollateralBorrowInput(nextBorrowTarget);
     setFeedback(
-      `${selectedProduct.shareToken} collateral activated: ${collateralShares.toLocaleString()} shares are now pledged. The route support line is ${nextBorrowTarget.toLocaleString()} PT, and Paper Trading can read it without adding that PT to Wealth cash.`
+      `${selectedProduct.shareToken} support receipt #${supportTokenId} minted: ${collateralShares.toLocaleString()} shares now back a ${nextBorrowTarget.toLocaleString()} PT route-support line. Paper Trading can read it without adding that PT to Wealth cash.`
     );
   }
 
@@ -6981,7 +7363,7 @@ function WealthInner() {
       return;
     }
 
-    if (wealthReceiptGateBlocked) {
+    if (selectedReceiptRequiresOnchainTx && wealthReceiptGateBlocked) {
       setFeedback(wealthReceiptGateMessage);
       return;
     }
@@ -6994,15 +7376,17 @@ function WealthInner() {
     }
 
     const signed = await ensureWealthActionSignature({
-      action: 'release pledged support',
+      action: 'burn support-line receipt',
       amount: selectedBorrowedAmount,
       shares: selectedPledgedShares,
       extraLines: [
+        `Support token: #${selectedSupportTokenId}`,
+        selectedSupportProofHash ? `Support proof: ${selectedSupportProofHash}` : '',
         `Current LTV: ${(selectedCollateralLtv * 100).toFixed(2)}%`,
         selectedPledgeLockStatus.isFixed
           ? `Pledge lock: timeline has reached the ${selectedPledgeLockStatus.lockDays}D fixed window, so release can proceed.`
           : 'Pledge lock: flexible support can release immediately.',
-        'Release removes route support and returns the receipt to the free balance before settlement.'
+        'Burn removes route support and returns the receipt to the free balance before settlement.'
       ]
     });
 
@@ -7022,12 +7406,17 @@ function WealthInner() {
         productName: selectedProduct.name,
         amount: selectedBorrowedAmount,
         shares: selectedPledgedShares,
+        action: 'burn-support',
+        supportTokenId: selectedSupportTokenId,
+        supportProofHash: selectedSupportProofHash,
+        supportBurnedAt: new Date().toISOString(),
         isDualInvestment: isDualInvestmentProduct(selectedProduct)
       });
     });
 
+    setCollateralBorrowInput(0);
     setFeedback(
-      `${selectedProduct.shareToken} collateral released: removed ${selectedBorrowedAmount.toLocaleString()} PT of route support and unlocked ${selectedPledgedShares.toLocaleString()} shares for normal settlement again.${
+      `${selectedProduct.shareToken} support receipt #${selectedSupportTokenId} burned: removed ${selectedBorrowedAmount.toLocaleString()} PT of route support and unlocked ${selectedPledgedShares.toLocaleString()} shares for normal settlement again.${
         selectedPledgeLockStatus.isFixed
           ? ` The fixed pledge window was cleared through the timeline before release.`
           : ''
@@ -7062,6 +7451,11 @@ function WealthInner() {
       return;
     }
 
+    if (selectedReceiptRequiresOnchainTx && wealthReceiptGateBlocked) {
+      setFeedback(wealthReceiptGateMessage);
+      return;
+    }
+
     if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
       setFeedback('Enter a positive redemption amount first.');
       return;
@@ -7070,16 +7464,30 @@ function WealthInner() {
     const redeemValue = Math.min(requestedAmount, selectedFreeValue);
     const sharesToBurn = roundNumber(redeemValue / selectedProduct.nav, 6);
     const remainingShares = roundNumber(Math.max(0, selectedPosition.shares - sharesToBurn), 6);
+    const receiptLotConsumption = consumeWealthReceiptLots(selectedReceiptLots, sharesToBurn);
     const ratio = selectedPosition.shares > 0 ? Math.min(1, sharesToBurn / selectedPosition.shares) : 0;
-    const principalReduction = roundNumber(selectedPosition.principal * ratio, 2);
+    const principalReduction = receiptLotConsumption.consumedPrincipal || roundNumber(selectedPosition.principal * ratio, 2);
     const realizedPnl = roundNumber(redeemValue - principalReduction, 2);
+    const receiptSplit = getWealthReceiptLotSplit(receiptLotConsumption.consumedLots, selectedProduct.nav);
+    const redeemRequiresOnchainReceiptTx = wealthVaultConfigured && receiptSplit.onchainPrincipal > 0;
+
+    if (redeemRequiresOnchainReceiptTx && wealthReceiptGateBlocked) {
+      setFeedback(wealthReceiptGateMessage);
+      return;
+    }
+
     const signed = await ensureWealthActionSignature({
       action: 'redeem',
       amount: redeemValue,
       shares: sharesToBurn,
       extraLines: [
         `NAV: ${selectedProduct.nav.toFixed(3)}`,
-        `Free shares before redeem: ${formatShareBalance(selectedFreeShares, false)}`
+        `Free shares before redeem: ${formatShareBalance(selectedFreeShares, false)}`,
+        `Receipt batches: ${receiptLotConsumption.consumedLots.length}`,
+        receiptSplit.onchainPrincipal > 0 ? `Onchain burn amount: ${formatValue(receiptSplit.onchainPrincipal, false)}` : '',
+        receiptSplit.localPrincipal + receiptSplit.mixedPrincipal > 0
+          ? `Local ledger amount: ${formatValue(receiptSplit.localPrincipal + receiptSplit.mixedPrincipal, false)}`
+          : ''
       ]
     });
 
@@ -7087,19 +7495,23 @@ function WealthInner() {
 
     const receiptProductId = getWealthReceiptProductId(selectedProduct);
     const receiptTokenId = getWealthReceiptTokenId(selectedProduct);
-    const receiptPrincipalToBurn = principalReduction > 0 ? principalReduction : redeemValue;
-    const receiptBurned = await submitWealthReceiptTransaction({
-      functionName: 'redeemProduct',
-      args: [receiptProductId, toVaultUnitAmount(receiptPrincipalToBurn)],
-      pendingLabel: `Burning Wealth receipt collectible #${receiptTokenId}.`,
-      submittedLabel: `Receipt burn submitted for ${selectedProduct.shortName || selectedProduct.name}`,
-      confirmedLabel: `Sepolia receipt #${receiptTokenId} burn confirmed for ${selectedProduct.shortName || selectedProduct.name}.`
-    });
+    const receiptPrincipalToBurn = receiptSplit.onchainPrincipal > 0 ? receiptSplit.onchainPrincipal : principalReduction > 0 ? principalReduction : redeemValue;
+    const receiptBurned = redeemRequiresOnchainReceiptTx
+      ? await submitWealthReceiptTransaction({
+          functionName: 'redeemProduct',
+          args: [receiptProductId, toVaultUnitAmount(receiptPrincipalToBurn)],
+          pendingLabel: `Burning Wealth receipt collectible #${receiptTokenId}.`,
+          submittedLabel: `Receipt burn submitted for ${selectedProduct.shortName || selectedProduct.name}`,
+          confirmedLabel: `Sepolia receipt #${receiptTokenId} burn confirmed for ${selectedProduct.shortName || selectedProduct.name}.`
+        })
+      : true;
 
     if (!receiptBurned) return;
 
     setWealthState((current) => {
       const nextPositions = { ...current.positions };
+      const remainingReceiptLots = receiptLotConsumption.remainingLots;
+      const nextLatestReceiptLot = getLatestWealthReceiptLot(remainingReceiptLots) || {};
 
       if (remainingShares <= 0) {
         delete nextPositions[selectedProduct.id];
@@ -7110,7 +7522,15 @@ function WealthInner() {
           principal: roundNumber(Math.max(0, selectedPosition.principal - principalReduction), 2),
           entryNav: nextEntryNav,
           entryTs: selectedPosition.entryTs || '',
-          lastActivityTs: new Date().toISOString()
+          lastActivityTs: new Date().toISOString(),
+          receiptProofMode: summarizeWealthReceiptProofMode(remainingReceiptLots, selectedReceiptProofMode),
+          receiptProofHash: nextLatestReceiptLot.receiptProofHash || selectedReceiptProofHash,
+          receiptTokenId: nextLatestReceiptLot.receiptTokenId || selectedReceiptTokenId,
+          receiptUnitAmount: nextLatestReceiptLot.receiptUnitAmount || selectedPosition.receiptUnitAmount || '',
+          receiptProductDetail: nextLatestReceiptLot.receiptProductDetail || selectedPosition.receiptProductDetail || selectedSettlementPolicy.timing,
+          receiptProductDetailCopy: nextLatestReceiptLot.receiptProductDetailCopy || selectedPosition.receiptProductDetailCopy || selectedSettlementPolicy.detail || '',
+          receiptPurchasedAt: nextLatestReceiptLot.receiptPurchasedAt || selectedPosition.receiptPurchasedAt || selectedPosition.entryTs || '',
+          receiptLots: remainingReceiptLots
         };
       }
       const nextState = {
@@ -7127,14 +7547,28 @@ function WealthInner() {
         shares: sharesToBurn,
         principal: principalReduction,
         pnl: realizedPnl,
+        receiptProofMode: summarizeWealthReceiptProofMode(receiptLotConsumption.consumedLots, selectedReceiptProofMode),
+        receiptProofHash: selectedReceiptProofHash,
+        receiptTokenId: selectedReceiptTokenId,
+        receiptSkippedOnchain: !redeemRequiresOnchainReceiptTx,
+        receiptLots: receiptLotConsumption.consumedLots,
+        receiptSplit,
         isDualInvestment: isDualInvestmentProduct(selectedProduct)
       });
     });
 
+    const redeemLifecycleCopy = redeemRequiresOnchainReceiptTx
+      ? receiptSplit.localPrincipal + receiptSplit.mixedPrincipal > 0
+        ? `Sepolia burned the minted receipt portion; ${formatValue(receiptSplit.localPrincipal + receiptSplit.mixedPrincipal, false)} stayed as a local-ledger burn. `
+        : `Sepolia receipt #${receiptTokenId} burned and `
+      : selectedReceiptProofIsMixed
+        ? 'Mixed legacy proof detected, so this demo settled the known local ledger without submitting a Sepolia burn. '
+        : 'Local receipt proof settled without a Sepolia burn, and ';
+
     setFeedback(
       `Redemption placed: ${redeemValue.toLocaleString()} PT from ${selectedProduct.name}. ${
-        wealthVaultConfigured ? `Sepolia receipt #${receiptTokenId} burned and ` : ''
-      }${sharesToBurn.toLocaleString()} ${selectedProduct.shareToken} shares were burned in the demo ledger.`
+        redeemLifecycleCopy
+      }${sharesToBurn.toLocaleString()} ${selectedProduct.shareToken} shares were burned in the demo ledger across ${receiptLotConsumption.consumedLots.length} receipt batch${receiptLotConsumption.consumedLots.length === 1 ? '' : 'es'}.`
     );
     setSettlementDays(0);
   }
@@ -7145,7 +7579,7 @@ function WealthInner() {
       return;
     }
 
-    if (wealthReceiptGateBlocked) {
+    if (selectedReceiptRequiresOnchainTx && wealthReceiptGateBlocked) {
       setFeedback(wealthReceiptGateMessage);
       return;
     }
@@ -7178,9 +7612,19 @@ function WealthInner() {
 
     const sharesToSettle = selectedFreeShares;
     const valueToSettle = roundNumber(sharesToSettle * settlementProjectedNav, 2);
+    const receiptLotConsumption = consumeWealthReceiptLots(selectedReceiptLots, sharesToSettle);
     const ratio = selectedPosition.shares > 0 ? Math.min(1, sharesToSettle / selectedPosition.shares) : 0;
-    const principalReduction = roundNumber(selectedPosition.principal * ratio, 2);
+    const principalReduction = receiptLotConsumption.consumedPrincipal || roundNumber(selectedPosition.principal * ratio, 2);
     const settlementPnl = roundNumber(valueToSettle - principalReduction, 2);
+    const receiptSplit = getWealthReceiptLotSplit(receiptLotConsumption.consumedLots, settlementProjectedNav);
+    const settlementRequiresOnchainReceiptTx =
+      settlementAction !== 'preview' && wealthVaultConfigured && receiptSplit.onchainPrincipal > 0;
+
+    if (settlementRequiresOnchainReceiptTx && wealthReceiptGateBlocked) {
+      setFeedback(wealthReceiptGateMessage);
+      return;
+    }
+
     const actionLabel = settlementActionMeta.label.toLowerCase();
     const signed = await ensureWealthActionSignature({
       action: `settlement ${settlementAction}`,
@@ -7192,6 +7636,11 @@ function WealthInner() {
         `Settlement window: ${settlementWindowLabel}`,
         `Predicted NAV: ${settlementProjectedNav.toFixed(3)}`,
         settlementPredictionCopy,
+        `Receipt batches: ${receiptLotConsumption.consumedLots.length}`,
+        receiptSplit.onchainPrincipal > 0 ? `Onchain burn basis: ${formatValue(receiptSplit.onchainPrincipal, false)}` : '',
+        receiptSplit.localPrincipal + receiptSplit.mixedPrincipal > 0
+          ? `Local ledger basis: ${formatValue(receiptSplit.localPrincipal + receiptSplit.mixedPrincipal, false)}`
+          : '',
         settlementAction === 'transfer' && settlementTransferProduct
           ? `Transfer target: ${settlementTransferProduct.name}`
           : ''
@@ -7202,7 +7651,7 @@ function WealthInner() {
 
     const receiptProductId = getWealthReceiptProductId(selectedProduct);
     const receiptTokenId = getWealthReceiptTokenId(selectedProduct);
-    const receiptPrincipalToBurn = principalReduction > 0 ? principalReduction : valueToSettle;
+    const receiptPrincipalToBurn = receiptSplit.onchainPrincipal > 0 ? receiptSplit.onchainPrincipal : principalReduction > 0 ? principalReduction : valueToSettle;
 
     if (settlementAction !== 'preview') {
       const targetProduct =
@@ -7213,34 +7662,36 @@ function WealthInner() {
             : null;
       const targetReceiptProductId = targetProduct ? getWealthReceiptProductId(targetProduct) : 0;
       const targetReceiptTokenId = targetProduct ? getWealthReceiptTokenId(targetProduct) : 0;
-      const mintAmount = targetProduct ? valueToSettle : 0;
-      const receiptSettled = await submitWealthReceiptTransaction({
-        functionName: 'settleProduct',
-        args: [
-          receiptProductId,
-          targetReceiptProductId,
-          toVaultUnitAmount(receiptPrincipalToBurn),
-          toVaultUnitAmount(mintAmount)
-        ],
-        pendingLabel:
-          targetProduct && targetReceiptTokenId !== receiptTokenId
-            ? `Settling receipt #${receiptTokenId} into receipt #${targetReceiptTokenId}.`
-            : targetProduct
-              ? `Rolling receipt collectible #${receiptTokenId}.`
-              : `Burning settled receipt collectible #${receiptTokenId}.`,
-        submittedLabel: `Receipt settlement submitted for ${selectedProduct.shortName || selectedProduct.name}`,
-        confirmedLabel:
-          targetProduct && targetReceiptTokenId !== receiptTokenId
-            ? `Sepolia receipt #${receiptTokenId} burned and #${targetReceiptTokenId} minted.`
-            : targetProduct
-              ? `Sepolia receipt #${receiptTokenId} burned and reminted for the next term.`
-              : `Sepolia receipt #${receiptTokenId} burned and settled.`,
-        gas: 560000n
-      });
+      const mintAmount = targetProduct ? receiptSplit.onchainValue : 0;
+      const receiptSettled = settlementRequiresOnchainReceiptTx
+        ? await submitWealthReceiptTransaction({
+            functionName: 'settleProduct',
+            args: [
+              receiptProductId,
+              targetReceiptProductId,
+              toVaultUnitAmount(receiptPrincipalToBurn),
+              toVaultUnitAmount(mintAmount)
+            ],
+            pendingLabel:
+              targetProduct && targetReceiptTokenId !== receiptTokenId
+                ? `Settling receipt #${receiptTokenId} into receipt #${targetReceiptTokenId}.`
+                : targetProduct
+                  ? `Rolling receipt collectible #${receiptTokenId}.`
+                  : `Burning settled receipt collectible #${receiptTokenId}.`,
+            submittedLabel: `Receipt settlement submitted for ${selectedProduct.shortName || selectedProduct.name}`,
+            confirmedLabel:
+              targetProduct && targetReceiptTokenId !== receiptTokenId
+                ? `Sepolia receipt #${receiptTokenId} burned and #${targetReceiptTokenId} minted.`
+                : targetProduct
+                  ? `Sepolia receipt #${receiptTokenId} burned and reminted for the next term.`
+                  : `Sepolia receipt #${receiptTokenId} burned and settled.`,
+            gas: 560000n
+          })
+        : true;
 
       if (!receiptSettled) return;
 
-      if (wealthVaultConfigured) {
+      if (settlementRequiresOnchainReceiptTx && wealthVaultConfigured) {
         await Promise.allSettled([
           refetchWealthSettlementTask?.(),
           refetchWealthSettlementTaskCollectible?.()
@@ -7254,7 +7705,19 @@ function WealthInner() {
       const remainingShares = roundNumber(Math.max(0, currentPosition.shares - sharesToSettle), 6);
       const remainingPrincipal = roundNumber(Math.max(0, currentPosition.principal - principalReduction), 2);
       const now = new Date().toISOString();
+      const remainingReceiptLots = receiptLotConsumption.remainingLots;
+      const remainingLatestReceiptLot = getLatestWealthReceiptLot(remainingReceiptLots) || {};
       let nextCash = current.cash;
+      const baseReceiptMeta = {
+        receiptProofMode: summarizeWealthReceiptProofMode(remainingReceiptLots, selectedReceiptProofMode),
+        receiptProofHash: remainingLatestReceiptLot.receiptProofHash || selectedReceiptProofHash,
+        receiptTokenId: remainingLatestReceiptLot.receiptTokenId || selectedReceiptTokenId,
+        receiptUnitAmount: remainingLatestReceiptLot.receiptUnitAmount || selectedPosition.receiptUnitAmount || '',
+        receiptProductDetail: remainingLatestReceiptLot.receiptProductDetail || selectedPosition.receiptProductDetail || selectedSettlementPolicy.timing,
+        receiptProductDetailCopy: remainingLatestReceiptLot.receiptProductDetailCopy || selectedPosition.receiptProductDetailCopy || selectedSettlementPolicy.detail || '',
+        receiptPurchasedAt: remainingLatestReceiptLot.receiptPurchasedAt || selectedPosition.receiptPurchasedAt || selectedPosition.entryTs || now,
+        receiptLots: remainingReceiptLots
+      };
 
       if (settlementAction === 'preview') {
         return appendWealthActivity(current, {
@@ -7266,20 +7729,44 @@ function WealthInner() {
           shares: sharesToSettle,
           principal: principalReduction,
           pnl: settlementPnl,
+          receiptProofMode: summarizeWealthReceiptProofMode(receiptLotConsumption.consumedLots, selectedReceiptProofMode),
+          receiptProofHash: selectedReceiptProofHash,
+          receiptTokenId: selectedReceiptTokenId,
+          receiptSkippedOnchain: true,
+          receiptLots: receiptLotConsumption.consumedLots,
+          receiptSplit,
           isDualInvestment: isDualInvestmentProduct(selectedProduct)
         });
       }
 
       if (settlementAction === 'roll') {
-        const rolledShares = selectedProduct.nav > 0 ? roundNumber(valueToSettle / selectedProduct.nav, 6) : 0;
+        const rolledReceiptLots = buildReceiptReplacementLotsByProofMode({
+          sourceLots: receiptLotConsumption.consumedLots,
+          sourceProjectedNav: settlementProjectedNav,
+          targetProduct: selectedProduct,
+          receiptProductDetail: selectedSettlementPolicy.timing,
+          receiptProductDetailCopy: selectedSettlementPolicy.detail || '',
+          purchasedAt: now
+        });
+        const rolledShares = roundNumber(rolledReceiptLots.reduce((sum, lot) => sum + Number(lot.shares || 0), 0), 6);
         const nextShares = roundNumber(remainingShares + rolledShares, 6);
         const nextPrincipal = roundNumber(remainingPrincipal + valueToSettle, 2);
+        const nextReceiptLots = [...remainingReceiptLots, ...rolledReceiptLots];
+        const nextLatestReceiptLot = getLatestWealthReceiptLot(nextReceiptLots) || {};
         nextPositions[selectedProduct.id] = {
           shares: nextShares,
           principal: nextPrincipal,
           entryNav: nextShares > 0 ? roundNumber(nextPrincipal / nextShares, 6) : selectedProduct.nav,
           entryTs: now,
-          lastActivityTs: now
+          lastActivityTs: now,
+          receiptProofMode: summarizeWealthReceiptProofMode(nextReceiptLots, selectedReceiptProofMode),
+          receiptProofHash: nextLatestReceiptLot.receiptProofHash || selectedReceiptProofHash,
+          receiptTokenId: nextLatestReceiptLot.receiptTokenId || selectedReceiptTokenId,
+          receiptUnitAmount: nextLatestReceiptLot.receiptUnitAmount || selectedPosition.receiptUnitAmount || '',
+          receiptProductDetail: nextLatestReceiptLot.receiptProductDetail || selectedSettlementPolicy.timing,
+          receiptProductDetailCopy: nextLatestReceiptLot.receiptProductDetailCopy || selectedSettlementPolicy.detail || '',
+          receiptPurchasedAt: now,
+          receiptLots: nextReceiptLots
         };
       } else if (settlementAction === 'transfer' && settlementTransferProduct) {
         if (remainingShares <= 0) {
@@ -7290,20 +7777,43 @@ function WealthInner() {
             principal: remainingPrincipal,
             entryNav: remainingShares > 0 ? roundNumber(remainingPrincipal / remainingShares, 6) : selectedProduct.nav,
             entryTs: currentPosition.entryTs || '',
-            lastActivityTs: now
+            lastActivityTs: now,
+            ...baseReceiptMeta
           };
         }
 
         const targetPosition = current.positions[settlementTransferProduct.id] || { shares: 0, principal: 0 };
-        const targetShares = roundNumber(valueToSettle / settlementTransferProduct.nav, 6);
+        const transferredReceiptLots = buildReceiptReplacementLotsByProofMode({
+          sourceLots: receiptLotConsumption.consumedLots,
+          sourceProjectedNav: settlementProjectedNav,
+          targetProduct: settlementTransferProduct,
+          receiptProductDetail: getSettlementPolicy(settlementTransferProduct).timing,
+          receiptProductDetailCopy: getSettlementPolicy(settlementTransferProduct).detail || settlementTransferProduct.redemption || '',
+          purchasedAt: now
+        });
+        const targetShares = roundNumber(transferredReceiptLots.reduce((sum, lot) => sum + Number(lot.shares || 0), 0), 6);
         const nextTargetShares = roundNumber((targetPosition.shares || 0) + targetShares, 6);
         const nextTargetPrincipal = roundNumber((targetPosition.principal || 0) + valueToSettle, 2);
+        const targetPolicy = getSettlementPolicy(settlementTransferProduct);
+        const targetReceiptLots = [
+          ...normalizeWealthReceiptLots(targetPosition.receiptLots, targetPosition, settlementTransferProduct),
+          ...transferredReceiptLots
+        ];
+        const targetLatestReceiptLot = getLatestWealthReceiptLot(targetReceiptLots) || {};
         nextPositions[settlementTransferProduct.id] = {
           shares: nextTargetShares,
           principal: nextTargetPrincipal,
           entryNav: nextTargetShares > 0 ? roundNumber(nextTargetPrincipal / nextTargetShares, 6) : settlementTransferProduct.nav,
           entryTs: targetPosition.entryTs || now,
-          lastActivityTs: now
+          lastActivityTs: now,
+          receiptProofMode: summarizeWealthReceiptProofMode(targetReceiptLots, selectedReceiptProofMode),
+          receiptProofHash: targetLatestReceiptLot.receiptProofHash || selectedReceiptProofHash,
+          receiptTokenId: targetLatestReceiptLot.receiptTokenId || getWealthReceiptTokenId(settlementTransferProduct),
+          receiptUnitAmount: targetLatestReceiptLot.receiptUnitAmount || selectedPosition.receiptUnitAmount || '',
+          receiptProductDetail: targetPolicy.timing,
+          receiptProductDetailCopy: targetPolicy.detail || settlementTransferProduct.redemption || '',
+          receiptPurchasedAt: targetPosition.receiptPurchasedAt || now,
+          receiptLots: targetReceiptLots
         };
       } else {
         if (remainingShares <= 0) {
@@ -7311,10 +7821,11 @@ function WealthInner() {
         } else {
           nextPositions[selectedProduct.id] = {
             shares: remainingShares,
-            principal: remainingPrincipal,
-            entryNav: remainingShares > 0 ? roundNumber(remainingPrincipal / remainingShares, 6) : selectedProduct.nav,
-            entryTs: currentPosition.entryTs || '',
-            lastActivityTs: now
+          principal: remainingPrincipal,
+          entryNav: remainingShares > 0 ? roundNumber(remainingPrincipal / remainingShares, 6) : selectedProduct.nav,
+          entryTs: currentPosition.entryTs || '',
+          lastActivityTs: now,
+            ...baseReceiptMeta
           };
         }
         nextCash = roundNumber(current.cash + valueToSettle, 2);
@@ -7336,6 +7847,12 @@ function WealthInner() {
           principal: principalReduction,
           pnl: settlementPnl,
           targetProductId: settlementAction === 'transfer' ? settlementTransferProduct?.id : '',
+          receiptProofMode: summarizeWealthReceiptProofMode(receiptLotConsumption.consumedLots, selectedReceiptProofMode),
+          receiptProofHash: selectedReceiptProofHash,
+          receiptTokenId: selectedReceiptTokenId,
+          receiptSkippedOnchain: !settlementRequiresOnchainReceiptTx,
+          receiptLots: receiptLotConsumption.consumedLots,
+          receiptSplit,
           isDualInvestment: isDualInvestmentProduct(selectedProduct)
         }
       );
@@ -7344,11 +7861,21 @@ function WealthInner() {
     const receiptLifecycleCopy =
       settlementAction === 'preview'
         ? 'Receipt collectible was not changed.'
-        : settlementAction === 'roll'
-          ? 'The old receipt collectible was burned and reminted into the next term.'
-          : settlementAction === 'transfer'
-            ? `The old receipt collectible was burned and reminted as ${settlementTransferProduct?.shareToken || 'the transfer target'} receipt shares.`
-            : 'The receipt collectible was burned and returned to PT cash.';
+        : settlementRequiresOnchainReceiptTx
+          ? settlementAction === 'roll'
+            ? receiptSplit.localPrincipal + receiptSplit.mixedPrincipal > 0
+              ? 'The minted receipt portion was burned and reminted into the next term; the local portion rolled only in the demo ledger.'
+              : 'The old receipt collectible was burned and reminted into the next term.'
+            : settlementAction === 'transfer'
+              ? receiptSplit.localPrincipal + receiptSplit.mixedPrincipal > 0
+                ? `The minted receipt portion moved onchain; the local portion reminted as ${settlementTransferProduct?.shareToken || 'the transfer target'} only in the demo ledger.`
+                : `The old receipt collectible was burned and reminted as ${settlementTransferProduct?.shareToken || 'the transfer target'} receipt shares.`
+              : receiptSplit.localPrincipal + receiptSplit.mixedPrincipal > 0
+                ? 'The minted receipt portion was burned onchain; the local portion returned to PT cash in the demo ledger.'
+                : 'The receipt collectible was burned and returned to PT cash.'
+          : selectedReceiptProofIsMixed
+            ? 'Mixed local/onchain proof detected, so the demo updated the local ledger without submitting a full-position Sepolia settlement.'
+            : 'Local receipt proof was settled in the demo ledger; no Sepolia receipt burn was required.';
 
     setFeedback(
       `Signed ${actionLabel}: ${formatShareBalance(sharesToSettle, false)} ${selectedProduct.shareToken} marked to ${formatValue(
@@ -7393,7 +7920,7 @@ function WealthInner() {
     setSettlementAction(nextSettlementAction);
     if (action === 'pledge') {
       recordPledgeDeskOpen(productId);
-      setCollateralBorrowInput(maxSupport > 0 ? Math.min(1000, maxSupport) : 0);
+      setCollateralBorrowInput(maxSupport > 0 ? maxSupport : 0);
     }
     focusProduct(productId, {
       topic: 'flow',
@@ -8019,6 +8546,14 @@ function WealthInner() {
                     </div>
                   </div>
 
+                  {row.receiptLotSummary?.total > 0 ? (
+                    <div className="wealth-receipt-batch-row">
+                      <span>{row.receiptLotSummary.total} receipt batch{row.receiptLotSummary.total === 1 ? '' : 'es'}</span>
+                      <span>{row.receiptLotSummary.onchain} minted</span>
+                      <span>{row.receiptLotSummary.local} local</span>
+                    </div>
+                  ) : null}
+
                   <div className="wealth-position-detail-hint">
                     Click once to jump down to this product detail for buy, settle, pledge, and receipt lifecycle controls
                   </div>
@@ -8272,6 +8807,15 @@ function WealthInner() {
           </div>
         </div>
 
+        {selectedReceiptLotSummary.total > 0 ? (
+          <div className="wealth-receipt-batch-row wealth-receipt-batch-row-detail">
+            <span>{selectedReceiptLotSummary.total} receipt batch{selectedReceiptLotSummary.total === 1 ? '' : 'es'}</span>
+            <span>{selectedReceiptLotSummary.onchain} minted</span>
+            <span>{selectedReceiptLotSummary.local} local</span>
+            <span>{getWealthReceiptProofModeLabel(selectedReceiptProofMode)}</span>
+          </div>
+        ) : null}
+
         {isCollateralPilotProduct(selectedProduct) ? (
           <div className="wealth-chart-summary">
             <div>
@@ -8302,7 +8846,7 @@ function WealthInner() {
 
         <ReceiptLifecycleDiagram product={selectedProduct} compact />
 
-        {wealthReceiptGateBlocked ? (
+        {selectedReceiptRequiresOnchainTx && wealthReceiptGateBlocked ? (
           <div className="wealth-inline-note paper-inline-note receipt-gate-note">
             <strong>Preview only.</strong> {wealthReceiptGateMessage}
           </div>
@@ -8416,7 +8960,7 @@ function WealthInner() {
           )}
 
           <div className="toolbar">
-            <button className="primary-btn" onClick={handleSimulateSettlement} disabled={wealthWalletActionPending || wealthReceiptGateBlocked || !selectedPosition.shares}>
+            <button className="primary-btn" onClick={handleSimulateSettlement} disabled={wealthWalletActionPending || (selectedReceiptRequiresOnchainTx && wealthReceiptGateBlocked) || !selectedPosition.shares}>
               {wealthWalletActionPending ? 'Await wallet' : 'Sign settlement action'}
             </button>
           </div>
@@ -8489,13 +9033,24 @@ function WealthInner() {
 
               <label className="wealth-field compact">
                 Support target
-                <input
-                  type="number"
-                  min="0"
-                  step="100"
-                  value={collateralBorrowInput}
-                  onChange={(event) => setCollateralBorrowInput(Number(event.target.value))}
-                />
+                <div className="wealth-input-with-button">
+                  <input
+                    type="number"
+                    min="0"
+                    max={selectedSupportMaxValue}
+                    step="100"
+                    value={collateralBorrowInput}
+                    onChange={(event) => setCollateralBorrowInput(Number(event.target.value))}
+                  />
+                  <button
+                    type="button"
+                    className={`ghost-btn compact ${selectedSupportTargetAtMax ? 'active-toggle' : ''}`}
+                    onClick={() => setCollateralBorrowInput(selectedSupportMaxValue)}
+                    disabled={selectedSupportMaxValue <= 0}
+                  >
+                    Max
+                  </button>
+                </div>
               </label>
 
               <div className="wealth-chart-summary">
@@ -8529,12 +9084,18 @@ function WealthInner() {
               </div>
 
               <div className="toolbar">
-                <button className="primary-btn" onClick={handleUseAsCollateral} disabled={wealthWalletActionPending || wealthReceiptGateBlocked}>
-                  {wealthWalletActionPending ? 'Await wallet' : `Open support line on ${selectedProduct.shareToken}`}
+                <button className="primary-btn" onClick={handleUseAsCollateral} disabled={wealthWalletActionPending || (selectedReceiptRequiresOnchainTx && wealthReceiptGateBlocked)}>
+                  {wealthWalletActionPending
+                    ? 'Await wallet'
+                    : selectedSupportLineActive
+                      ? `Update support receipt #${selectedSupportTokenId}`
+                      : `Mint support line on ${selectedProduct.shareToken}`}
                 </button>
-                <button className="secondary-btn" onClick={handleReleaseCollateral} disabled={wealthWalletActionPending || wealthReceiptGateBlocked || selectedPledgeLockStatus.isLocked}>
-                  Release support
-                </button>
+                {selectedSupportLineActive ? (
+                  <button className="secondary-btn" onClick={handleReleaseCollateral} disabled={wealthWalletActionPending || (selectedReceiptRequiresOnchainTx && wealthReceiptGateBlocked) || selectedPledgeLockStatus.isLocked}>
+                    Burn / release support
+                  </button>
+                ) : null}
               </div>
 
               <div className="wealth-inline-note paper-inline-note">
@@ -9142,6 +9703,15 @@ function WealthInner() {
                       </div>
                     </div>
 
+                    {selectedReceiptLotSummary.total > 0 ? (
+                      <div className="wealth-receipt-batch-row wealth-receipt-batch-row-detail">
+                        <span>{selectedReceiptLotSummary.total} receipt batch{selectedReceiptLotSummary.total === 1 ? '' : 'es'}</span>
+                        <span>{selectedReceiptLotSummary.onchain} minted</span>
+                        <span>{selectedReceiptLotSummary.local} local</span>
+                        <span>{getWealthReceiptProofModeLabel(selectedReceiptProofMode)}</span>
+                      </div>
+                    ) : null}
+
                     {isCollateralPilotProduct(selectedProduct) ? (
                       <div className="wealth-chart-summary">
                         <div>
@@ -9170,7 +9740,7 @@ function WealthInner() {
                       <span className={`pill ${selectedSettlementPolicy.tone}`}>{selectedSettlementPolicy.label}</span>
                     </div>
 
-                    {wealthReceiptGateBlocked ? (
+                    {selectedReceiptRequiresOnchainTx && wealthReceiptGateBlocked ? (
                       <div className="wealth-inline-note paper-inline-note receipt-gate-note">
                         <strong>Preview only.</strong> {wealthReceiptGateMessage}
                       </div>
@@ -9288,7 +9858,7 @@ function WealthInner() {
                 )}
 
                 <div className="toolbar">
-                  <button className="primary-btn" onClick={handleSimulateSettlement} disabled={wealthWalletActionPending || wealthReceiptGateBlocked || !selectedPosition.shares}>
+                  <button className="primary-btn" onClick={handleSimulateSettlement} disabled={wealthWalletActionPending || (selectedReceiptRequiresOnchainTx && wealthReceiptGateBlocked) || !selectedPosition.shares}>
                     {wealthWalletActionPending ? 'Await wallet' : 'Sign settlement action'}
                   </button>
                 </div>
@@ -9323,13 +9893,24 @@ function WealthInner() {
 
                   <label className="wealth-field compact">
                     Support target
-                    <input
-                      type="number"
-                      min="0"
-                      step="100"
-                      value={collateralBorrowInput}
-                      onChange={(event) => setCollateralBorrowInput(Number(event.target.value))}
-                    />
+                    <div className="wealth-input-with-button">
+                      <input
+                        type="number"
+                        min="0"
+                        max={selectedSupportMaxValue}
+                        step="100"
+                        value={collateralBorrowInput}
+                        onChange={(event) => setCollateralBorrowInput(Number(event.target.value))}
+                      />
+                      <button
+                        type="button"
+                        className={`ghost-btn compact ${selectedSupportTargetAtMax ? 'active-toggle' : ''}`}
+                        onClick={() => setCollateralBorrowInput(selectedSupportMaxValue)}
+                        disabled={selectedSupportMaxValue <= 0}
+                      >
+                        Max
+                      </button>
+                    </div>
                   </label>
 
                   <div className="wealth-chart-summary">
@@ -9363,12 +9944,18 @@ function WealthInner() {
                   </div>
 
                   <div className="toolbar">
-                    <button className="primary-btn" onClick={handleUseAsCollateral} disabled={wealthWalletActionPending || wealthReceiptGateBlocked}>
-                      {wealthWalletActionPending ? 'Await wallet' : `Open support line on ${selectedProduct.shareToken}`}
+                    <button className="primary-btn" onClick={handleUseAsCollateral} disabled={wealthWalletActionPending || (selectedReceiptRequiresOnchainTx && wealthReceiptGateBlocked)}>
+                      {wealthWalletActionPending
+                        ? 'Await wallet'
+                        : selectedSupportLineActive
+                          ? `Update support receipt #${selectedSupportTokenId}`
+                          : `Mint support line on ${selectedProduct.shareToken}`}
                     </button>
-                    <button className="secondary-btn" onClick={handleReleaseCollateral} disabled={wealthWalletActionPending || wealthReceiptGateBlocked || selectedPledgeLockStatus.isLocked}>
-                      Release support
-                    </button>
+                    {selectedSupportLineActive ? (
+                      <button className="secondary-btn" onClick={handleReleaseCollateral} disabled={wealthWalletActionPending || (selectedReceiptRequiresOnchainTx && wealthReceiptGateBlocked) || selectedPledgeLockStatus.isLocked}>
+                        Burn / release support
+                      </button>
+                    ) : null}
                   </div>
                     </>
                   )
@@ -9569,7 +10156,7 @@ function WealthInner() {
   return (
     <div className="app-shell">
       <div className="noise"></div>
-      <header className="site-header">
+      <header className="site-header wealth-page-header">
         <div className="brand-wrap">
           <div className="brand-dot"></div>
           <div>
@@ -9578,11 +10165,11 @@ function WealthInner() {
           </div>
         </div>
 
-        <div className="wealth-header-language-center">
-          <LanguageToggle uiLanguage={uiLanguage} setUiLanguage={setUiLanguage} compact />
-        </div>
-
         <div className="header-actions">
+          <div className="header-language-inline">
+            <LanguageToggle uiLanguage={uiLanguage} setUiLanguage={setUiLanguage} compact />
+          </div>
+
           <a className="ghost-btn compact wealth-back-welcome-link" href="./index.html#wealth">
             {t('Back to welcome', '\u8fd4\u56de\u6b22\u8fce\u9875')}
           </a>
@@ -9965,13 +10552,12 @@ function WealthInner() {
                   const productPosition = displayWealthState.positions?.[product.id] || { shares: 0, principal: 0 };
                   const productCollateral = displayWealthState.collateral?.[product.id] || { pledgedShares: 0, borrowedAmount: 0 };
                   const productReceiptValue = roundNumber((productPosition.shares || 0) * product.nav, 2);
+                  const productReceiptLots = normalizeWealthReceiptLots(productPosition.receiptLots, productPosition, product);
+                  const productReceiptLotSummary = getWealthReceiptLotSummary(productReceiptLots);
                   const productDifficulty = getProductDifficulty(product);
                   const productUnaffordable = !canAffordProductMinimum(product, availableCash);
                   const productMinimumTicket = getProductMinimumTicket(product);
-                  const productSubscribeBlockMessage =
-                    wealthReceiptGateBlocked
-                      ? wealthReceiptGateMessage
-                      : getProductSubscriptionValidation(product, productMinimumTicket);
+                  const productSubscribeBlockMessage = getProductSubscriptionValidation(product, productMinimumTicket);
 
                   return (
                     <div className="wealth-product-stack" key={product.id}>
@@ -10107,7 +10693,7 @@ function WealthInner() {
                             )}. Pledged {formatShareBalance(productCollateral.pledgedShares || 0, hideBalances)} / support {formatValue(
                               productCollateral.borrowedAmount || 0,
                               hideBalances
-                            )}.
+                            )}. Receipts {productReceiptLotSummary.total || 1} ({productReceiptLotSummary.onchain} minted / {productReceiptLotSummary.local} local).
                           </div>
                         ) : null}
 

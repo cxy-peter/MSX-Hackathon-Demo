@@ -3270,16 +3270,20 @@ export default function App() {
               <div className="brand-name">{t('RiskLens Guided Investing Hub', 'RiskLens 引导式投资中心')}</div>
             </div>
           </div>
-          <nav className="site-nav">
-            <a href="#welcome">{t('Welcome', '欢迎')}</a>
-            <a href="#discover">{t('Discover', '发现')}</a>
-            <a href="#learnEarn">{t('Learn', '学习')}</a>
-            <a href="#wealth">{t('Wealth', '理财')}</a>
-            <a href="#paperTrading">{t('Paper Trading', '模拟交易')}</a>
-          </nav>
+          <div className="home-nav-wrap">
+            <div className="home-nav-language">
+              <LanguageToggle uiLanguage={uiLanguage} setUiLanguage={setUiLanguage} compact />
+            </div>
+            <nav className="site-nav home-site-nav">
+              <a href="#welcome">{t('Welcome', '欢迎')}</a>
+              <a href="#discover">{t('Discover', '发现')}</a>
+              <a href="#learnEarn">{t('Learn', '学习')}</a>
+              <a href="#wealth">{t('Wealth', '理财')}</a>
+              <a href="#paperTrading">{t('Paper Trading', '模拟交易')}</a>
+            </nav>
+          </div>
           <div className="header-actions">
             <div className="header-status-row">
-              <LanguageToggle uiLanguage={uiLanguage} setUiLanguage={setUiLanguage} compact />
               <div className="header-wallet-stack">
                 <div className="paper-token-pill">
                   <div className="paper-token-label">{t('Remaining paper tokens', '剩余模拟代币')}</div>
