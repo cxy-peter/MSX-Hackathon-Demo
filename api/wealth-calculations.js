@@ -1,10 +1,30 @@
-const DEFAULT_CURRENT_PRICE = 78819.91;
+import {
+  applyCors,
+  clampNumber,
+  getHttpErrorStatus,
+  readRequestJson,
+  roundNumber,
+  sendJson
+} from './_risklensStorage.js';
 
-function sendJson(res, status, payload) {
-  res.status(status).json({
-    ok: status >= 200 && status < 300,
-    ...payload
-  });
+const DEFAULT_CURRENT_PRICE = 78819.91;
+const MAX_DEMO_AMOUNT = 1000000;
+
+const CALCULATION_MODES = [
+  {
+    mode: 'normal-product',
+    label: 'Receipt NAV settlement',
+    description: 'Models a PT receipt buy / settle path with NAV movement, fees, and optional pledge bonus.'
+  },
+  {
+    mode: 'dual-investment',
+    label: 'Dual investment term premium',
+    description: 'Models a PT-only target-price settlement path as a short-term premium, not stable APY.'
+  }
+];
+
+function cleanText(value, fallback = '', maxLength = 120) {
+  return String(value || fallback || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
 function toNumber(value, fallback = 0) {
@@ -12,17 +32,22 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(numericValue) ? numericValue : fallback;
 }
 
-function round(value, digits = 2) {
-  const factor = 10 ** digits;
-  return Math.round(toNumber(value) * factor) / factor;
+function clampAmount(value) {
+  return clampNumber(value, 0, MAX_DEMO_AMOUNT);
+}
+
+function normalizeAnnualPremiumPct(value, fallback = 120) {
+  const rawRate = toNumber(value, fallback);
+  const percentRate = rawRate > 0 && rawRate <= 3 ? rawRate * 100 : rawRate;
+  return clampNumber(percentRate, 0, 500);
 }
 
 function calculateNormalProduct(body = {}) {
-  const principal = Math.max(0, toNumber(body.amount, 0));
+  const principal = clampAmount(body.amount);
   const entryNav = Math.max(0.01, toNumber(body.entryNav, 100));
   const exitNav = Math.max(0.01, toNumber(body.exitNav, entryNav * 1.012));
-  const feeBps = Math.max(0, toNumber(body.feeBps, 12));
-  const pledgeBonusBps = Math.max(0, toNumber(body.pledgeBonusBps, 0));
+  const feeBps = clampNumber(body.feeBps, 0, 1000);
+  const pledgeBonusBps = clampNumber(body.pledgeBonusBps, 0, 5000);
   const shares = principal / entryNav;
   const grossValue = shares * exitNav;
   const fee = grossValue * feeBps / 10000;
@@ -32,32 +57,35 @@ function calculateNormalProduct(body = {}) {
 
   return {
     mode: 'normal-product',
-    principal: round(principal),
-    shares: round(shares, 6),
-    entryNav: round(entryNav, 4),
-    exitNav: round(exitNav, 4),
-    fee: round(fee),
-    pledgeBonus: round(pledgeBonus),
-    settleValue: round(settleValue),
-    pnl: round(pnl),
+    principal: roundNumber(principal),
+    shares: roundNumber(shares, 6),
+    entryNav: roundNumber(entryNav, 4),
+    exitNav: roundNumber(exitNav, 4),
+    feeBps: roundNumber(feeBps, 2),
+    pledgeBonusBps: roundNumber(pledgeBonusBps, 2),
+    fee: roundNumber(fee),
+    pledgeBonus: roundNumber(pledgeBonus),
+    settleValue: roundNumber(settleValue),
+    pnl: roundNumber(pnl),
     profitable: pnl > 0,
     receipt: {
-      productType: body.productType || 'Wealth receipt',
-      maturity: body.maturity || 'Product-specific',
+      productType: cleanText(body.productType, 'Wealth receipt', 80),
+      maturity: cleanText(body.maturity, 'Product-specific', 80),
       burnable: shares > 0
     }
   };
 }
 
 function calculateDualInvestment(body = {}) {
-  const amount = Math.max(0, toNumber(body.amount, 0));
+  const amount = clampAmount(body.amount);
   const currentPrice = Math.max(0.01, toNumber(body.currentPrice, DEFAULT_CURRENT_PRICE));
   const targetPrice = Math.max(0.01, toNumber(body.targetPrice, currentPrice * 1.005));
-  const apr = Math.max(0, toNumber(body.apr, 120));
-  const days = Math.max(1, Math.round(toNumber(body.days, 1)));
-  const direction = String(body.direction || 'sell-high');
+  const annualPremiumPct = normalizeAnnualPremiumPct(body.annualPremiumPct ?? body.apr ?? body.annualPremiumRate, 120);
+  const days = clampNumber(Math.round(toNumber(body.days, body.termDays || 1)), 1, 365);
+  const direction = body.direction === 'buy-low' ? 'buy-low' : 'sell-high';
   const settlePrice = Math.max(0.01, toNumber(body.settlePrice, currentPrice));
-  const premium = amount * apr / 100 * days / 365;
+  const termPremiumRate = (annualPremiumPct / 100) * (days / 365);
+  const premium = amount * termPremiumRate;
   const moneyness = direction === 'buy-low'
     ? (targetPrice - settlePrice) / targetPrice
     : (settlePrice - targetPrice) / targetPrice;
@@ -68,55 +96,70 @@ function calculateDualInvestment(body = {}) {
 
   return {
     mode: 'dual-investment',
-    pair: body.pair || 'BTC/USDC',
+    pair: cleanText(body.pair, 'BTC/USDC', 32),
     direction,
-    amount: round(amount),
-    currentPrice: round(currentPrice, 8),
-    targetPrice: round(targetPrice, 2),
-    settlePrice: round(settlePrice, 2),
-    apr: round(apr, 2),
+    amount: roundNumber(amount),
+    currentPrice: roundNumber(currentPrice, 8),
+    targetPrice: roundNumber(targetPrice, 2),
+    settlePrice: roundNumber(settlePrice, 2),
+    annualPremiumPct: roundNumber(annualPremiumPct, 2),
+    apr: roundNumber(annualPremiumPct, 2),
     days,
-    premium: round(premium),
-    conversionDrag: round(conversionDrag),
-    takeHome: round(takeHome),
-    pnl: round(pnl),
+    termPremiumRatePct: roundNumber(termPremiumRate * 100, 4),
+    premium: roundNumber(premium),
+    conversionDrag: roundNumber(conversionDrag),
+    favorableBonus: roundNumber(favorableBonus),
+    takeHome: roundNumber(takeHome),
+    pnl: roundNumber(pnl),
     profitable: pnl > 0,
     receipt: {
       productType: 'Dual Investment',
-      maturity: body.maturity || `${days} day demo cycle`,
+      maturity: cleanText(body.maturity, `${days} day demo cycle`, 80),
       burnable: amount > 0
     }
   };
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', process.env.RISKLENS_API_ALLOW_ORIGIN || '*');
+  if (applyCors(req, res)) return;
 
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    res.status(204).end();
-    return;
+  try {
+    if (req.method === 'GET') {
+      sendJson(res, 200, {
+        ok: true,
+        modes: CALCULATION_MODES,
+        storage: {
+          mode: 'stateless-calculation',
+          persisted: false,
+          userDataPolicy: 'Wealth calculations use submitted inputs only; wallet profiles and receipt state stay in client, pointer, or on-chain flows.'
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST') {
+      const body = await readRequestJson(req, { maxBytes: 64 * 1024 });
+      const mode = body.mode === 'dual-investment' ? 'dual-investment' : 'normal-product';
+      const result = mode === 'dual-investment'
+        ? calculateDualInvestment(body)
+        : calculateNormalProduct(body);
+
+      sendJson(res, 200, {
+        ok: true,
+        result,
+        storage: {
+          mode: 'stateless-calculation',
+          persisted: false,
+          userDataPolicy: 'Deterministic calculation endpoint; wallet/user writes stay in decentralized pointer or on-chain evidence flows.'
+        },
+        calculatedAt: new Date().toISOString()
+      });
+      return;
+    }
+
+    sendJson(res, 405, { ok: false, error: 'Method not allowed.' });
+  } catch (error) {
+    const statusCode = getHttpErrorStatus(error);
+    sendJson(res, statusCode, { ok: false, error: error.message || 'Wealth calculation API failed.' });
   }
-
-  if (req.method !== 'POST') {
-    sendJson(res, 405, { error: 'Use POST for Wealth calculations.' });
-    return;
-  }
-
-  const body = req.body || {};
-  const mode = String(body.mode || 'normal-product');
-  const result = mode === 'dual-investment'
-    ? calculateDualInvestment(body)
-    : calculateNormalProduct(body);
-
-  sendJson(res, 200, {
-    result,
-    storage: {
-      mode: 'serverless-calculation',
-      persisted: false,
-      note: 'Deterministic calculation endpoint; wallet/user writes stay in profile or on-chain evidence flows.'
-    },
-    calculatedAt: new Date().toISOString()
-  });
 }

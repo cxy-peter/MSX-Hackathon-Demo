@@ -1,4 +1,12 @@
-import { applyCors, clampNumber, hashJson, readRequestJson, roundNumber, sendJson } from './_risklensStorage.js';
+import {
+  applyCors,
+  clampNumber,
+  getHttpErrorStatus,
+  hashJson,
+  readRequestJson,
+  roundNumber,
+  sendJson
+} from './_risklensStorage.js';
 
 const ROUTE_CATALOG = [
   {
@@ -53,25 +61,34 @@ function buildSpotRoute({ amount, movePct }) {
   };
 }
 
-function buildPerpRoute({ amount, movePct, leverage, holdingDays, focusId, hedgeRatio }) {
+function buildPerpRoute({ amount, movePct, sleeveMovePct = movePct, leverage, holdingDays, hedgeHoldingDays, focusId, hedgeRatio }) {
   const safeLeverage = clampNumber(leverage, 1, 8);
-  const grossPnl = amount * safeLeverage * movePct;
-  const funding = amount * safeLeverage * clampNumber(holdingDays, 0, 90) * 0.00032;
-  const executionDrag = amount * safeLeverage * 0.0018;
-  const hedgeEffectiveness = focusId === 'hedge' ? clampNumber(hedgeRatio, 0, 1.25) * 0.68 : 0;
-  const hedgeOffset = focusId === 'hedge' ? -amount * movePct * hedgeEffectiveness : 0;
-  const netPnl = grossPnl + hedgeOffset - funding - executionDrag;
-  const liquidationMove = safeLeverage > 1 ? -1 / safeLeverage + 0.08 : -0.92;
+  const isHedge = focusId === 'hedge';
+  const safeHoldingDays = clampNumber(isHedge ? hedgeHoldingDays || holdingDays : holdingDays, 0, 90);
+  const hedgeTicketNotional = isHedge ? amount * clampNumber(hedgeRatio, 0, 1.25) : amount;
+  const exposureNotional = isHedge ? hedgeTicketNotional : amount;
+  const sleevePnl = isHedge ? amount * sleeveMovePct : 0;
+  const grossPnl = isHedge ? -exposureNotional * safeLeverage * movePct : exposureNotional * safeLeverage * movePct;
+  const funding = exposureNotional * safeLeverage * safeHoldingDays * 0.00032;
+  const executionDrag = exposureNotional * safeLeverage * 0.0018;
+  const netPnl = sleevePnl + grossPnl - funding - executionDrag;
+  const liquidationMove = safeLeverage > 1 ? (isHedge ? 1 / safeLeverage - 0.08 : -1 / safeLeverage + 0.08) : isHedge ? 0.92 : -0.92;
 
   return {
     grossPnl,
-    drag: funding + executionDrag - hedgeOffset,
+    drag: funding + executionDrag,
     netPnl,
     rows: [
       ['Leverage', `${safeLeverage}x`],
+      ...(isHedge
+        ? [
+            ['Sleeve PnL', `${roundNumber(sleevePnl, 2)} PT`],
+            ['Hedge ticket', `${roundNumber(hedgeTicketNotional, 2)} PT`],
+            ['Hedge holding days', `${roundNumber(safeHoldingDays, 0)}D`]
+          ]
+        : []),
       ['Funding drag', `-${roundNumber(funding, 2)} PT`],
       ['Execution drag', `-${roundNumber(executionDrag, 2)} PT`],
-      ['Hedge offset', `${roundNumber(hedgeOffset, 2)} PT`],
       ['Liquidation marker', `${roundNumber(liquidationMove * 100, 1)}% move`]
     ]
   };
@@ -136,7 +153,11 @@ function calculateRoute(input = {}) {
   const entryPrice = Math.max(0.000001, Number(input.entryPrice || input.currentPrice || 100));
   const exitPrice = Math.max(0.000001, Number(input.exitPrice || input.targetPrice || entryPrice));
   const movePct = entryPrice > 0 ? (exitPrice - entryPrice) / entryPrice : 0;
+  const hedgeEntryPrice = Math.max(0.000001, Number(input.hedgeEntryPrice || input.hedgePrice || entryPrice));
+  const hedgeMovePct = hedgeEntryPrice > 0 ? (exitPrice - hedgeEntryPrice) / hedgeEntryPrice : movePct;
+  const sleeveMovePct = movePct;
   const holdingDays = clampNumber(input.holdingDays, 1, 365);
+  const hedgeHoldingDays = clampNumber(input.hedgeHoldingDays || holdingDays, 1, 365);
   const leverage = clampNumber(input.leverage, 1, 8);
   const hedgeRatio = clampNumber(input.hedgeRatio, 0, 1.25);
 
@@ -144,7 +165,16 @@ function calculateRoute(input = {}) {
   if (routeId === 'perp') {
     model = focusId === 'combo'
       ? buildAutomationRoute({ amount, movePct: movePct * 0.72 })
-      : buildPerpRoute({ amount, movePct, leverage, holdingDays, focusId, hedgeRatio });
+      : buildPerpRoute({
+          amount,
+          movePct: focusId === 'hedge' ? hedgeMovePct : movePct,
+          sleeveMovePct,
+          leverage,
+          holdingDays,
+          hedgeHoldingDays,
+          focusId,
+          hedgeRatio
+        });
   } else if (routeId === 'borrow' || routeId === 'strategy-ai') {
     model = buildStrategyRoute({ amount, movePct });
   } else if (routeId === 'lending') {
@@ -166,6 +196,8 @@ function calculateRoute(input = {}) {
       entryPrice,
       exitPrice,
       holdingDays,
+      hedgeEntryPrice,
+      hedgeHoldingDays,
       leverage,
       hedgeRatio
     }).slice(0, 16),
@@ -182,7 +214,9 @@ function calculateRoute(input = {}) {
       entryPrice: roundNumber(entryPrice, 6),
       exitPrice: roundNumber(exitPrice, 6),
       movePct: roundNumber(movePct * 100, 3),
+      hedgeMovePct: roundNumber(hedgeMovePct * 100, 3),
       holdingDays,
+      hedgeHoldingDays,
       leverage,
       hedgeRatio
     },
@@ -232,6 +266,7 @@ export default async function handler(req, res) {
 
     sendJson(res, 405, { ok: false, error: 'Method not allowed.' });
   } catch (error) {
-    sendJson(res, 500, { ok: false, error: error.message || 'Tutorial route API failed.' });
+    const statusCode = getHttpErrorStatus(error);
+    sendJson(res, statusCode, { ok: false, error: error.message || 'Tutorial route API failed.' });
   }
 }

@@ -85,7 +85,7 @@ const DEFAULT_COMPARE_PRODUCT_IDS_BY_CATEGORY = {
   private: ['private-watchlist', 'spacex-secondary', 'stripe-secondary', 'databricks-secondary'],
   auto: ['msx-quant-fund-1', 'msx-quant-fund-2', 'superstate-ustb', 'superstate-uscc'],
   earn: ['hashnote-usyc', 'openeden-tbill', 'superstate-uscc', 'apollo-acred'],
-  dual: ['msx-dual-btc-usdt', 'msx-dual-btc-usdc', 'msx-dual-eth-usdt', 'msx-dual-eth-usdc'],
+  dual: ['superstate-ustb', 'ondo-usdy', 'hashnote-usyc', 'msx-protected-growth-eth'],
   protected: ['msx-protected-growth-eth', 'msx-premium-income-btc', 'msx-autocall-index', 'superstate-uscc'],
   growth: ['private-watchlist', 'spacex-secondary', 'stripe-secondary', 'bytedance-secondary'],
   protectedGrowth: ['msx-protected-growth-eth', 'msx-premium-income-btc', 'superstate-ustb', 'msx-autocall-index'],
@@ -1934,6 +1934,10 @@ function getCategoryIdForProduct(product) {
 function isDualInvestmentProduct(product = {}) {
   const text = `${product.id || ''} ${product.productType || ''} ${product.name || ''} ${product.shortName || ''} ${product.underlying || ''} ${product.yieldSource || ''}`.toLowerCase();
   return /dual investment|dual currency|dual-btc|buy-the-dip|reverse convertible/.test(text);
+}
+
+function isCompareEligibleProduct(product) {
+  return Boolean(product) && !isDualInvestmentProduct(product);
 }
 
 function productMatchesAiRecommendationLane(product = {}, laneId = '') {
@@ -3999,6 +4003,7 @@ function WealthInner() {
     guideCompleted: false,
     quizCompleted: false,
     paperTradesCompleted: 0,
+    wealthPledgeDeskOpenedProductId: '',
     wealthTaskClaims: normalizeWealthTaskClaims()
   });
   const [wealthState, setWealthState] = useState(defaultWealthState());
@@ -4381,6 +4386,7 @@ function WealthInner() {
         guideCompleted: false,
         quizCompleted: false,
         paperTradesCompleted: 0,
+        wealthPledgeDeskOpenedProductId: '',
         wealthTaskClaims: normalizeWealthTaskClaims()
       });
       return;
@@ -4390,6 +4396,7 @@ function WealthInner() {
       guideCompleted: false,
       quizCompleted: false,
       paperTradesCompleted: 0,
+      wealthPledgeDeskOpenedProductId: '',
       wealthTaskClaims: normalizeWealthTaskClaims()
     });
     const profileProgress = readWalletProfile(address).progress || {};
@@ -4403,6 +4410,10 @@ function WealthInner() {
         Number(storedProgress.paperTradesCompleted || 0),
         Number(profileProgress.paperTradesCompleted || 0)
       ),
+      wealthPledgeDeskOpenedProductId:
+        storedProgress.wealthPledgeDeskOpenedProductId ||
+        profileProgress.wealthPledgeDeskOpenedProductId ||
+        '',
       wealthTaskClaims: {
         trade: Boolean(storedWealthTaskClaims.trade || profileWealthTaskClaims.trade),
         pledge: Boolean(storedWealthTaskClaims.pledge || profileWealthTaskClaims.pledge),
@@ -4724,6 +4735,7 @@ function WealthInner() {
   const wealthSubscribeDetailActionDone = hasWealthActivity(displayWealthState, ['subscribe']);
   const wealthSettlementDetailActionDone = hasWealthActivity(displayWealthState, WEALTH_SETTLEMENT_ACTIVITY_TYPES);
   const localWealthTaskClaims = normalizeWealthTaskClaims(progressState.wealthTaskClaims);
+  const pledgeDeskOpenedProductId = progressState.wealthPledgeDeskOpenedProductId || '';
   const wealthTradeTaskCollectibleOwned = hasPositiveOnchainBalance(wealthSubscribeTaskCollectibleBalance);
   const wealthPledgeTaskCollectibleOwned = hasPositiveOnchainBalance(wealthSettlementTaskCollectibleBalance);
   const wealthDualTaskCollectibleOwned = hasPositiveOnchainBalance(wealthDualTaskCollectibleBalance);
@@ -4739,11 +4751,12 @@ function WealthInner() {
   const wealthDualTaskClaimed = wealthVaultConfigured
     ? wealthDualTaskClaimedOnchain
     : Boolean(localWealthTaskClaims.dual);
+  const pledgeTaskDeskOpened = Boolean(pledgeDeskOpenedProductId || wealthPledgeTaskClaimed);
   const wealthTradeQuestDone = Boolean(
     wealthTradeTaskClaimed || (isConnected && latestPositiveTradeActivity)
   );
   const wealthPledgeQuestDone = Boolean(
-    wealthPledgeTaskClaimed || (isConnected && latestPledgeActivity)
+    wealthPledgeTaskClaimed || (isConnected && latestPledgeActivity && pledgeTaskDeskOpened)
   );
   const wealthDualQuestDone = Boolean(
     wealthDualTaskClaimed || (isConnected && latestPositiveDualActivity)
@@ -4844,8 +4857,13 @@ function WealthInner() {
   ]);
   const categoryCompareSeedIds = useMemo(() => {
     const defaultIds = DEFAULT_COMPARE_PRODUCT_IDS_BY_CATEGORY[selectedCategory] || DEFAULT_COMPARE_PRODUCT_IDS_BY_CATEGORY.all;
-    return [...new Set([...defaultIds, selectedProductId, ...recommendedProducts.map((product) => product.id)])]
-      .filter((productId) => liveProducts.some((product) => product.id === productId))
+    const seededIds = [...new Set([...defaultIds, selectedProductId, ...recommendedProducts.map((product) => product.id)])]
+      .filter((productId) => isCompareEligibleProduct(getProductByIdFrom(liveProducts, productId)));
+    if (seededIds.length) return seededIds.slice(0, MAX_COMPARE_PRODUCTS);
+
+    return liveProducts
+      .filter(isCompareEligibleProduct)
+      .map((product) => product.id)
       .slice(0, MAX_COMPARE_PRODUCTS);
   }, [liveProducts, recommendedProducts, selectedCategory, selectedProductId]);
   const shelfMetricsMap = useMemo(
@@ -4910,7 +4928,7 @@ function WealthInner() {
 
   useEffect(() => {
     setCompareProductIds((current) => {
-      const validIds = current.filter((productId) => liveProducts.some((product) => product.id === productId));
+      const validIds = current.filter((productId) => isCompareEligibleProduct(getProductByIdFrom(liveProducts, productId)));
       if (validIds.length > 0) return [...new Set(validIds)].slice(0, MAX_COMPARE_PRODUCTS);
 
       return categoryCompareSeedIds;
@@ -4969,7 +4987,7 @@ function WealthInner() {
     [selectedProduct]
   );
   const compareProducts = useMemo(
-    () => compareProductIds.map((productId) => getProductByIdFrom(liveProducts, productId)).filter(Boolean),
+    () => compareProductIds.map((productId) => getProductByIdFrom(liveProducts, productId)).filter(isCompareEligibleProduct),
     [compareProductIds, liveProducts]
   );
   const compareWindowLabel = NAV_PERIOD_OPTIONS.find((period) => period.id === compareNavPeriod)?.label || '30D';
@@ -5049,6 +5067,10 @@ function WealthInner() {
         Number(progressState.paperTradesCompleted || 0),
         paperTaskDone ? 1 : 0
       ),
+      wealthPledgeDeskOpenedProductId:
+        progressState.wealthPledgeDeskOpenedProductId ||
+        walletProfileProgress.wealthPledgeDeskOpenedProductId ||
+        '',
       wealthTaskClaims: effectiveWealthTaskClaims
     },
     wealth: {
@@ -5545,6 +5567,7 @@ function WealthInner() {
   const pledgeTaskProduct = getProductByIdFrom(liveProducts, pledgeTaskProductId) || tradeTaskProduct;
   const dualTaskProductId = latestPositiveDualActivity?.productId || latestDualSubscribeActivity?.productId || firstDualProduct?.id;
   const dualTaskProduct = getProductByIdFrom(liveProducts, dualTaskProductId) || firstDualProduct || selectedProduct;
+  const pledgeDeskProduct = getProductByIdFrom(liveProducts, pledgeDeskOpenedProductId) || pledgeTaskProduct;
   const tradeTaskBought = Boolean(latestNormalSubscribeActivity || displayWealthState.positions?.[tradeTaskProduct.id]?.shares);
   const pledgeTaskReceiptAvailable =
     Boolean(displayWealthState.positions?.[pledgeTaskProduct.id]?.shares) ||
@@ -5552,7 +5575,7 @@ function WealthInner() {
     Boolean(latestSubscribeActivity);
   const dualTaskBought = Boolean(latestDualSubscribeActivity || displayWealthState.positions?.[dualTaskProduct.id]?.shares);
   const tradeTaskReadyToClaim = Boolean(isConnected && latestPositiveTradeActivity);
-  const pledgeTaskReadyToClaim = Boolean(isConnected && latestPledgeActivity);
+  const pledgeTaskReadyToClaim = Boolean(isConnected && latestPledgeActivity && pledgeTaskDeskOpened);
   const dualTaskReadyToClaim = Boolean(isConnected && latestPositiveDualActivity);
   const wealthTaskReadyToClaimById = {
     trade: tradeTaskReadyToClaim,
@@ -5645,10 +5668,10 @@ function WealthInner() {
         {
           id: 'lifecycle-detail',
           title: 'Open pledge desk',
-          done: expandedProductId === pledgeTaskProduct.id && selectedDetailTopics.includes('flow'),
-          copy: expandedProductId === pledgeTaskProduct.id && selectedDetailTopics.includes('flow')
-            ? 'This is the right detail desk. Use Pledge support here to complete the task.'
-            : 'Open the receipt product detail, then use Pledge support inside that desk.',
+          done: pledgeTaskDeskOpened,
+          copy: pledgeTaskDeskOpened
+            ? `Pledge desk opened from ${pledgeDeskProduct.shortName || pledgeDeskProduct.name}.`
+            : 'Click any owned product row\'s Pledge button to unlock this desk step.',
           interactive: true,
           onClick: () => {
             focusProduct(pledgeTaskProduct.id, {
@@ -5729,7 +5752,10 @@ function WealthInner() {
   });
   const selectedWealthTaskCompletedChecklistCount = selectedWealthTaskChecklistItems.filter((item) => item.done).length;
   const selectedWealthTaskChecklistTotal = selectedWealthTaskChecklistItems.length;
-  const selectedWealthTaskReadyToClaim = Boolean(wealthTaskReadyToClaimById[selectedWealthTask.id]);
+  const selectedWealthTaskReadyToClaim = Boolean(
+    wealthTaskReadyToClaimById[selectedWealthTask.id] &&
+      selectedWealthTaskCompletedChecklistCount === selectedWealthTaskChecklistTotal
+  );
   const selectedWealthTaskClaimed = Boolean(wealthTaskClaimedById[selectedWealthTask.id]);
   const selectedWealthTaskFlagOnchain = Boolean(wealthTaskOnchainById[selectedWealthTask.id]);
   const selectedWealthTaskCollectibleOwned = Boolean(wealthTaskCollectibleOwnedById[selectedWealthTask.id]);
@@ -5764,7 +5790,7 @@ function WealthInner() {
       : {
           tone: 'todo',
           text: 'To do',
-          copy: 'Complete all 3 detected steps first. Wealth watches profitable settlement, pledge, and dual-profit activity automatically.',
+          copy: `Complete ${selectedWealthTaskCompletedChecklistCount}/${selectedWealthTaskChecklistTotal} detected steps first. Wealth watches profitable settlement, pledge, and dual-profit activity automatically.`,
           actionLabel: 'Complete task first',
           actionDisabled: true
         };
@@ -6177,6 +6203,43 @@ function WealthInner() {
     );
   }
 
+  function recordPledgeDeskOpen(productId) {
+    if (!productId) return;
+
+    setProgressState((current) => ({
+      ...current,
+      wealthPledgeDeskOpenedProductId: current.wealthPledgeDeskOpenedProductId || productId
+    }));
+
+    if (!address) return;
+
+    const storedProgress = readStorageJson(progressStorageKey, {});
+    const profileProgress = readWalletProfile(address).progress || {};
+    const storedWealthTaskClaims = normalizeWealthTaskClaims(storedProgress.wealthTaskClaims);
+    const profileWealthTaskClaims = normalizeWealthTaskClaims(profileProgress.wealthTaskClaims);
+    const nextProgress = {
+      ...profileProgress,
+      ...storedProgress,
+      guideCompleted: Boolean(storedProgress.guideCompleted || profileProgress.guideCompleted),
+      quizCompleted: Boolean(storedProgress.quizCompleted || profileProgress.quizCompleted),
+      paperTradesCompleted: Math.max(
+        Number(storedProgress.paperTradesCompleted || 0),
+        Number(profileProgress.paperTradesCompleted || 0)
+      ),
+      wealthPledgeDeskOpenedProductId:
+        storedProgress.wealthPledgeDeskOpenedProductId ||
+        profileProgress.wealthPledgeDeskOpenedProductId ||
+        productId,
+      wealthTaskClaims: {
+        ...storedWealthTaskClaims,
+        ...profileWealthTaskClaims
+      }
+    };
+
+    writeStorageJson(progressStorageKey, nextProgress);
+    writeWalletProfilePatch(address, { progress: nextProgress });
+  }
+
   function handleConnect() {
     if (!hasMetaMaskInstalled) {
       setWalletError('MetaMask is not installed in this browser yet. Install the extension, pin it to the toolbar, and reopen this wallet panel.');
@@ -6547,6 +6610,10 @@ function WealthInner() {
 
   function handleAddCompareProduct(productId) {
     if (!productId) return;
+    if (!isCompareEligibleProduct(getProductByIdFrom(liveProducts, productId))) {
+      setComparePickerValue('');
+      return;
+    }
     setCompareProductIds((current) => {
       const next = [...new Set([...current, productId])];
       return next.slice(0, MAX_COMPARE_PRODUCTS);
@@ -6807,6 +6874,7 @@ function WealthInner() {
       setFeedback('This product does not expose a receipt token that can be pledged in the demo collateral ledger.');
       return;
     }
+    recordPledgeDeskOpen(selectedProduct.id);
 
     if (!isConnected || !address) {
       setFeedback('Connect MetaMask first so the pledged receipt and support line stay mapped to one wallet.');
@@ -7324,6 +7392,7 @@ function WealthInner() {
 
     setSettlementAction(nextSettlementAction);
     if (action === 'pledge') {
+      recordPledgeDeskOpen(productId);
       setCollateralBorrowInput(maxSupport > 0 ? Math.min(1000, maxSupport) : 0);
     }
     focusProduct(productId, {
@@ -7680,127 +7749,6 @@ function WealthInner() {
     );
   }
 
-  function renderDualInvestmentShelfSection() {
-    const dualProducts = liveProducts.filter(isDualInvestmentProduct);
-    if (!dualProducts.length) return null;
-
-    const primaryDualProduct = dualProducts[0];
-    const directionCards = [
-      {
-        id: 'buy-low',
-        title: 'Buy-low dual',
-        offset: '-4%',
-        copy: 'Deposit quote asset, earn premium, and accept settlement into the base asset if the target is reached.'
-      },
-      {
-        id: 'sell-high',
-        title: 'Sell-high dual',
-        offset: '+5%',
-        copy: 'Start from the base asset, earn premium, and accept settlement into quote asset if the take-profit target is reached.'
-      }
-    ];
-
-    return (
-      <section className="card wealth-dual-shelf-card">
-        <div className="section-head">
-          <div>
-            <div className="eyebrow">Product shelf / Dual Investment</div>
-            <h2>Target-price receipts in two directions</h2>
-          </div>
-          <span className="pill risk-medium">{dualProducts.length} dual receipts</span>
-        </div>
-
-        <div className="wealth-dual-method-grid">
-          {directionCards.map((card) => (
-            <button
-              key={card.id}
-              type="button"
-              className={`wealth-dual-method-card ${dualCurrencyDirection === card.id ? 'active' : ''}`}
-              onClick={() => {
-                setSelectedCategory('dual');
-                setDualCurrencyDirection(card.id);
-                setDualCurrencyTargetPct(card.id === 'buy-low' ? -4 : 5);
-                focusProduct(primaryDualProduct.id, { topic: 'flow', categoryId: 'dual' });
-              }}
-            >
-              <span>{card.offset} suggested target</span>
-              <strong>{card.title}</strong>
-              <p>{card.copy}</p>
-            </button>
-          ))}
-        </div>
-
-        <div className="wealth-recommended-strip wealth-dual-product-strip">
-          {dualProducts.map((product) => {
-            const returnDisplay = getProductReturnMetricDisplay(product);
-
-            return (
-              <button
-                key={product.id}
-                type="button"
-                className="wealth-recommended-chip"
-                onClick={() => focusProduct(product.id, { topic: 'flow', categoryId: 'dual' })}
-              >
-                <span>{returnDisplay.metric}</span>
-                <strong>{product.name}</strong>
-                <em>{returnDisplay.value}</em>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="wealth-dual-action-list" aria-label="Dual Investment detail and lifecycle actions">
-          {dualProducts.map((product) => {
-            const productPosition = displayWealthState.positions?.[product.id] || { shares: 0, principal: 0 };
-            const productReceiptValue = roundNumber(Number(productPosition.shares || 0) * Number(product.nav || 0), 2);
-            const hasPosition = Number(productPosition.shares || 0) > 0;
-            const productMinimumTicket = getProductMinimumTicket(product);
-            const productCashMessage = !canAffordProductMinimum(product, availableCash)
-              ? getInsufficientProductCashMessage(product, availableCash)
-              : '';
-            const productBuyBlockMessage =
-              wealthReceiptGateBlocked
-                ? wealthReceiptGateMessage
-                : productCashMessage || getProductSubscriptionValidation(product, productMinimumTicket);
-            const productBuyDisabled = Boolean(wealthWalletActionPending || wealthReceiptGateBlocked || productBuyBlockMessage);
-
-            return (
-              <div className="wealth-dual-action-row" key={`${product.id}-actions`}>
-                <div>
-                  <div className="product-title">{product.shortName || product.name}</div>
-                  <div className="muted">
-                    {hasPosition
-                      ? `${formatShareBalance(productPosition.shares, hideBalances)} ${product.shareToken} / ${formatValue(productReceiptValue, hideBalances)}`
-                      : `${product.shareToken} receipt not minted yet`}
-                  </div>
-                </div>
-                <div className="toolbar wealth-action-toolbar">
-                  <button className="ghost-btn compact" onClick={() => focusProduct(product.id, { topic: 'flow', categoryId: 'dual' })}>
-                    Detail
-                  </button>
-                  <button
-                    className="primary-btn compact"
-                    onClick={(event) => handleOpenSubscribeModal(product, event)}
-                    disabled={productBuyDisabled}
-                    title={productBuyBlockMessage || undefined}
-                  >
-                    Buy
-                  </button>
-                  <button className="secondary-btn compact" onClick={() => handlePositionQuickAction(product.id, 'settle')} disabled={!hasPosition}>
-                    Settle
-                  </button>
-                  <button className="ghost-btn compact" onClick={() => handlePositionQuickAction(product.id, 'pledge')} disabled={!hasPosition}>
-                    Pledge
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-    );
-  }
-
   function renderTimelineDock() {
     if (!timelineDockOpen || timelineDockFloat.isCollapsed) {
       const collapsedStyle =
@@ -7967,7 +7915,7 @@ function WealthInner() {
             >
               <option value="">Choose a product</option>
               {liveProducts
-                .filter((product) => !compareProductIds.includes(product.id))
+                .filter((product) => isCompareEligibleProduct(product) && !compareProductIds.includes(product.id))
                 .map((product) => (
                   <option key={product.id} value={product.id}>
                     {product.name}
@@ -9635,7 +9583,7 @@ function WealthInner() {
         </div>
 
         <div className="header-actions">
-          <a className="ghost-btn compact" href="./index.html#wealth">
+          <a className="ghost-btn compact wealth-back-welcome-link" href="./index.html#wealth">
             {t('Back to welcome', '\u8fd4\u56de\u6b22\u8fce\u9875')}
           </a>
 
@@ -9658,10 +9606,6 @@ function WealthInner() {
             </div>
           </div>
 
-          <button className="secondary-btn compact wealth-reset-top-btn" onClick={handleResetPortfolio}>
-            Reset wealth demo
-          </button>
-
           <button className={`ghost-btn wallet-header-btn ${isConnected ? 'connected' : ''}`.trim()} onClick={() => setWalletModalOpen(true)} disabled={isPending}>
             {isConnected
               ? t(`Wallet connected ${walletDisplayName}`, `闂傚倷娴囧Λ鍕暦椤掑倵鍋撻崹顐€顏堫敊韫囨稒鍤戦柛鎾茶兌椤旀洟姊?${walletDisplayName}`)
@@ -9671,6 +9615,9 @@ function WealthInner() {
           </button>
 
           <div className="header-admin-row">
+            <button className="secondary-btn compact wealth-reset-top-btn" onClick={handleResetPortfolio}>
+              Reset wealth demo
+            </button>
             <button className="ghost-btn compact" onClick={openDeveloperMode}>
               {t('Developer mode', '\u5f00\u53d1\u8005\u6a21\u5f0f')}
             </button>
@@ -10895,8 +10842,6 @@ function WealthInner() {
                 </div>
               ) : null}
             </section>
-
-            {dualInvestmentShelfActive ? renderDualInvestmentShelfSection() : null}
           </div>
 
           {!dualInvestmentShelfActive ? (

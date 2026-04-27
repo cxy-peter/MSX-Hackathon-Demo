@@ -8,13 +8,14 @@ The demo is not a production exchange, broker, investment adviser, or live tradi
 
 RiskLens turns a Web3 investing flow into a guided learning path instead of dropping the user directly into a trading terminal.
 
-The app has three main surfaces:
+The app has three main user surfaces plus a supporting backend API layer:
 
 | Surface | What it demonstrates |
 | --- | --- |
 | Welcome hub | Wallet connection, nickname, wallet backup / recovery, risk review, product quiz, and task badge progression. |
 | Wealth | Product shelf, product detail, AI diligence, receipt lifecycle, pledge / settle flows, and a PT-only dual-investment simulator. |
 | Paper Trading | Historical replay desk, paper-token positions, trade log, floating leaderboard, wallet-linked tasks, and replay achievement status. |
+| Backend API layer | Serverless route calculations, wealth settlement previews, shared paper leaderboards, and decentralized profile-pointer storage without raw wallet profiles. |
 
 The main design principle is progressive trust. A user first learns what a product means, then sees risk and suitability evidence, then practices with replay bars, and only then encounters signatures, badges, or receipt-vault mechanics.
 
@@ -44,6 +45,18 @@ Local routes after starting Vite:
 5. Try the dual-investment card. It uses PT only, not real stablecoins, and models subscription amount, target price, direction, term, and reward preview.
 6. Open `/paper-trading.html`, choose a product route, step through replay bars, place simulated trades, and inspect the floating open-position / trade-log windows.
 7. Review how leaderboard rows, wallet state, and replay achievement tasks react to the connected account.
+8. On the deployed Vercel demo, refresh the paper leaderboard or submit a replay / strategy score and check the backend sync text. It should describe whether rows are persisted through KV or temporarily held in API memory, while profile data remains CID-pointer only.
+
+## Recent improvements
+
+| Area | What changed |
+| --- | --- |
+| Serverless backend | Added `/api/paper-leaderboards`, `/api/profile-pointer`, `/api/tutorial-routes`, and `/api/wealth-calculations` so the demo has real API routes for shared leaderboards, route math, wealth previews, and profile-pointer registration. |
+| Backend resilience | The API now uses shared CORS / no-store JSON handling, bounded request bodies, cleaner 4xx errors for bad JSON, and a KV-to-memory fallback so a demo does not fail hard when optional storage is unavailable. |
+| Profile privacy | Backend writes reject raw wallet profiles and store only hashed wallet keys, CID-ready content pointers, content hashes, and signature hashes. |
+| Paper trading | Replay and AI strategy leaderboard submissions can sync to the backend while preserving local fallback behavior and wallet nickname display. |
+| Wealth | The dual-investment backend calculation now frames output as a short-term premium / target-price settlement preview rather than stable APY. |
+| Documentation | README now calls out the backend routes, storage behavior, API configuration, and local vs Vercel expectations. |
 
 ## Web3 component
 
@@ -94,6 +107,19 @@ Task cards now distinguish three states:
 
 This matters because a different wallet should not inherit another account's badges or leaderboard identity.
 
+### Serverless backend API
+
+The backend is intentionally small and audit-friendly. It supports shared demo state and deterministic calculations without becoming a custodial trading service.
+
+| Endpoint | Purpose | Storage behavior |
+| --- | --- | --- |
+| `/api/paper-leaderboards` | Reads and writes replay-score and AI-strategy leaderboard rows. | Uses Vercel KV / Upstash REST when configured, with API memory fallback for demos. |
+| `/api/profile-pointer` | Registers a wallet's decentralized profile backup pointer. | Stores hashed wallet key, CID-ready pointer, content hash, and signature hash only; raw profiles are rejected. |
+| `/api/tutorial-routes` | Calculates replay route previews for spot, leverage, hedge, strategy, automation, and yield tutorial paths. | Stateless calculation; no wallet profile storage. |
+| `/api/wealth-calculations` | Calculates receipt NAV settlement and dual-investment term-premium previews. | Stateless calculation; no wallet profile storage. |
+
+The frontend client lives in `src/risklensBackendClient.js`. If the backend is unavailable during a local Vite-only run, the UI keeps working with local fallback state and shows that backend sync is offline.
+
 ## Algorithm and engineering highlights
 
 ### Replay state and PnL accounting
@@ -111,6 +137,10 @@ The dual-investment flow intentionally avoids real USDC, USDT, ETH, or BTC trans
 ### Diligence as evidence, not magic scoring
 
 The diligence layer is deterministic and local. Rather than pretending an opaque AI model has perfect judgment, it builds structured review sections from product metadata and risk signals. That makes the UI easier to audit during judging and safer for a financial education prototype.
+
+### Backend privacy and graceful fallback
+
+The serverless API is designed for demo continuity, not custody. Leaderboards can persist through optional Vercel KV / Upstash REST storage, but the same routes fall back to process memory when KV is missing or temporarily unavailable. Profile backup flows send only decentralized storage pointers and hashes to the API, while the raw wallet profile stays in local, encrypted, decentralized, or on-chain-adjacent evidence flows.
 
 ### UI state consistency
 
@@ -130,11 +160,19 @@ Several hard issues were resolved directly through Codex-assisted implementation
 | Dual investment looked like a generic APY card | Rebuilt it around pair, direction, target price, settlement bucket, subscription amount, and PT reward preview. |
 | Leaderboard and wallet identity were too address-heavy | Leaderboard display now prefers wallet nickname when one is saved, and falls back to a short address otherwise. |
 | Task cards did not visually communicate status | Added right-corner status pills, yellow pulse / ripple for unfinished or wait-to-mint states, and green borders for completed tasks. |
+| Backend sync could fail too loudly during demos | Hardened serverless helpers so optional KV failures fall back to API memory and bad JSON / oversized bodies return clear 4xx responses. |
+| Profile backup needed backend evidence without storing private user state | Added a profile-pointer API that rejects raw wallet profiles and stores only hashed wallet identifiers, CID-ready pointers, content hashes, and signature hashes. |
 
 ## Architecture
 
 ```text
 MSX-Hackathon-Demo/
+  api/
+    _risklensStorage.js
+    paper-leaderboards.js
+    profile-pointer.js
+    tutorial-routes.js
+    wealth-calculations.js
   contracts/
     MSXQuestBadge.sol
     MSXReplayAchievementBadge.sol
@@ -155,6 +193,7 @@ MSX-Hackathon-Demo/
     PaperTradingChart.jsx
     paperTradingConfig.js
     paperTradingData.js
+    risklensBackendClient.js
     walletProfileStore.js
     wagmiSetup.js
     diligence/
@@ -172,9 +211,10 @@ MSX-Hackathon-Demo/
 | Area | Tools |
 | --- | --- |
 | Frontend | React, Vite, JavaScript / JSX, CSS |
+| Backend | Vercel serverless functions, optional Vercel KV / Upstash REST storage, API memory fallback |
 | Wallet / Web3 | MetaMask, Wagmi, Viem, ethers |
 | Contracts | Solidity, Hardhat, OpenZeppelin |
-| State | Local storage, wallet profile store, optional profile storage gateway |
+| State | Local storage, wallet profile store, optional profile storage gateway, decentralized profile pointers |
 | Deployment | Vercel for static frontend, Sepolia for optional contract flows |
 
 ## Local setup
@@ -201,6 +241,13 @@ Windows helper:
 .\start-local.ps1
 ```
 
+Backend API notes:
+
+- The deployed Vercel app serves `/api/*` with the same project.
+- A Vite-only local run is enough to review the UI. Backend-backed widgets will gracefully show local / offline fallback state if `/api/*` is not being served locally.
+- To point the frontend at a separately deployed API origin, set `VITE_RISKLENS_API_BASE`.
+- To test the serverless API locally, use Vercel's local runtime and keep the same routes: `/api/paper-leaderboards`, `/api/profile-pointer`, `/api/tutorial-routes`, and `/api/wealth-calculations`.
+
 Production build:
 
 ```bash
@@ -223,6 +270,10 @@ The UI can run without contract addresses. To test Sepolia flows, copy `.env.exa
 | `VITE_REPLAY_BADGE_CONTRACT_ADDRESS` | Replay achievement contract. |
 | `VITE_WEALTH_VAULT_ADDRESS` | Wealth receipt-vault or unified hub address. |
 | `VITE_PROFILE_STORAGE_ENDPOINT` | Optional wallet profile snapshot endpoint. |
+| `VITE_RISKLENS_API_BASE` | Optional separate backend origin. Leave empty when frontend and `/api/*` share the same Vercel project. |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Optional Vercel KV REST storage for serverless leaderboard and profile-pointer APIs. |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Equivalent optional Upstash REST storage variables. |
+| `RISKLENS_API_ALLOW_ORIGIN` | Optional CORS origin override for API routes. |
 | `SEPOLIA_RPC_URL` | RPC URL for Hardhat deployment scripts. |
 | `DEPLOYER_PRIVATE_KEY` | Local deployment key. Never commit this value. |
 
@@ -247,6 +298,8 @@ npm run profile-storage:dev
 - No real stablecoin, fund share, tokenized security, or live order is transferred.
 - Product data, NAVs, yields, fees, and replay outputs are demo assumptions or local fallback data unless configured otherwise.
 - Paper trading state is local-first and not a production ledger.
+- Serverless API memory fallback is temporary process memory; configure KV / Upstash for shared persisted leaderboard rows.
+- The API is a demo backend, not a production auth, anti-abuse, or regulated trading backend.
 - Full badge, score, and receipt-vault flows require Sepolia configuration.
 - The project is educational and should not be treated as investment advice.
 

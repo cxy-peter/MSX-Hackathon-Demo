@@ -2127,6 +2127,22 @@ export default function App() {
         : selectedDeveloperBehaviorPointer
           ? 'Behavior content-addressed local'
           : selectedDeveloperWalletSummary?.storageMode || 'Local-first';
+  const selectedDeveloperRecommendedProductId =
+    selectedDeveloperOrigin === 'web3' && selectedDeveloperIntent === 'skip'
+      ? 'superstate-uscc'
+      : selectedDeveloperIntent === 'wealth'
+        ? 'superstate-ustb'
+        : selectedDeveloperProgress.quizCompleted || selectedDeveloperRiskCount >= RISK_REVIEW_REQUIRED
+          ? 'ondo-ousg'
+          : 'superstate-ustb';
+  const selectedDeveloperRecommendedProduct =
+    products.find((product) => product.id === selectedDeveloperRecommendedProductId) || products[0];
+  const selectedDeveloperRecommendationCopy =
+    selectedDeveloperRecommendedProduct.id === 'superstate-uscc'
+      ? 'Recommend the strategy-yield sleeve only after the wallet has chosen a faster replay route, then test it in Paper first.'
+      : selectedDeveloperRecommendedProduct.id === 'ondo-ousg'
+        ? 'Recommend a Treasury sleeve with wrapper and exit-path explanation after the wallet has learning progress.'
+        : 'Recommend the clean reserve sleeve first so the wallet sees ownership, NAV, and redemption rules before riskier products.';
   const selectedDeveloperWalletDisplayName = selectedDeveloperWalletAccount?.label || (
     selectedDeveloperWalletAddress ? shortAddress(selectedDeveloperWalletAddress) : 'No wallet selected'
   );
@@ -2245,6 +2261,7 @@ export default function App() {
       rows: [
         { label: 'Arrival mindset', value: selectedDeveloperOrigin === 'unknown' ? 'Unknown' : selectedDeveloperOrigin.toUpperCase(), copy: `Stored intent: ${selectedDeveloperIntent || 'not set'}.` },
         { label: 'Most common action', value: selectedDeveloperTopBehavior ? selectedDeveloperTopBehavior.label : 'No behavior yet', copy: selectedDeveloperTopBehavior ? `${selectedDeveloperTopBehavior.count} clicks in ${selectedDeveloperTopBehavior.section}.` : 'Actions will appear here after this wallet uses Home routes.' },
+        { label: 'Recommended product', value: selectedDeveloperRecommendedProduct.name, copy: selectedDeveloperRecommendationCopy },
         { label: 'Replay stance', value: selectedDeveloperPaperUnlocked ? 'Open replay' : 'Guide first', copy: selectedDeveloperPaperUnlocked ? 'Paper trading can open because at least one task is complete.' : 'Route through a first task before replay.' },
         { label: 'Storage read form', value: selectedDeveloperStorageMode, copy: selectedDeveloperWalletSummary?.contentHash ? `Readable profile pointer ${selectedDeveloperWalletSummary.contentHash.slice(0, 12)}...` : selectedDeveloperBehaviorPointer ? `Readable behavior snapshot ${selectedDeveloperBehaviorPointer.slice(0, 12)}...` : 'No storage pointer yet; use this wallet once or sign a profile backup to create a readable record.' },
         { label: 'Feature override', value: adminUnlockedForCurrentAccount ? 'Already on' : 'Ready', copy: 'Enable onboarding, quiz, paper unlock, and admin override for the connected wallet.' },
@@ -2308,6 +2325,16 @@ export default function App() {
       helper: isConnected ? `Connected ${walletDisplayName}` : 'Connect MetaMask before minting.'
     },
     {
+      id: 'nickname',
+      label: 'Save nickname',
+      done: nicknameTaskDone,
+      helper: nicknameTaskDone
+        ? `${walletNickname} is saved locally for this wallet.`
+        : walletQuestDone
+          ? 'Use the wallet panel to save a nickname for this account.'
+          : 'Connect MetaMask before saving a wallet nickname.'
+    },
+    {
       id: 'network',
       label: 'On Sepolia network',
       done: onSepolia,
@@ -2352,22 +2379,6 @@ export default function App() {
       coverKicker: 'RiskLens Starter Task',
       coverTitle: walletTaskBadgeMinted ? 'Wallet task' : 'Connect wallet',
       coverSubtitle: 'Open the guided wallet path first so every later collectible and PT reward stays tied to one account.'
-    },
-    {
-      id: 'nickname',
-      title: nicknameTaskDone ? 'Nickname set' : 'Set wallet nickname',
-      status: nicknameTaskDone ? 'Done' : walletQuestDone ? 'To do' : 'Requires wallet',
-      reward: 'Wallet profile',
-      label: 'Wallet profile',
-      hint: nicknameTaskDone
-        ? `Saved as ${walletNickname}.`
-        : walletQuestDone
-          ? 'Name this wallet so Wealth and Paper state is easier to recognize after reconnect.'
-          : 'Connect first, then save a readable wallet nickname.',
-      coverAccent: 'green',
-      coverKicker: 'Wallet Profile Task',
-      coverTitle: 'Set nickname',
-      coverSubtitle: 'Give this wallet a readable label before demo state starts moving across Wealth and Paper.'
     },
     {
       id: 'mint',
@@ -2442,6 +2453,8 @@ export default function App() {
       coverSubtitle: 'Practice with replay mode after any task is complete; collectibles can still be minted afterward.'
     }
   ];
+  const coreLearnQuestCards = learnQuestCards.filter((quest) => quest.id === 'wallet' || quest.id === 'mint');
+  const optionalLearnQuestCards = learnQuestCards.filter((quest) => quest.id !== 'wallet' && quest.id !== 'mint');
 
   useEffect(() => {
     if (!address || progressAccountKey !== connectedAddressKey || !localProgressReady) return;
@@ -2492,7 +2505,7 @@ export default function App() {
   const firstPendingLearnQuest =
     learnQuestCards.find((item) => item.status === 'Done' || item.status === 'To do' || item.status === 'Requires wallet' || item.status === 'Checking' || item.status.includes('/3'))?.id || 'wallet';
   useEffect(() => {
-    if (activeCoreQuest !== null && !['wallet', 'nickname', 'mint'].includes(activeCoreQuest)) {
+    if (activeCoreQuest !== null && !['wallet', 'mint'].includes(activeCoreQuest)) {
       setActiveCoreQuest('wallet');
     }
   }, [activeCoreQuest]);
@@ -2523,7 +2536,7 @@ export default function App() {
   }
 
   function focusLearnQuest(questId) {
-    if (questId === 'wallet' || questId === 'nickname' || questId === 'mint') {
+    if (questId === 'wallet' || questId === 'mint') {
       setActiveCoreQuest(questId);
       scrollQuestDetailIntoView('learnQuestDetail');
       return;
@@ -2671,9 +2684,9 @@ export default function App() {
         setTaskCompletionNoticeTarget('core');
         focusLearnQuest('wallet');
       } else if (!previousStates.nickname && currentStates.nickname) {
-        setTaskCompletionNotice('Nickname saved. We opened the wallet profile task so the demo state is easier to recognize later.');
+        setTaskCompletionNotice('Nickname saved. We kept it in the welcome checklist so the demo state is easier to recognize later.');
         setTaskCompletionNoticeTarget('core');
-        focusLearnQuest('nickname');
+        focusLearnQuest('mint');
       } else if (!previousStates.risk && currentStates.risk) {
         setTaskCompletionNotice(
           currentStates.paper && !previousStates.paper
@@ -2759,7 +2772,7 @@ export default function App() {
 
   function openLearnQuest(questId) {
     recordAnalytics(`module_${questId}`);
-    if (questId === 'wallet' || questId === 'nickname' || questId === 'mint') {
+    if (questId === 'wallet' || questId === 'mint') {
       if (activeCoreQuest === questId) {
         setActiveCoreQuest(null);
         setOptionalQuestNotice('');
@@ -3249,7 +3262,7 @@ export default function App() {
     <>
       <div className="noise"></div>
       <div className="app-shell">
-        <header className="site-header">
+        <header className="site-header home-site-header">
           <div className="brand-wrap">
             <div className="brand-dot"></div>
             <div>
@@ -3535,7 +3548,7 @@ export default function App() {
             </div>
             <div className="learn-quest-wall">
               <div className="learn-quest-core-row">
-                {learnQuestCards.slice(0, 3).map((quest, index) => (
+                {coreLearnQuestCards.map((quest, index) => (
                   <button
                     key={quest.id}
                     className={`learn-quest-tile core ${activeCoreQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' ? 'done' : ''} ${quest.status === 'Done' || quest.status === 'Unlocked' ? 'ready' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}
@@ -3613,44 +3626,6 @@ export default function App() {
                 </div>
                 ) : null}
 
-                {visibleCoreQuest === 'nickname' ? (
-                <div className={`quest-detail-panel ${nicknameTaskDone ? 'completed' : ''}`}>
-                  <div className="quest-side-panel">
-                    <div className="quest-panel-title">{nicknameTaskDone ? 'Wallet nickname saved' : 'Set wallet nickname'}</div>
-                    <div className="muted">
-                      Save a readable label for this wallet so Wealth positions, Paper state, and developer review can show the same human-friendly name after reconnect.
-                    </div>
-                    <button className="secondary-btn" onClick={openWalletModal} disabled={!walletQuestDone}>
-                      {nicknameTaskDone ? 'Edit nickname' : walletQuestDone ? 'Open nickname settings' : 'Connect wallet first'}
-                    </button>
-                    <div className="checklist-list">
-                      <div className={`checklist-item ${walletQuestDone ? 'done' : ''}`}>
-                        <div className="check-indicator">{walletQuestDone ? 'OK' : 'TODO'}</div>
-                        <div className="checklist-copy">
-                          <div>
-                            <div className="check-title">Connect wallet</div>
-                            <div className="muted">{walletQuestDone ? `Connected ${walletDisplayName}.` : 'Connect MetaMask before saving a nickname.'}</div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className={`checklist-item ${nicknameTaskDone ? 'done' : ''}`}>
-                        <div className="check-indicator">{nicknameTaskDone ? 'OK' : 'TODO'}</div>
-                        <div className="checklist-copy">
-                          <div>
-                            <div className="check-title">Save nickname</div>
-                            <div className="muted">
-                              {nicknameTaskDone
-                                ? `${walletNickname} is saved locally for this wallet.`
-                                : 'Use the wallet panel to save a nickname for this account.'}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                ) : null}
-
                 {visibleCoreQuest === 'mint' ? (
                 <div className={`quest-detail-panel ${badgeMintCompleted ? 'completed' : ''}`}>
                   <div className="quest-side-panel">
@@ -3665,7 +3640,15 @@ export default function App() {
                               <div className="check-title">{item.label}</div>
                               <div className="muted">{item.helper}</div>
                             </div>
-                            {item.id === 'network' || item.id === 'gas' ? (
+                            {item.id === 'nickname' ? (
+                              <button
+                                className="ghost-btn compact help-toggle-btn"
+                                onClick={openWalletModal}
+                                disabled={!walletQuestDone}
+                              >
+                                {nicknameTaskDone ? 'Edit nickname' : walletQuestDone ? 'Save nickname' : 'Connect first'}
+                              </button>
+                            ) : item.id === 'network' || item.id === 'gas' ? (
                               <button
                                 className="ghost-btn compact help-toggle-btn"
                                 onClick={() => setMintHelpOpen(mintHelpOpen === item.id ? '' : item.id)}
@@ -3794,7 +3777,7 @@ export default function App() {
             </div>
 
             <div className="learn-quest-optional-row">
-              {learnQuestCards.slice(3).map((quest) => (
+              {optionalLearnQuestCards.map((quest) => (
                 <button
                   key={quest.id}
                 className={`learn-quest-tile ${activeOptionalQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' ? 'done' : ''} ${quest.status === 'Done' || quest.status === 'Unlocked' ? 'ready' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}

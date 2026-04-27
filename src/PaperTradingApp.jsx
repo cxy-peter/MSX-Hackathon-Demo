@@ -211,6 +211,7 @@ const REPLAY_PRACTICE_PREVIEW_SIZE_QUANTUM = 2500;
 const REPLAY_PRACTICE_PREVIEW_RATE_QUANTUM = 0.5;
 const REPLAY_PRACTICE_SCENARIO_CACHE_LIMIT = 96;
 const REPLAY_PRACTICE_FAST_WINDOW_TARGET = 36;
+const REPLAY_PRACTICE_HEDGE_MIN_SPAN_BARS = 2;
 const replayPracticeBarsSignatureCache = new WeakMap();
 const replayPracticeCaseCache = new Map();
 const replayPracticeScenarioCache = new Map();
@@ -5721,6 +5722,25 @@ function quantizeReplayPreviewRate(value, quantum = REPLAY_PRACTICE_PREVIEW_RATE
   return roundNumber(Math.round(safeValue / safeQuantum) * safeQuantum, 2);
 }
 
+function getReplayPracticeNotionalBand(notional = MIN_PAPER_TRADE, quantum = REPLAY_PRACTICE_PREVIEW_SIZE_QUANTUM) {
+  const safeQuantum = Math.max(1, Number(quantum || REPLAY_PRACTICE_PREVIEW_SIZE_QUANTUM));
+  const safeNotional = Math.max(MIN_PAPER_TRADE, Number(notional || MIN_PAPER_TRADE));
+  const lowerBound = Math.max(MIN_PAPER_TRADE, Math.floor((safeNotional - 0.01) / safeQuantum) * safeQuantum);
+  const upperBound = Math.max(lowerBound + safeQuantum, Math.ceil(safeNotional / safeQuantum) * safeQuantum || safeQuantum);
+
+  return {
+    lower: roundNumber(lowerBound, 2),
+    upper: roundNumber(upperBound, 2)
+  };
+}
+
+function formatReplayPracticeNotionalBand(notional = MIN_PAPER_TRADE, { exact = false } = {}) {
+  if (exact) return `${formatNotional(notional)} PT`;
+
+  const band = getReplayPracticeNotionalBand(notional);
+  return `${formatNotional(band.lower)}-${formatNotional(band.upper)} PT`;
+}
+
 function getReplayPracticePreviewOptions(options = {}) {
   const controls = options?.strategyControls || {};
 
@@ -5881,6 +5901,7 @@ function buildReplayFastWindowCandidates(safeBars = [], mode = 'spot', options =
   const seen = new Set();
   const addCandidate = (startSafeIndex, endSafeIndex) => {
     if (startSafeIndex < 0 || endSafeIndex <= startSafeIndex || endSafeIndex >= safeBars.length) return;
+    if (mode === 'hedge' && endSafeIndex - startSafeIndex < REPLAY_PRACTICE_HEDGE_MIN_SPAN_BARS) return;
     const key = `${startSafeIndex}-${endSafeIndex}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -5937,7 +5958,9 @@ function buildReplayPracticeCasesFast(bars = [], mode = 'spot', options = {}) {
   const safeBars = getSafeReplayPracticeBars(bars);
   if (safeBars.length < 2) return [];
 
-  const candidates = buildReplayFastWindowCandidates(safeBars, mode, options);
+  const candidates = buildReplayFastWindowCandidates(safeBars, mode, options)
+    .map((candidate) => hydrateReplayPracticeCandidate(candidate, safeBars, mode, options))
+    .filter(Boolean);
   if (!candidates.length) return [];
 
   const selected = [];
@@ -5962,17 +5985,17 @@ function buildReplayPracticeCasesFast(bars = [], mode = 'spot', options = {}) {
     const positiveRanked = ranked.filter((candidate) => scoreOf(candidate) > 0);
     const displayCandidates = positiveRanked.length ? positiveRanked : ranked;
     const templateLabel = OPTION_STRATEGY_LABELS[options?.strategyTemplateId] || 'Strategy';
-    addCandidate(displayCandidates[0], 'best-payoff', `${templateLabel} preview #1`, 1, true);
+    addCandidate(displayCandidates[0], 'best-payoff', `${templateLabel} net/DD #1`, 1, true);
     displayCandidates.slice(1).forEach((candidate) => {
-      if (selected.length < 2) addCandidate(candidate, 'best-payoff', `Best preview #${selected.length + 1}`, selected.length + 1);
+      if (selected.length < 2) addCandidate(candidate, 'best-payoff', `Best net/DD #${selected.length + 1}`, selected.length + 1);
     });
     const downside = candidates.filter((candidate) => candidate.returnRate < 0).sort((left, right) => scoreOf(right) - scoreOf(left))[0];
     addCandidate(downside, 'stress-test', 'Downside test', 3, true);
   } else {
     const rankedPositive = candidates.filter((candidate) => scoreOf(candidate) > 0).sort((left, right) => scoreOf(right) - scoreOf(left));
-    addCandidate(rankedPositive[0], 'up-most', 'Best preview #1', 1, true);
+    addCandidate(rankedPositive[0], 'up-most', 'Best net/DD #1', 1, true);
     rankedPositive.slice(1).forEach((candidate) => {
-      if (selected.length < 2) addCandidate(candidate, 'up-most', `Best preview #${selected.length + 1}`, selected.length + 1);
+      if (selected.length < 2) addCandidate(candidate, 'up-most', `Best net/DD #${selected.length + 1}`, selected.length + 1);
     });
     const smallLoss = candidates.filter((candidate) => scoreOf(candidate) < 0).sort((left, right) => Math.abs(scoreOf(left)) - Math.abs(scoreOf(right)))[0];
     addCandidate(smallLoss, 'small-loss', 'Small loss', 3, true);
@@ -5984,7 +6007,7 @@ function buildReplayPracticeCasesFast(bars = [], mode = 'spot', options = {}) {
       addCandidate(
         candidate,
         scoreOf(candidate) < 0 ? 'small-loss' : 'up-most',
-        scoreOf(candidate) < 0 ? 'Small loss' : `Best preview #${selected.length + 1}`,
+        scoreOf(candidate) < 0 ? 'Small loss' : `Best net/DD #${selected.length + 1}`,
         selected.length + 1,
         true
       );
@@ -6046,7 +6069,9 @@ function buildReplayPracticeCasesPreviewCached(bars = [], mode = 'spot', options
     .filter(Boolean);
 }
 
-function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}) {
+function hydrateReplayPracticeCandidate(candidate, safeBars = [], mode = 'spot', options = {}) {
+  if (!candidate || !Array.isArray(safeBars) || safeBars.length < 2) return null;
+
   const {
     product,
     notional = MIN_PAPER_TRADE,
@@ -6059,8 +6084,175 @@ function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}
     hedgeMarginCapital = marginCapital,
     hedgeLeverage = leverage,
     strategyTemplateId = 'collar',
-    strategyControls = {}
+    strategyControls = {},
+    maxLookahead = safeBars.length - 1
   } = options || {};
+  const startSafeIndex = Math.max(0, Math.min(Number(candidate.startSafeIndex || 0), safeBars.length - 1));
+  const endSafeIndex = Math.max(0, Math.min(Number(candidate.endSafeIndex || 0), safeBars.length - 1));
+  if (endSafeIndex <= startSafeIndex) return null;
+  if (mode === 'hedge' && endSafeIndex - startSafeIndex < REPLAY_PRACTICE_HEDGE_MIN_SPAN_BARS) return null;
+
+  const startBar = safeBars[startSafeIndex];
+  const endBar = safeBars[endSafeIndex];
+  if (!startBar || !endBar) return null;
+
+  const returnRate =
+    Number.isFinite(Number(candidate.returnRate))
+      ? Number(candidate.returnRate)
+      : getBarCloseValue(startBar) > 0
+        ? getBarCloseValue(endBar) / getBarCloseValue(startBar) - 1
+        : 0;
+  const absoluteMove = Math.abs(returnRate);
+  const spanBonus =
+    candidate.spanBonus !== undefined
+      ? Number(candidate.spanBonus || 0)
+      : ((endSafeIndex - startSafeIndex) / Math.max(1, Number(maxLookahead || 1))) * 0.01;
+  const caseBars = safeBars.slice(startSafeIndex, endSafeIndex + 1);
+  const optimizedHedgeTrigger =
+    mode === 'hedge'
+      ? findBestHedgePracticeTrigger({
+          product,
+          caseBars,
+          startBar,
+          endBar,
+          sleeveNotional: hedgeSleeveNotional,
+          hedgeTicketNotional,
+          hedgeMarginCapital,
+          hedgeLeverage,
+          flashLoanAmount,
+          flashLoanFee
+        })
+      : null;
+  const hedgeStartBar = optimizedHedgeTrigger?.bar || null;
+  const spotOutcome =
+    mode === 'spot'
+      ? estimateSpotPracticeOutcome({
+          product,
+          startBar,
+          endBar,
+          notional
+        })
+      : null;
+  const leveragedOutcome =
+    mode === 'leverage'
+      ? estimateLeveragePracticeOutcome({
+          startBar,
+          endBar,
+          direction: 'long',
+          marginCapital,
+          leverage,
+          notional,
+          flashLoanAmount,
+          flashLoanFee
+        })
+      : null;
+  const hedgeOutcome =
+    mode === 'hedge'
+      ? optimizedHedgeTrigger?.outcome ||
+        estimateHedgePracticeOutcome({
+          product,
+          startBar,
+          hedgeStartBar,
+          endBar,
+          sleeveNotional: hedgeSleeveNotional,
+          hedgeTicketNotional,
+          hedgeMarginCapital,
+          hedgeLeverage,
+          flashLoanAmount,
+          flashLoanFee
+        })
+      : null;
+  const strategyOutcome =
+    mode === 'strategy'
+      ? estimateOptionStrategyPracticeOutcome({
+          product,
+          startBar,
+          endBar,
+          notional,
+          templateId: strategyTemplateId,
+          controls: strategyControls
+        })
+      : null;
+  const modeOutcomePnl = spotOutcome?.netPnl ?? leveragedOutcome?.netPnl ?? hedgeOutcome?.netPnl ?? strategyOutcome?.netPnl ?? null;
+  const modeOutcomeReturnRate =
+    spotOutcome?.netReturnRate ??
+    (leveragedOutcome && notional > 0 ? leveragedOutcome.netPnl / Math.max(1, Number(notional || 0)) : null) ??
+    hedgeOutcome?.netReturnRate ??
+    strategyOutcome?.netReturnRate ??
+    returnRate;
+  const spotScoreReturn = spotOutcome?.netReturnRate ?? returnRate;
+  const maxDrawdownRate =
+    mode === 'hedge' && optimizedHedgeTrigger?.maxDrawdownRate !== undefined
+      ? optimizedHedgeTrigger.maxDrawdownRate
+      : estimatePracticePathMaxDrawdownRate({
+          mode,
+          product,
+          caseBars,
+          startBar,
+          hedgeStartBar,
+          endBar,
+          notional,
+          leverage,
+          marginCapital,
+          flashLoanAmount,
+          flashLoanFee,
+          hedgeSleeveNotional,
+          hedgeTicketNotional,
+          hedgeMarginCapital,
+          hedgeLeverage,
+          strategyTemplateId,
+          strategyControls
+        });
+  const capitalBase = getPracticeCapitalBase({
+    mode,
+    notional,
+    marginCapital,
+    leverage,
+    hedgeSleeveNotional
+  });
+  const rawReturnScore =
+    modeOutcomePnl !== null && Number.isFinite(Number(modeOutcomePnl))
+      ? Number(modeOutcomePnl) / capitalBase
+      : mode === 'hedge'
+        ? -returnRate
+        : mode === 'leverage'
+          ? absoluteMove
+          : mode === 'spot'
+            ? spotScoreReturn
+            : modeOutcomeReturnRate;
+  const score = getDrawdownAdjustedPracticeScore({
+    rawReturnScore,
+    maxDrawdownRate,
+    spanBonus
+  });
+  const riskAdjustedPnl =
+    modeOutcomePnl !== null && Number.isFinite(Number(modeOutcomePnl))
+      ? roundNumber(Number(modeOutcomePnl) - capitalBase * getDrawdownMagnitude(maxDrawdownRate) * REPLAY_PRACTICE_DRAWDOWN_PENALTY_FACTOR, 2)
+      : null;
+
+  return {
+    ...candidate,
+    startSafeIndex,
+    endSafeIndex,
+    startIndex: startBar.index,
+    endIndex: endBar.index,
+    returnRate,
+    spotOutcome,
+    leveragedOutcome,
+    hedgeOutcome,
+    hedgeStartIndex: hedgeStartBar?.index ?? null,
+    strategyOutcome,
+    modeOutcomePnl,
+    modeOutcomeReturnRate,
+    maxDrawdownRate,
+    maxDrawdownPnl: roundNumber(capitalBase * getDrawdownMagnitude(maxDrawdownRate), 2),
+    riskAdjustedPnl,
+    riskAdjustedReturnRate: roundNumber(score, 4),
+    score
+  };
+}
+
+function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}) {
   if (!Array.isArray(bars) || bars.length < 2) {
     return { safeBars: [], candidates: [] };
   }
@@ -6071,220 +6263,60 @@ function buildReplayPracticeCandidatePool(bars = [], mode = 'spot', options = {}
     return { safeBars, candidates: [] };
   }
 
+  if (mode === 'hedge' && safeBars.length < REPLAY_PRACTICE_HEDGE_MIN_SPAN_BARS + 1) {
+    return { safeBars, candidates: [] };
+  }
+
   const maxLookahead = Math.max(2, Math.min(safeBars.length - 1, safeBars.length >= 120 ? 42 : safeBars.length >= 45 ? 21 : 10));
+  const minWindowSpan = mode === 'hedge' ? REPLAY_PRACTICE_HEDGE_MIN_SPAN_BARS : 1;
+  const scoringOptions = { ...(options || {}), maxLookahead };
   const candidates = [];
 
   for (let startSafeIndex = 0; startSafeIndex < safeBars.length - 1; startSafeIndex += 1) {
     const startBar = safeBars[startSafeIndex];
     const endLimit = Math.min(safeBars.length - 1, startSafeIndex + maxLookahead);
 
-    for (let endSafeIndex = startSafeIndex + 1; endSafeIndex <= endLimit; endSafeIndex += 1) {
+    for (let endSafeIndex = startSafeIndex + minWindowSpan; endSafeIndex <= endLimit; endSafeIndex += 1) {
       const endBar = safeBars[endSafeIndex];
       const returnRate = endBar.closeValue / startBar.closeValue - 1;
-      const absoluteMove = Math.abs(returnRate);
       const spanBonus = ((endSafeIndex - startSafeIndex) / maxLookahead) * 0.01;
-      const caseBars = safeBars.slice(startSafeIndex, endSafeIndex + 1);
-      const hedgeCaseBars = mode === 'hedge' ? caseBars : [];
-      const optimizedHedgeTrigger =
-        mode === 'hedge'
-          ? findBestHedgePracticeTrigger({
-              product,
-              caseBars: hedgeCaseBars,
-              startBar,
-              endBar,
-              sleeveNotional: hedgeSleeveNotional,
-              hedgeTicketNotional,
-              hedgeMarginCapital,
-              hedgeLeverage,
-              flashLoanAmount,
-              flashLoanFee
-            })
-          : null;
-      const hedgeStartBar = optimizedHedgeTrigger?.bar || null;
-      const spotOutcome =
-        mode === 'spot'
-          ? estimateSpotPracticeOutcome({
-              product,
-              startBar,
-              endBar,
-              notional
-            })
-          : null;
-      const leveragedOutcome =
-        mode === 'leverage'
-          ? estimateLeveragePracticeOutcome({
-              startBar,
-              endBar,
-              direction: 'long',
-              marginCapital,
-              leverage,
-              notional,
-              flashLoanAmount,
-              flashLoanFee
-            })
-          : null;
-      const hedgeOutcome =
-        mode === 'hedge'
-          ? optimizedHedgeTrigger?.outcome ||
-            estimateHedgePracticeOutcome({
-                product,
-                startBar,
-                hedgeStartBar,
-                endBar,
-                sleeveNotional: hedgeSleeveNotional,
-                hedgeTicketNotional,
-                hedgeMarginCapital,
-                hedgeLeverage,
-                flashLoanAmount,
-                flashLoanFee
-              })
-          : null;
-      const strategyOutcome =
-        mode === 'strategy'
-          ? estimateOptionStrategyPracticeOutcome({
-              product,
-              startBar,
-              endBar,
-              notional,
-              templateId: strategyTemplateId,
-              controls: strategyControls
-            })
-          : null;
-      const modeOutcomePnl = spotOutcome?.netPnl ?? leveragedOutcome?.netPnl ?? hedgeOutcome?.netPnl ?? strategyOutcome?.netPnl ?? null;
-      const modeOutcomeReturnRate =
-        spotOutcome?.netReturnRate ??
-        (leveragedOutcome && notional > 0 ? leveragedOutcome.netPnl / Math.max(1, Number(notional || 0)) : null) ??
-        hedgeOutcome?.netReturnRate ??
-        strategyOutcome?.netReturnRate ??
-        returnRate;
-      const spotScoreReturn = spotOutcome?.netReturnRate ?? returnRate;
-      const maxDrawdownRate =
-        mode === 'hedge' && optimizedHedgeTrigger?.maxDrawdownRate !== undefined
-          ? optimizedHedgeTrigger.maxDrawdownRate
-          : estimatePracticePathMaxDrawdownRate({
-              mode,
-              product,
-              caseBars,
-              startBar,
-              hedgeStartBar,
-              endBar,
-              notional,
-              leverage,
-              marginCapital,
-              flashLoanAmount,
-              flashLoanFee,
-              hedgeSleeveNotional,
-              hedgeTicketNotional,
-              hedgeMarginCapital,
-              hedgeLeverage,
-              strategyTemplateId,
-              strategyControls
-            });
-      const capitalBase = getPracticeCapitalBase({
-        mode,
-        notional,
-        marginCapital,
-        leverage,
-        hedgeSleeveNotional
-      });
-      const rawReturnScore =
-        modeOutcomePnl !== null && Number.isFinite(Number(modeOutcomePnl))
-          ? Number(modeOutcomePnl) / capitalBase
-          : mode === 'hedge'
-            ? -returnRate
-            : mode === 'leverage'
-              ? absoluteMove
-              : mode === 'spot'
-                ? spotScoreReturn
-                : modeOutcomeReturnRate;
-      const score = getDrawdownAdjustedPracticeScore({
-        rawReturnScore,
-        maxDrawdownRate,
-        spanBonus
-      });
-      const riskAdjustedPnl =
-        modeOutcomePnl !== null && Number.isFinite(Number(modeOutcomePnl))
-          ? roundNumber(Number(modeOutcomePnl) - capitalBase * getDrawdownMagnitude(maxDrawdownRate) * REPLAY_PRACTICE_DRAWDOWN_PENALTY_FACTOR, 2)
-          : null;
 
-      candidates.push({
-        startSafeIndex,
-        endSafeIndex,
-        startIndex: startBar.index,
-        endIndex: endBar.index,
-        returnRate,
-        spotOutcome,
-        leveragedOutcome,
-        hedgeOutcome,
-        hedgeStartIndex: hedgeStartBar?.index ?? null,
-        strategyOutcome,
-        modeOutcomePnl,
-        modeOutcomeReturnRate,
-        maxDrawdownRate,
-        maxDrawdownPnl: roundNumber(capitalBase * getDrawdownMagnitude(maxDrawdownRate), 2),
-        riskAdjustedPnl,
-        riskAdjustedReturnRate: roundNumber(score, 4),
-        score
-      });
+      const hydratedCandidate = hydrateReplayPracticeCandidate(
+        {
+          startSafeIndex,
+          endSafeIndex,
+          startIndex: startBar.index,
+          endIndex: endBar.index,
+          returnRate,
+          spanBonus
+        },
+        safeBars,
+        mode,
+        scoringOptions
+      );
+
+      if (hydratedCandidate) {
+        candidates.push(hydratedCandidate);
+      }
     }
   }
 
   if (!candidates.length) {
-    const fallbackMaxDrawdownRate = estimatePracticePathMaxDrawdownRate({
-      mode,
-      product,
-      caseBars: safeBars,
-      startBar: safeBars[0],
-      endBar: safeBars[safeBars.length - 1],
-      notional,
-      leverage,
-      marginCapital,
-      flashLoanAmount,
-      flashLoanFee,
-      hedgeSleeveNotional,
-      hedgeTicketNotional,
-      hedgeMarginCapital,
-      hedgeLeverage,
-      strategyTemplateId,
-      strategyControls
-    });
-    const fallbackCapitalBase = getPracticeCapitalBase({
-      mode,
-      notional,
-      marginCapital,
-      leverage,
-      hedgeSleeveNotional
-    });
-    candidates.push({
+    const fallbackCandidate = hydrateReplayPracticeCandidate(
+      {
       startSafeIndex: 0,
       endSafeIndex: safeBars.length - 1,
       startIndex: safeBars[0].index,
       endIndex: safeBars[safeBars.length - 1].index,
-      returnRate: safeBars[safeBars.length - 1].closeValue / safeBars[0].closeValue - 1,
-      spotOutcome:
-        mode === 'spot'
-          ? estimateSpotPracticeOutcome({
-              product,
-              startBar: safeBars[0],
-              endBar: safeBars[safeBars.length - 1],
-              notional
-            })
-          : null,
-      strategyOutcome:
-        mode === 'strategy'
-          ? estimateOptionStrategyPracticeOutcome({
-              product,
-              startBar: safeBars[0],
-              endBar: safeBars[safeBars.length - 1],
-              notional,
-              templateId: strategyTemplateId,
-              controls: strategyControls
-            })
-          : null,
-      maxDrawdownRate: fallbackMaxDrawdownRate,
-      maxDrawdownPnl: roundNumber(fallbackCapitalBase * getDrawdownMagnitude(fallbackMaxDrawdownRate), 2),
-      score: 0
-    });
+        returnRate: safeBars[safeBars.length - 1].closeValue / safeBars[0].closeValue - 1,
+        spanBonus: 0
+      },
+      safeBars,
+      mode,
+      { ...(options || {}), maxLookahead: safeBars.length - 1 }
+    );
+
+    if (fallbackCandidate) candidates.push(fallbackCandidate);
   }
 
   return { safeBars, candidates };
@@ -6316,9 +6348,15 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
       ? bars[candidate.hedgeStartIndex] || safeBars.find((bar) => bar.index === candidate.hedgeStartIndex) || null
       : null;
   const triggerBar = mode === 'hedge' ? optimizedTriggerBar || getHedgePracticeTriggerBar(caseBars, startBar, endBar) : fallbackTriggerBar;
-  const triggerIndex = Math.min(Math.max(triggerBar.index, candidate.startIndex + 1), candidate.endIndex);
+  const rawTriggerIndex = Number.isInteger(triggerBar?.index) ? triggerBar.index : candidate.startIndex + 1;
+  const maxTriggerIndex =
+    mode === 'hedge' && candidate.endIndex - candidate.startIndex >= REPLAY_PRACTICE_HEDGE_MIN_SPAN_BARS
+      ? candidate.endIndex - 1
+      : candidate.endIndex;
+  const triggerIndex = Math.min(Math.max(rawTriggerIndex, candidate.startIndex + 1), maxTriggerIndex);
+  const resolvedTriggerBar = bars[triggerIndex] || safeBars.find((bar) => bar.index === triggerIndex) || triggerBar || startBar;
   const holdingDays = getReplayCaseHoldingDays(startBar, endBar);
-  const triggerDays = getReplayCaseHoldingDays(startBar, bars[triggerIndex]);
+  const triggerDays = getReplayCaseHoldingDays(startBar, resolvedTriggerBar);
   const direction = mode === 'hedge' ? 'short' : mode === 'leverage' ? 'long' : mode === 'strategy' ? 'strategy' : candidate.returnRate < 0 ? 'short' : 'long';
   const spotOutcome =
     mode === 'spot'
@@ -6350,7 +6388,7 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
         estimateHedgePracticeOutcome({
           product,
           startBar,
-          hedgeStartBar: triggerBar,
+          hedgeStartBar: resolvedTriggerBar,
           endBar,
           sleeveNotional: hedgeSleeveNotional,
           hedgeTicketNotional,
@@ -6388,7 +6426,7 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
           product,
           caseBars,
           startBar,
-          hedgeStartBar: triggerBar,
+          hedgeStartBar: resolvedTriggerBar,
           endBar,
           notional,
           leverage,
@@ -6420,7 +6458,11 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
         ? roundNumber(Number(outcomePnl || 0) - maxDrawdownPnl * REPLAY_PRACTICE_DRAWDOWN_PENALTY_FACTOR, 2)
         : null;
   const resultCacheState = options?.previewMode ? candidate.cacheState || 'computed' : 'exact';
-  const resultDateSignature = `${startBar?.ts || ''}:${triggerBar?.ts || ''}:${endBar?.ts || ''}`;
+  const resultDateSignature = `${startBar?.ts || ''}:${resolvedTriggerBar?.ts || ''}:${endBar?.ts || ''}`;
+  const sizingNotional = mode === 'hedge' ? Math.max(Number(hedgeSleeveNotional || 0), Number(hedgeTicketNotional || 0)) : notional;
+  const notionalBandLabel = formatReplayPracticeNotionalBand(sizingNotional, {
+    exact: !options?.previewMode || mode === 'hedge' || mode === 'strategy'
+  });
 
   return {
     mode,
@@ -6443,6 +6485,8 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
     leveragedOutcome,
     hedgeOutcome,
     strategyOutcome,
+    notionalBandLabel,
+    sizingNotional: roundNumber(Number(sizingNotional || 0), 2),
     scenario: candidate.scenario || 'best',
     scenarioLabel: candidate.scenarioLabel || 'Best case',
     scenarioRank: candidate.scenarioRank || 1,
@@ -6458,7 +6502,7 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
       triggerIndex,
       endIndex: candidate.endIndex,
       startDate: startBar?.ts || '',
-      triggerDate: triggerBar?.ts || '',
+      triggerDate: resolvedTriggerBar?.ts || '',
       endDate: endBar?.ts || '',
       outcomePnl: outcomePnl !== null ? roundNumber(outcomePnl, 2) : null,
       outcomeReturnRate: outcomeReturnRate !== null ? roundNumber(outcomeReturnRate, 4) : null,
@@ -6467,7 +6511,7 @@ function buildReplayPracticeCaseFromCandidate(bars = [], safeBars = [], candidat
       strategyTemplateId
     },
     startBar,
-    triggerBar: bars[triggerIndex],
+    triggerBar: resolvedTriggerBar,
     endBar
   };
 }
@@ -7717,6 +7761,7 @@ function PaperTradingInner() {
   const [selectedLane, setSelectedLane] = useState(DEFAULT_REPLAY_PRODUCT?.lane || REPLAY_LANE_OPTIONS[0]?.id || 'spot');
   const [selectedProductId, setSelectedProductId] = useState(DEFAULT_REPLAY_PRODUCT?.id || REPLAY_PRODUCTS[0]?.id);
   const [selectedPracticeCaseIndex, setSelectedPracticeCaseIndex] = useState(0);
+  const [practiceCasePickMode, setPracticeCasePickMode] = useState('auto-best');
   const [paperShelfPage, setPaperShelfPage] = useState(1);
   const [replayFillsPage, setReplayFillsPage] = useState(1);
   const [productRiskFilter, setProductRiskFilter] = useState('all');
@@ -7864,6 +7909,7 @@ function PaperTradingInner() {
   const [paperBackendLeaderboards, setPaperBackendLeaderboards] = useState(() => emptyPaperBackendLeaderboards());
   const [paperBackendStatus, setPaperBackendStatus] = useState('Backend sync: local preview until API responds.');
   const [backendRoutePreview, setBackendRoutePreview] = useState(null);
+  const [backendPracticePreview, setBackendPracticePreview] = useState(null);
   const [wealthDeskState, setWealthDeskState] = useState(() => readStoredWealthDeskState(address));
   const walletAnchorRef = useRef(null);
   const productLanesRef = useRef(null);
@@ -11419,6 +11465,7 @@ function PaperTradingInner() {
       ...current,
       borrow: safeTemplateId
     }));
+    setPracticeCasePickMode('auto-best');
     setSelectedPracticeCaseIndex(0);
     setStrategyAiTemplateGenerated(false);
     setFeedback(`${OPTION_STRATEGY_LABELS[safeTemplateId] || 'Strategy'} template selected.`);
@@ -14383,6 +14430,7 @@ function PaperTradingInner() {
     ]
   );
   useEffect(() => {
+    setPracticeCasePickMode('auto-best');
     setSelectedPracticeCaseIndex(0);
   }, [
     routePracticeMode,
@@ -14395,6 +14443,12 @@ function PaperTradingInner() {
     Math.min(selectedPracticeCaseIndex, Math.max(0, routePracticeCases.length - 1))
   );
   const routePracticeCase = routePracticeCases[selectedPracticeCaseSafeIndex] || null;
+  const routePracticeSelectionCopy = routePracticeCase
+    ? practiceCasePickMode === 'manual'
+      ? `Selected #${selectedPracticeCaseSafeIndex + 1} / ${routePracticeCase.notionalBandLabel || 'current notional'}`
+      : `Auto best / ${routePracticeCase.notionalBandLabel || 'current notional'}`
+    : '';
+  const backendPracticePreviewLabel = backendPracticePreview?.source === 'local-fallback' ? 'Calc' : 'API';
   const routePracticeTicker = selectedProduct?.ticker || 'this product';
   const routePracticeGrossMoveLabel = routePracticeCase
     ? formatSignedPercent((routePracticeCase.grossReturnRate ?? routePracticeCase.returnRate) * 100)
@@ -14571,6 +14625,12 @@ function PaperTradingInner() {
           }
         ]
       : routePracticeStepRows;
+
+  function handleSelectRoutePracticeCase(index) {
+    const safeIndex = Math.max(0, Math.min(Number(index || 0), Math.max(0, routePracticeCases.length - 1)));
+    setPracticeCasePickMode(safeIndex === 0 ? 'auto-best' : 'manual');
+    setSelectedPracticeCaseIndex(safeIndex);
+  }
 
   function handleApplyRoutePracticeCase(step = 'start') {
     if (!routePracticeCase || !selectedView?.bars?.length) {
@@ -15338,6 +15398,8 @@ function PaperTradingInner() {
     const timer = window.setTimeout(() => {
       const entryBar = replayFocus.lockedBar || replayFocus.bar;
       const targetBar = timedExitTargetBar || replayFocus.hoveredBar || replayFocus.bar;
+      const routeIsHedgePreview = selectedAdvancedRoute === 'perp' && selectedRouteFocusConfig?.id === 'hedge';
+      const hedgeEntryBar = routeIsHedgePreview ? replayFocus.bar || entryBar : null;
       void calculateTutorialRoute({
         routeId: selectedAdvancedRoute,
         focusId: selectedRouteFocusConfig?.id || '',
@@ -15351,6 +15413,8 @@ function PaperTradingInner() {
         entryPrice: Number(entryBar?.close || 0),
         exitPrice: Number(targetBar?.close || entryBar?.close || 0),
         holdingDays: Number(simulationHoldingDays || timedExitRequestedDays || 1),
+        hedgeEntryPrice: routeIsHedgePreview ? Number(hedgeEntryBar?.close || entryBar?.close || 0) : undefined,
+        hedgeHoldingDays: routeIsHedgePreview ? Number(timedExitRequestedDays || simulationHoldingDays || 1) : undefined,
         leverage: Number(routeLeverageMultiple || 1),
         hedgeRatio: Number(hedgeRatio || 0)
       })
@@ -15383,6 +15447,84 @@ function PaperTradingInner() {
     timedExitTargetBar?.close,
     timedExitTargetBar?.ts,
     tradeAmount
+  ]);
+
+  useEffect(() => {
+    if (!selectedProduct || !routePracticeCase) {
+      setBackendPracticePreview(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const routeId =
+        routePracticeCase.mode === 'strategy'
+          ? 'borrow'
+          : routePracticeCase.mode === 'hedge' || routePracticeCase.mode === 'leverage'
+            ? 'perp'
+            : 'spot';
+      const focusId =
+        routePracticeCase.mode === 'hedge'
+          ? 'hedge'
+          : routePracticeCase.mode === 'strategy'
+            ? selectedRouteFocusConfig?.id || selectedOptionStrategyTemplateId
+            : selectedRouteFocusConfig?.id || '';
+      const isHedgeCase = routePracticeCase.mode === 'hedge';
+      const caseAmount = isHedgeCase ? routePracticeSizingHedgeSleeve : routePracticeSizingNotional;
+      const caseHedgeRatio =
+        isHedgeCase && routePracticeSizingHedgeSleeve > 0
+          ? routePracticeSizingHedgeTicket / routePracticeSizingHedgeSleeve
+          : hedgeRatio;
+
+      void calculateTutorialRoute({
+        routeId,
+        focusId,
+        product: {
+          id: selectedProduct.id,
+          ticker: selectedProduct.ticker,
+          name: selectedProduct.name,
+          lane: selectedProduct.lane
+        },
+        amount: Number(caseAmount || MIN_PAPER_TRADE),
+        entryPrice: Number(routePracticeCase.startBar?.close || 0),
+        exitPrice: Number(routePracticeCase.endBar?.close || routePracticeCase.startBar?.close || 0),
+        holdingDays: Number(routePracticeCase.holdingDays || 1),
+        hedgeEntryPrice: isHedgeCase
+          ? Number(routePracticeCase.triggerBar?.close || routePracticeCase.startBar?.close || 0)
+          : undefined,
+        hedgeHoldingDays: isHedgeCase
+          ? Number(getReplayCaseHoldingDays(routePracticeCase.triggerBar, routePracticeCase.endBar) || routePracticeCase.holdingDays || 1)
+          : undefined,
+        leverage: Number(routeLeverageMultiple || 1),
+        hedgeRatio: Number(caseHedgeRatio || 0)
+      })
+        .then((payload) => {
+          if (!cancelled) setBackendPracticePreview(payload?.result || null);
+        })
+        .catch(() => {
+          if (!cancelled) setBackendPracticePreview(null);
+        });
+    }, 220);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    hedgeRatio,
+    routeLeverageMultiple,
+    routePracticeCase?.endDate,
+    routePracticeCase?.holdingDays,
+    routePracticeCase?.mode,
+    routePracticeCase?.result?.dateSignature,
+    routePracticeCase?.startDate,
+    routePracticeCase?.triggerDate,
+    routePracticeSizingHedgeSleeve,
+    routePracticeSizingHedgeTicket,
+    routePracticeSizingNotional,
+    selectedOptionStrategyTemplateId,
+    selectedProduct,
+    selectedRouteFocusConfig?.id
   ]);
 
   function renderStrategyTemplateLeaderboardCard({
@@ -15476,7 +15618,7 @@ function PaperTradingInner() {
                       key={`${practiceCase.scenarioLabel}-${practiceCase.startIndex}-${practiceCase.endIndex}`}
                       type="button"
                       className={`paper-practice-example-chip ${selectedPracticeCaseSafeIndex === index ? 'active' : ''}`.trim()}
-                      onClick={() => setSelectedPracticeCaseIndex(index)}
+                      onClick={() => handleSelectRoutePracticeCase(index)}
                     >
                       <span>{practiceCase.scenarioLabel}</span>
                       <strong className={practiceToneValue >= 0 ? 'risk-low' : 'risk-high'}>
@@ -15485,9 +15627,20 @@ function PaperTradingInner() {
                       <p>
                         {formatReplayDate(practiceCase.startBar?.ts, selectedView?.interval)} to {formatReplayDate(practiceCase.endBar?.ts, selectedView?.interval)}
                       </p>
+                      <em>{practiceCase.notionalBandLabel || routePracticeSelectionCopy}</em>
                     </button>
                   );
                 })}
+              </div>
+            ) : null}
+            {routePracticeSelectionCopy ? (
+              <div className="paper-practice-example-meta">
+                <span>{routePracticeSelectionCopy}</span>
+                {backendPracticePreview?.metrics ? (
+                  <span>
+                    {backendPracticePreviewLabel} {formatSigned(backendPracticePreview.metrics.netPnl)} PT / reward {formatNotional(backendPracticePreview.metrics.rewardPT)} PT
+                  </span>
+                ) : null}
               </div>
             ) : null}
             <div className="paper-shelf-learning-case-grid">
@@ -15513,6 +15666,20 @@ function PaperTradingInner() {
                 <span>Max DD</span>
                 <strong>{routePracticeMaxDrawdownLabel}</strong>
               </div>
+              {backendPracticePreview?.metrics ? (
+                <>
+                  <div>
+                    <span>{backendPracticePreviewLabel} net</span>
+                    <strong className={backendPracticePreview.metrics.netPnl >= 0 ? 'risk-low' : 'risk-high'}>
+                      {formatSigned(backendPracticePreview.metrics.netPnl)} PT
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{backendPracticePreviewLabel} reward</span>
+                    <strong>{formatNotional(backendPracticePreview.metrics.rewardPT)} PT</strong>
+                  </div>
+                </>
+              ) : null}
             </div>
             {routePracticeStrategySliderRows.length ? (
               <div className="paper-practice-strategy-slider-card">
@@ -16548,25 +16715,14 @@ function PaperTradingInner() {
                         {Math.round(strategyAiTemplate.templateScore)}/100
                       </span>
                     </div>
-                    <div className="paper-strategy-ai-metric-grid paper-strategy-ai-result-list">
-                      <div>
-                        <span>Paper win rate</span>
-                        <strong>{strategyAiTemplate.winRate}%</strong>
-                      </div>
-                      <div>
-                        <span>Expected return</span>
-                        <strong className={strategyAiTemplate.expectedReturnPct >= 0 ? 'risk-low' : 'risk-high'}>
-                          {formatSignedPercent(strategyAiTemplate.expectedReturnPct, 1)}
-                        </strong>
-                      </div>
-                      <div>
-                        <span>Max drawdown</span>
-                        <strong className="risk-high">-{strategyAiTemplate.maxDrawdownPct.toFixed(1)}%</strong>
-                      </div>
-                      <div>
-                        <span>Template score</span>
-                        <strong>{Math.round(strategyAiTemplate.templateScore)}/100</strong>
-                      </div>
+                    <div className="paper-strategy-ai-feature-grid paper-strategy-ai-route-feature-grid">
+                      {strategyAiTemplate.features.map((feature) => (
+                        <div key={feature.id} className="paper-strategy-ai-feature-card">
+                          <span>{feature.label}</span>
+                          <strong>{feature.value}</strong>
+                          <p>{feature.copy}</p>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -16972,37 +17128,6 @@ function PaperTradingInner() {
                         {formatSignedPercent(template.expectedReturnPct, 1)} / -{template.maxDrawdownPct.toFixed(1)}% DD
                       </small>
                     </button>
-                  ))}
-                </div>
-
-                <div className="paper-strategy-ai-metric-grid paper-strategy-ai-result-list">
-                  <div>
-                    <span>Paper win rate</span>
-                    <strong>{strategyAiTemplate.winRate}%</strong>
-                  </div>
-                  <div>
-                    <span>Expected return</span>
-                    <strong className={strategyAiTemplate.expectedReturnPct >= 0 ? 'risk-low' : 'risk-high'}>
-                      {formatSignedPercent(strategyAiTemplate.expectedReturnPct, 1)}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Max drawdown</span>
-                    <strong className="risk-high">-{strategyAiTemplate.maxDrawdownPct.toFixed(1)}%</strong>
-                  </div>
-                  <div>
-                    <span>Template score</span>
-                    <strong>{Math.round(strategyAiTemplate.templateScore)}/100</strong>
-                  </div>
-                </div>
-
-                <div className="paper-strategy-ai-feature-grid">
-                  {strategyAiTemplate.features.map((feature) => (
-                    <div key={feature.id} className="paper-strategy-ai-feature-card">
-                      <span>{feature.label}</span>
-                      <strong>{feature.value}</strong>
-                      <p>{feature.copy}</p>
-                    </div>
                   ))}
                 </div>
 
@@ -17949,9 +18074,9 @@ function PaperTradingInner() {
         </div>
 
         {backendRoutePreview?.metrics ? (
-          <div className="paper-backend-route-strip">
+              <div className="paper-backend-route-strip">
             <div>
-              <span>API route calc</span>
+              <span>{backendRoutePreview.source === 'local-fallback' ? 'Local route calc' : 'API route calc'}</span>
               <strong>{backendRoutePreview.routeLabel}</strong>
             </div>
             <div>
@@ -18085,7 +18210,7 @@ function PaperTradingInner() {
           </div>
         </div>
 
-        <div className="wealth-header-language-center">
+        <div className="wealth-header-language-center paper-header-language-center">
           <LanguageToggle uiLanguage={uiLanguage} setUiLanguage={setUiLanguage} compact />
         </div>
 

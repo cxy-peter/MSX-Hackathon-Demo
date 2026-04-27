@@ -1,5 +1,6 @@
 import {
   applyCors,
+  getHttpErrorStatus,
   getStorageDescriptor,
   hashJson,
   readJson,
@@ -78,6 +79,7 @@ export default async function handler(req, res) {
 
     sendJson(res, 405, { ok: false, error: 'Method not allowed.' });
   } catch (error) {
-    sendJson(res, 500, { ok: false, error: error.message || 'Profile pointer API failed.' });
+    const statusCode = getHttpErrorStatus(error);
+    sendJson(res, statusCode, { ok: false, error: error.message || 'Profile pointer API failed.' });
   }
 }
