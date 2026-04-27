@@ -55,6 +55,8 @@ button, input, select { font: inherit; color: inherit; }
   justify-content: space-between;
   gap: 28px;
   padding: 14px 0 22px;
+  flex-wrap: wrap;
+  overflow: hidden;
 }
 
 .brand-wrap, .panel-topline, .toolbar, .cta-row, .wallet-badges, .entry-list, .hero-points, .quest-meta, .badge-row, .site-nav, .header-status-row {
@@ -201,6 +203,27 @@ button, input, select { font: inherit; color: inherit; }
   flex-wrap: nowrap;
   gap: clamp(18px, 2.2vw, 32px);
   margin-right: auto;
+  padding-top: 24px;
+  min-width: 0;
+}
+
+.site-header .header-actions {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(620px, 100%);
+}
+
+.site-header .header-status-row,
+.site-header .header-admin-row {
+  max-width: 100%;
+  justify-content: flex-end;
+}
+
+.site-header .paper-token-pill,
+.site-header .wallet-header-btn,
+.site-header .github-project-link,
+.site-header .wallet-nickname-top-btn {
+  max-width: 100%;
 }
 
 .site-nav a:hover { color: var(--text); }
