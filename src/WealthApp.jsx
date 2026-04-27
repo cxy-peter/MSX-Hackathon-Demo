@@ -84,7 +84,7 @@ const DEFAULT_COMPARE_PRODUCT_IDS_BY_CATEGORY = {
   private: ['private-watchlist', 'spacex-secondary', 'stripe-secondary', 'databricks-secondary'],
   auto: ['msx-quant-fund-1', 'msx-quant-fund-2', 'superstate-ustb', 'superstate-uscc'],
   earn: ['hashnote-usyc', 'openeden-tbill', 'superstate-uscc', 'apollo-acred'],
-  dual: ['msx-dual-btc-usdc', 'msx-dual-eth-usdc', 'msx-dual-sol-usdt', 'msx-premium-income-btc'],
+  dual: ['msx-dual-btc-usdt', 'msx-dual-btc-usdc', 'msx-dual-eth-usdt', 'msx-dual-eth-usdc'],
   protected: ['msx-protected-growth-eth', 'msx-premium-income-btc', 'msx-autocall-index', 'superstate-uscc'],
   growth: ['private-watchlist', 'spacex-secondary', 'stripe-secondary', 'bytedance-secondary'],
   protectedGrowth: ['msx-protected-growth-eth', 'msx-premium-income-btc', 'superstate-ustb', 'msx-autocall-index'],
@@ -114,8 +114,7 @@ const DUAL_CURRENCY_PAIR_OPTIONS = [
   { id: 'BTC/USDT', base: 'BTC', quote: 'USDT', referencePrice: 77548.79 },
   { id: 'BTC/USDC', base: 'BTC', quote: 'USDC', referencePrice: 77548.79 },
   { id: 'ETH/USDT', base: 'ETH', quote: 'USDT', referencePrice: 3140.42 },
-  { id: 'ETH/USDC', base: 'ETH', quote: 'USDC', referencePrice: 3140.42 },
-  { id: 'SOL/USDT', base: 'SOL', quote: 'USDT', referencePrice: 162.75 }
+  { id: 'ETH/USDC', base: 'ETH', quote: 'USDC', referencePrice: 3140.42 }
 ];
 const DUAL_CURRENCY_DIRECTION_OPTIONS = [
   { id: 'buy-low', label: 'Buy low', copy: 'User earns premium but may settle into the base asset if price finishes below target.' },
@@ -257,7 +256,7 @@ const WEALTH_OPPORTUNITY_TYPES = [
     placement: 'wealth',
     filterCategory: 'dual',
     goalId: 'earn',
-    productIds: ['msx-dual-btc-usdc', 'msx-dual-eth-usdc', 'msx-dual-sol-usdt'],
+    productIds: ['msx-dual-btc-usdt', 'msx-dual-btc-usdc', 'msx-dual-eth-usdt', 'msx-dual-eth-usdc'],
     why: 'Extends Dual Investment into buy-the-dip, take-profit, and barrier enhanced-yield plans.',
     userCopy: 'The product must show whether the user may receive original asset, converted asset, or reduced value.'
   },
@@ -388,7 +387,7 @@ const WEALTH_PRODUCT_TYPE_FILTERS = [
 const DEFAULT_RISK_RECOMMENDATION_BUCKETS = [
   { risk: 'Low', ids: ['superstate-ustb', 'ondo-usdy', 'blackrock-buidl', 'hashnote-usyc'] },
   { risk: 'Medium', ids: ['msx-protected-growth-eth', 'superstate-uscc', 'hamilton-scope', 'apollo-acred'] },
-  { risk: 'High', ids: ['msx-dual-eth-usdc', 'private-watchlist', 'spacex-secondary', 'msx-quant-fund-1'] }
+  { risk: 'High', ids: ['msx-dual-btc-usdt', 'msx-dual-eth-usdt', 'private-watchlist', 'msx-quant-fund-1'] }
 ];
 const WEALTH_TIMELINE_FLOAT_STORAGE_KEY = 'msx.wealthTimelineFloat';
 const WEALTH_TIMELINE_FLOAT_EDGE_GAP = 18;
@@ -498,10 +497,11 @@ const WEALTH_RECEIPT_PRODUCT_IDS = {
   'openai-secondary': 19,
   'msx-protected-growth-eth': 20,
   'msx-premium-income-btc': 21,
-  'msx-dual-btc-usdc': 22,
-  'msx-dual-eth-usdc': 23,
-  'msx-dual-sol-usdt': 24,
-  'msx-autocall-index': 25
+  'msx-dual-btc-usdt': 22,
+  'msx-dual-btc-usdc': 23,
+  'msx-dual-eth-usdt': 24,
+  'msx-dual-eth-usdc': 25,
+  'msx-autocall-index': 26
 };
 const WEALTH_AMOUNT_PRESET_VALUES = [1000, 5000, 10000, 25000, 50000, 100000];
 const WEALTH_SETTLEMENT_POLICIES = {
@@ -617,12 +617,33 @@ const WEALTH_SETTLEMENT_POLICIES = {
     redeemable: true,
     detail: 'Premium-income receipts should settle around scheduled option cycles; redemption is routed, not instant, because open option exposure can remain outstanding.'
   },
+  'msx-dual-btc-usdt': {
+    label: 'Settlement only',
+    timing: '7-day target-price settlement',
+    tone: 'risk-high',
+    redeemable: false,
+    detail: 'Dual Investment is settled at the target-price observation. The user may receive BTC or USDT; there is no ordinary yield-style redeem button before settlement.'
+  },
   'msx-dual-btc-usdc': {
     label: 'Settlement only',
     timing: '7-day target-price settlement',
     tone: 'risk-high',
     redeemable: false,
     detail: 'Dual Investment is settled at the target-price observation. The user may receive BTC or USDC; there is no ordinary yield-style redeem button before settlement.'
+  },
+  'msx-dual-eth-usdt': {
+    label: 'Settlement only',
+    timing: '7-day target-price settlement',
+    tone: 'risk-high',
+    redeemable: false,
+    detail: 'Dual Investment is settled at the target-price observation. The user may receive ETH or USDT; there is no ordinary yield-style redeem button before settlement.'
+  },
+  'msx-dual-eth-usdc': {
+    label: 'Settlement only',
+    timing: '7-day target-price settlement',
+    tone: 'risk-high',
+    redeemable: false,
+    detail: 'Dual Investment is settled at the target-price observation. The user may receive ETH or USDC; there is no ordinary yield-style redeem button before settlement.'
   },
   'msx-autocall-index': {
     label: 'Observation dates',
@@ -4849,10 +4870,6 @@ function WealthInner() {
   const selectedDualWindowSuggestedMarkerPct = selectedDualWindowMoveLimit
     ? ((selectedDualWindowNavMovePct + selectedDualWindowMoveLimit) / (selectedDualWindowMoveLimit * 2)) * 100
     : 50;
-  const dualCurrencyTargetPrice = roundNumber(
-    dualCurrencyPair.referencePrice * (1 + Number(dualCurrencyTargetPct || 0) / 100),
-    2
-  );
   const dualCurrencyApr = Math.max(
     0.01,
     (Math.abs(Number(dualCurrencyTargetPct || 0)) * 0.11 + 0.18) * Math.max(0.25, Math.min(1.4, 30 / Math.max(1, Number(settlementDays || 1))))
@@ -4861,11 +4878,6 @@ function WealthInner() {
   const dualCurrencyExamplePrincipal = 1000;
   const dualCurrencyTermPremiumRate = dualCurrencyApr * (Math.max(1, Number(settlementDays || 1)) / 365);
   const dualCurrencyExampleReward = roundNumber(dualCurrencyExamplePrincipal * dualCurrencyTermPremiumRate, 2);
-  const dualCurrencyExampleBaseAmount = roundNumber((dualCurrencyExamplePrincipal + dualCurrencyExampleReward) / dualCurrencyTargetPrice, 6);
-  const dualCurrencyTriggerCopy =
-    dualCurrencyDirection === 'buy-low'
-      ? `${dualCurrencyPair.base} <= ${dualCurrencyTargetPrice.toLocaleString()}`
-      : `${dualCurrencyPair.base} >= ${dualCurrencyTargetPrice.toLocaleString()}`;
   const paperProfileText = JSON.stringify(paperProfileState || {}).toLowerCase();
   const paperFlashSignal = /flash.*[1-9]/.test(paperProfileText) || paperProfileText.includes('attested flash');
   const walletProfileScore =
@@ -5988,6 +6000,9 @@ function WealthInner() {
   function handleDetailTopicChange(topicId) {
     const nextTopic = normalizeDetailTopicId(topicId, '');
     setSelectedDetailTopics(nextTopic ? [nextTopic] : []);
+    if (nextTopic) {
+      queueProductScroll(selectedProduct.id, 'detail');
+    }
   }
 
   function handleProductNavPeriodChange(productId, periodId) {
@@ -6816,12 +6831,17 @@ function WealthInner() {
 
   function renderDualOutcomeMap({ className = '' } = {}) {
     if (!isDualInvestmentProduct(selectedProduct)) return null;
+    const chartPair = selectedDualProductPair || dualCurrencyPair;
+    const chartTargetPrice = roundNumber(
+      chartPair.referencePrice * (1 + Number(dualCurrencyTargetPct || 0) / 100),
+      chartPair.referencePrice > 1000 ? 2 : 4
+    );
 
     return (
       <DualOutcomeSimulator
-        pair={dualCurrencyPair}
+        pair={chartPair}
         direction={dualCurrencyDirection}
-        targetPrice={dualCurrencyTargetPrice}
+        targetPrice={chartTargetPrice}
         targetPct={dualCurrencyTargetPct}
         apr={dualCurrencyApr}
         settlementDays={settlementDays}
@@ -6839,15 +6859,15 @@ function WealthInner() {
       : dualProducts[0] || selectedProduct;
     if (!activeDualProduct) return null;
 
-    const activePair = dualCurrencyPair;
+    const activePair = getDualPairForProduct(activeDualProduct, dualCurrencyPair);
     const activeDirectionMeta = dualCurrencyDirectionMeta;
-    const settlementDateFilters = [
-      { id: 'all', label: 'All settlement dates', days: suggestedSettlementDays },
-      { id: '3d', label: '< 3D', days: 2 },
-      { id: '7d', label: '< 7D', days: 6 },
-      { id: '30d', label: '7 - 30D', days: 14 },
-      { id: '60d', label: '30 - 60D', days: 45 },
-      { id: 'over60d', label: '> 60D', days: 90 }
+    const termFilters = [
+      { id: 'all', label: 'Suggested term', days: suggestedSettlementDays },
+      { id: '2d', label: '2D term', days: 2 },
+      { id: '6d', label: '6D term', days: 6 },
+      { id: '14d', label: '14D term', days: 14 },
+      { id: '45d', label: '45D term', days: 45 },
+      { id: '90d', label: '90D term', days: 90 }
     ];
     const targetDirection = dualCurrencyDirection === 'sell-high' ? 1 : -1;
     const baseDistance = Math.max(0.006, Math.abs(Number(dualCurrencyTargetPct || 0)) / 100 || 0.04);
@@ -6881,39 +6901,22 @@ function WealthInner() {
     const fallbackConditionCopy = dualCurrencyDirection === 'sell-high'
       ? `Below ${targetPriceLabel}`
       : `Above ${targetPriceLabel}`;
+    const activeTriggerCopy = dualCurrencyDirection === 'buy-low'
+      ? `${activePair.base} <= ${targetPriceLabel}`
+      : `${activePair.base} >= ${targetPriceLabel}`;
 
     return (
       <section className={`card wealth-dual-guide-card wealth-dual-order-card ${surface === 'detail' ? 'detail' : 'shelf'}`}>
         <div className="section-head">
           <div>
             <div className="eyebrow">{surface === 'detail' ? 'Dual Investment order board' : 'Structured wealth / Dual Investment'}</div>
-            <h2>{surface === 'detail' ? 'Choose pair, direction, target price, and settlement date' : 'Pick a target-price receipt before buying'}</h2>
+            <h2>{surface === 'detail' ? 'Choose direction and term' : 'Pick a target-price receipt before buying'}</h2>
           </div>
           <span className="pill risk-medium">{activeDirectionMeta.label}</span>
         </div>
 
-        <div className="wealth-dual-pair-panel">
-          <div className="product-title">Choose trading pair</div>
-          <div className="wealth-dual-pair-row">
-            {DUAL_CURRENCY_PAIR_OPTIONS.slice(0, 4).map((pair) => (
-              <button
-                type="button"
-                key={pair.id}
-                className={`wealth-dual-pair-chip ${dualCurrencyPairId === pair.id ? 'active' : ''}`}
-                onClick={() => setDualCurrencyPairId(pair.id)}
-              >
-                <span className="wealth-dual-coin-stack" aria-hidden="true">
-                  <i>{pair.base}</i>
-                  <i>{pair.quote}</i>
-                </span>
-                <strong>{pair.id}</strong>
-              </button>
-            ))}
-          </div>
-        </div>
-
         <div className="wealth-dual-direction-panel">
-          <div className="product-title">Choose direction</div>
+          <div className="product-title">{activePair.id} direction</div>
           <div className="wealth-dual-direction-row">
             {DUAL_CURRENCY_DIRECTION_OPTIONS.map((option) => (
               <button
@@ -6933,7 +6936,7 @@ function WealthInner() {
 
         <div className="wealth-dual-filter-panel">
           <div className="wealth-dual-filter-row">
-            {settlementDateFilters.map((filter) => (
+            {termFilters.map((filter) => (
               <button
                 type="button"
                 key={filter.id}
@@ -6945,8 +6948,6 @@ function WealthInner() {
             ))}
           </div>
           <div className="wealth-dual-price-row">
-            <input aria-label="Minimum target price" placeholder="Enter min Target Price" />
-            <input aria-label="Maximum target price" placeholder="Enter max Target Price" />
             <button
               type="button"
               className="wealth-dual-refresh-btn"
@@ -6989,8 +6990,8 @@ function WealthInner() {
                 <strong>{formatYieldPercent(highlightedQuote.apr)}</strong>
               </div>
               <div>
-                <span>Settlement date / term</span>
-                <strong>{highlightedQuote.date} {highlightedQuote.days}D</strong>
+                <span>Term</span>
+                <strong>{highlightedQuote.days}D</strong>
               </div>
             </div>
 
@@ -7057,8 +7058,7 @@ function WealthInner() {
           <div className="wealth-dual-table-head" role="row">
             <span>Target price</span>
             <span>APR</span>
-            <span>Settlement date</span>
-            <span>Days</span>
+            <span>Term</span>
             <span>PT bonus</span>
             <span>Action</span>
           </div>
@@ -7070,7 +7070,6 @@ function WealthInner() {
                   <span className={row.targetPct >= 0 ? 'risk-low' : 'risk-high'}>{row.targetPct >= 0 ? '+' : ''}{row.targetPct.toFixed(2)}%</span>
                 </div>
                 <strong className="risk-low">{formatYieldPercent(row.apr)}</strong>
-                <span>{row.date}</span>
                 <span>{row.days}D</span>
                 <span className="risk-low">+{row.ptReward.toLocaleString()} PT</span>
                 <button
@@ -7111,7 +7110,7 @@ function WealthInner() {
             <div className="reason-card">
               <div className="entry-title">If target is triggered</div>
               <div className="entry-copy">
-                Trigger condition: {dualCurrencyTriggerCopy}. The demo does not deliver real {activePair.base} or {activePair.quote}; it converts the learning result into PT bonus and updates the wallet score path.
+                Trigger condition: {activeTriggerCopy}. The demo does not deliver real {activePair.base} or {activePair.quote}; it converts the learning result into PT bonus and updates the wallet score path.
               </div>
             </div>
             <div className="reason-card">
@@ -10302,7 +10301,8 @@ function WealthInner() {
         aria-hidden={!showBackToTop}
         tabIndex={showBackToTop ? 0 : -1}
       >
-        闂?      </button>
+        Back to top
+      </button>
 
       <SubscriptionPreviewModal
         open={isSubscribeModalOpen}

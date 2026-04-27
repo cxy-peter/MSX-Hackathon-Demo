@@ -4,7 +4,13 @@ const UI_LANGUAGE_STORAGE_KEY = 'msx-ui-language';
 const TRANSLATABLE_ATTRIBUTES = ['placeholder', 'title', 'aria-label'];
 
 const EN_TO_ZH = {
+  'Back to top': '回到顶部',
   'Back to welcome': '返回首页',
+  'Choose direction and term': '选择方向和期限',
+  'Term': '期限',
+  'Suggested term': '建议期限',
+  'PT bonus': 'PT 奖励',
+  'Dual Investment order board': '双币投资下单面板',
   'Connect MetaMask': '连接 MetaMask',
   'Connecting to MetaMask...': '正在连接 MetaMask...',
   'Connect wallet': '连接钱包',

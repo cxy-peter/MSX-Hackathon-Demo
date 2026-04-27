@@ -1245,9 +1245,74 @@ const RAW_WEALTH_PRODUCTS = [
     ]
   },
   {
+    id: 'msx-dual-btc-usdt',
+    name: 'RiskLens BTC/USDT Dual Investment',
+    shortName: 'BTC/USDT',
+    bucket: 'strategy',
+    termType: 'closed',
+    goals: ['income', 'highYield'],
+    productType: 'Dual Investment',
+    status: 'Demo strategy receipt / RiskLens structured wealth',
+    liveTieIn: 'RiskLens dual-investment receipt that teaches target-price settlement before a user treats high APR as simple yield.',
+    risk: 'High',
+    apyRange: '18.00% to 42.00% modeled premium APR, not stable APY',
+    annualYieldRate: 0.32,
+    annualYieldBasis: 'Modeled premium APR; term rate, not APY',
+    annualYieldSource: 'Demo target-price settlement premium model for a 7-day BTC/USDT dual investment. Official dual-investment products quote APR and convert it into a short-term rate at settlement.',
+    riskNote: 'The user may settle into BTC or USDT depending on target-price observation. High premium is compensation for that settlement risk.',
+    baseAsset: 'USDT or BTC into target-price dual-investment receipt',
+    underlying: 'BTC/USDT target-price settlement with buy-low or sell-high direction.',
+    yieldSource: 'Option-like premium paid for accepting conditional settlement into the base or quote asset.',
+    redemption: '7-day target-price settlement. No ordinary early redemption in this beginner flow.',
+    suitableFor: 'Users who understand they may receive BTC instead of USDT, or USDT instead of BTC, at the observation term.',
+    worstCase: 'BTC moves sharply through the target and the user dislikes the settlement asset received.',
+    shareToken: 'BTCUSDT-DI',
+    nav: 10,
+    minSubscription: 1000,
+    dailyYieldRate: 0.00078,
+    technicalSummary:
+      'RiskLens BTC/USDT Dual Investment is modeled as a fixed observation product. The detail view should explain direction, target price, settlement asset, and premium before subscription.',
+    humanSummary:
+      'This is closer to a conditional BTC order with premium than a savings product. The important question is what asset you may receive at settlement.',
+    scenario: {
+      horizon: '7 days on 1,000 PT',
+      conservative: '990 PT plus BTC settlement risk',
+      base: '1,006 PT premium equivalent',
+      pressure: 'BTC received below target'
+    },
+    navHistory: {
+      '7d': buildHistory(10, [0.01, 0.01, -0.02, 0.02, 0.01, -0.01, 0.02]),
+      '30d': buildHistory(9.94, [0.02, 0.02, -0.04, 0.03, 0.02, -0.03, 0.04, 0.02, -0.02, 0.04]),
+      '3m': buildHistory(9.82, [0.04, 0.03, -0.06, 0.05, 0.03, -0.05, 0.06, 0.03, -0.03, 0.05, 0.02, 0.04]),
+      '6m': buildHistory(9.7, [0.05, 0.04, -0.08, 0.07, 0.04, -0.06, 0.07, 0.04, -0.04, 0.06, 0.03, 0.05])
+    },
+    fees: {
+      management: 'Embedded in quoted premium',
+      performance: '0%',
+      lockup: '7-day target-price settlement'
+    },
+    shareRights: [
+      'Represents a conditional-settlement receipt, not a flexible yield token.',
+      'Final asset depends on target price, direction, and observation term.',
+      'The buy flow must show possible settlement asset before signing.'
+    ],
+    diligenceScore: 72,
+    diligenceChecks: [
+      { label: 'Settlement asset', status: 'Review', detail: 'The final asset must be clear before the user subscribes.' },
+      { label: 'Premium framing', status: 'Pass', detail: 'Return label should be modeled premium, not annual yield.' },
+      { label: 'Liquidity rule', status: 'Review', detail: 'No generic redeem path before target-price settlement.' },
+      { label: 'Beginner fit', status: 'Review', detail: 'Better after the paper replay bridge or a guided example.' }
+    ],
+    automation: [
+      'Show target price and term in the receipt.',
+      'Preview both settlement outcomes.',
+      'Warn when market price approaches the target.'
+    ]
+  },
+  {
     id: 'msx-dual-btc-usdc',
     name: 'RiskLens BTC/USDC Dual Investment',
-    shortName: 'BTCDUAL',
+    shortName: 'BTC/USDC',
     bucket: 'strategy',
     termType: 'closed',
     goals: ['income', 'highYield'],
@@ -1264,9 +1329,9 @@ const RAW_WEALTH_PRODUCTS = [
     underlying: 'BTC/USDC target-price settlement with buy-low or sell-high direction.',
     yieldSource: 'Option-like premium paid for accepting conditional settlement into the base or quote asset.',
     redemption: '7-day target-price settlement. No ordinary early redemption in this beginner flow.',
-    suitableFor: 'Users who understand they may receive BTC instead of USDC, or USDC instead of BTC, at the observation date.',
+    suitableFor: 'Users who understand they may receive BTC instead of USDC, or USDC instead of BTC, at the observation term.',
     worstCase: 'BTC moves sharply through the target and the user dislikes the settlement asset received.',
-    shareToken: 'BTCDUAL',
+    shareToken: 'BTCUSDC-DI',
     nav: 10,
     minSubscription: 1000,
     dailyYieldRate: 0.00078,
@@ -1293,7 +1358,7 @@ const RAW_WEALTH_PRODUCTS = [
     },
     shareRights: [
       'Represents a conditional-settlement receipt, not a flexible yield token.',
-      'Final asset depends on target price, direction, and observation date.',
+      'Final asset depends on target price, direction, and observation term.',
       'The buy flow must show possible settlement asset before signing.'
     ],
     diligenceScore: 72,
@@ -1304,15 +1369,80 @@ const RAW_WEALTH_PRODUCTS = [
       { label: 'Beginner fit', status: 'Review', detail: 'Better after the paper replay bridge or a guided example.' }
     ],
     automation: [
-      'Show target price and observation date in the receipt.',
+      'Show target price and term in the receipt.',
       'Preview both settlement outcomes.',
       'Warn when market price approaches the target.'
     ]
   },
   {
+    id: 'msx-dual-eth-usdt',
+    name: 'RiskLens ETH/USDT Dual Investment',
+    shortName: 'ETH/USDT',
+    bucket: 'strategy',
+    termType: 'closed',
+    goals: ['income', 'highYield'],
+    productType: 'Dual Investment',
+    status: 'Demo strategy receipt / RiskLens structured wealth',
+    liveTieIn: 'RiskLens dual-investment receipt for ETH target-price settlement and premium education.',
+    risk: 'High',
+    apyRange: '16.00% to 36.00% modeled premium APR, not stable APY',
+    annualYieldRate: 0.28,
+    annualYieldBasis: 'Modeled premium APR; term rate, not APY',
+    annualYieldSource: 'Demo target-price settlement premium model for a 7-day ETH/USDT dual investment. Official dual-investment products quote APR and convert it into a short-term rate at settlement.',
+    riskNote: 'ETH settlement can flip the user between ETH and USDT at observation, so the asset received matters more than the APR label.',
+    baseAsset: 'USDT or ETH into target-price dual-investment receipt',
+    underlying: 'ETH/USDT target-price settlement with buy-low or sell-high direction.',
+    yieldSource: 'Option-like premium for accepting conditional ETH or USDT settlement.',
+    redemption: '7-day target-price settlement. No ordinary early redemption in this beginner flow.',
+    suitableFor: 'Users who already want ETH exposure or a take-profit level and can tolerate settlement into the other asset.',
+    worstCase: 'ETH moves through the target and the wallet receives the asset the user did not want at that moment.',
+    shareToken: 'ETHUSDT-DI',
+    nav: 10,
+    minSubscription: 1000,
+    dailyYieldRate: 0.00068,
+    technicalSummary:
+      'RiskLens ETH/USDT Dual Investment uses the same receipt mechanics as the USDC version, but the payoff examples map to ETH spot levels and conversion risk.',
+    humanSummary:
+      'Use this when the user understands the target price and is comfortable ending the week with either ETH or USDT.',
+    scenario: {
+      horizon: '7 days on 1,000 PT',
+      conservative: '992 PT plus ETH settlement risk',
+      base: '1,005 PT premium equivalent',
+      pressure: 'ETH received below target'
+    },
+    navHistory: {
+      '7d': buildHistory(10, [0.01, 0, -0.01, 0.02, -0.01, 0.01, 0.02]),
+      '30d': buildHistory(9.96, [0.01, 0.02, -0.03, 0.02, 0.02, -0.02, 0.03, 0.01, -0.01, 0.03]),
+      '3m': buildHistory(9.86, [0.03, 0.02, -0.04, 0.04, 0.02, -0.04, 0.05, 0.02, -0.02, 0.04, 0.02, 0.03]),
+      '6m': buildHistory(9.74, [0.04, 0.03, -0.06, 0.05, 0.03, -0.05, 0.06, 0.03, -0.03, 0.05, 0.02, 0.04])
+    },
+    fees: {
+      management: 'Embedded in quoted premium',
+      performance: '0%',
+      lockup: '7-day target-price settlement'
+    },
+    shareRights: [
+      'Represents a conditional-settlement ETH receipt, not a flexible yield token.',
+      'Final asset depends on target price, direction, and observation term.',
+      'The buy flow must show possible ETH or USDT settlement before signing.'
+    ],
+    diligenceScore: 71,
+    diligenceChecks: [
+      { label: 'Settlement asset', status: 'Review', detail: 'ETH or USDT payout must be explicit.' },
+      { label: 'Premium framing', status: 'Pass', detail: 'Return is modeled premium, not deposit yield.' },
+      { label: 'Liquidity rule', status: 'Review', detail: 'No generic redeem path before observation.' },
+      { label: 'Beginner fit', status: 'Review', detail: 'Best after spot ETH replay makes entry and exit clear.' }
+    ],
+    automation: [
+      'Show ETH target price and term in the receipt.',
+      'Preview USDT and ETH settlement outcomes.',
+      'Warn when ETH approaches the target.'
+    ]
+  },
+  {
     id: 'msx-dual-eth-usdc',
     name: 'RiskLens ETH/USDC Dual Investment',
-    shortName: 'ETHDUAL',
+    shortName: 'ETH/USDC',
     bucket: 'strategy',
     termType: 'closed',
     goals: ['income', 'highYield'],
@@ -1331,7 +1461,7 @@ const RAW_WEALTH_PRODUCTS = [
     redemption: '7-day target-price settlement. No ordinary early redemption in this beginner flow.',
     suitableFor: 'Users who already want ETH exposure or a take-profit level and can tolerate settlement into the other asset.',
     worstCase: 'ETH moves through the target and the wallet receives the asset the user did not want at that moment.',
-    shareToken: 'ETHDUAL',
+    shareToken: 'ETHUSDC-DI',
     nav: 10,
     minSubscription: 1000,
     dailyYieldRate: 0.00068,
@@ -1358,7 +1488,7 @@ const RAW_WEALTH_PRODUCTS = [
     },
     shareRights: [
       'Represents a conditional-settlement ETH receipt, not a flexible yield token.',
-      'Final asset depends on target price, direction, and observation date.',
+      'Final asset depends on target price, direction, and observation term.',
       'The buy flow must show possible ETH or USDC settlement before signing.'
     ],
     diligenceScore: 71,
@@ -1369,74 +1499,9 @@ const RAW_WEALTH_PRODUCTS = [
       { label: 'Beginner fit', status: 'Review', detail: 'Best after spot ETH replay makes entry and exit clear.' }
     ],
     automation: [
-      'Show ETH target price and observation date in the receipt.',
+      'Show ETH target price and term in the receipt.',
       'Preview USDC and ETH settlement outcomes.',
       'Warn when ETH approaches the target.'
-    ]
-  },
-  {
-    id: 'msx-dual-sol-usdt',
-    name: 'RiskLens SOL/USDT Dual Investment',
-    shortName: 'SOLDUAL',
-    bucket: 'strategy',
-    termType: 'closed',
-    goals: ['income', 'highYield'],
-    productType: 'Dual Investment',
-    status: 'Demo strategy receipt / RiskLens structured wealth',
-    liveTieIn: 'RiskLens dual-investment receipt for a higher-volatility SOL target-price case.',
-    risk: 'High',
-    apyRange: '22.00% to 48.00% modeled premium APR, not stable APY',
-    annualYieldRate: 0.38,
-    annualYieldBasis: 'Modeled premium APR; term rate, not APY',
-    annualYieldSource: 'Demo target-price settlement premium model for a 7-day SOL/USDT dual investment. Official dual-investment products can show high APR, but the user receives only the term-rate premium and accepts settlement-asset risk.',
-    riskNote: 'SOL pays a higher modeled premium because the settlement asset can change quickly around the target price.',
-    baseAsset: 'USDT or SOL into target-price dual-investment receipt',
-    underlying: 'SOL/USDT target-price settlement with buy-low or sell-high direction.',
-    yieldSource: 'Higher option-like premium for accepting volatile conditional settlement.',
-    redemption: '7-day target-price settlement. No ordinary early redemption in this beginner flow.',
-    suitableFor: 'Users who understand SOL volatility and only want the product if the target conversion price is acceptable.',
-    worstCase: 'SOL crosses the target during a volatile week and the wallet receives the less desired asset.',
-    shareToken: 'SOLDUAL',
-    nav: 10,
-    minSubscription: 1000,
-    dailyYieldRate: 0.00092,
-    technicalSummary:
-      'RiskLens SOL/USDT Dual Investment keeps the same receipt mechanics but uses a more volatile pair so conversion risk is easier to see.',
-    humanSummary:
-      'This is the higher-volatility teaching version: the premium is larger, but so is the chance that settlement asset surprises the user.',
-    scenario: {
-      horizon: '7 days on 1,000 PT',
-      conservative: '986 PT plus SOL settlement risk',
-      base: '1,007 PT premium equivalent',
-      pressure: 'SOL received below target'
-    },
-    navHistory: {
-      '7d': buildHistory(10, [0.02, -0.01, -0.02, 0.03, 0.01, -0.02, 0.03]),
-      '30d': buildHistory(9.9, [0.03, 0.03, -0.05, 0.04, 0.02, -0.04, 0.06, 0.02, -0.03, 0.05]),
-      '3m': buildHistory(9.76, [0.05, 0.04, -0.08, 0.06, 0.03, -0.06, 0.08, 0.04, -0.05, 0.07, 0.02, 0.05]),
-      '6m': buildHistory(9.6, [0.06, 0.05, -0.1, 0.08, 0.04, -0.08, 0.1, 0.05, -0.06, 0.08, 0.03, 0.07])
-    },
-    fees: {
-      management: 'Embedded in quoted premium',
-      performance: '0%',
-      lockup: '7-day target-price settlement'
-    },
-    shareRights: [
-      'Represents a conditional-settlement SOL receipt, not a flexible yield token.',
-      'Final asset depends on target price, direction, and observation date.',
-      'The buy flow must show possible SOL or USDT settlement before signing.'
-    ],
-    diligenceScore: 67,
-    diligenceChecks: [
-      { label: 'Settlement asset', status: 'Review', detail: 'SOL or USDT payout must be explicit.' },
-      { label: 'Premium framing', status: 'Pass', detail: 'Premium is compensation for volatility and conversion risk.' },
-      { label: 'Liquidity rule', status: 'Review', detail: 'No generic redeem path before observation.' },
-      { label: 'Beginner fit', status: 'Review', detail: 'Use after the user has seen lower-volatility dual examples.' }
-    ],
-    automation: [
-      'Show SOL target price and observation date in the receipt.',
-      'Preview USDT and SOL settlement outcomes.',
-      'Warn when SOL approaches the target.'
     ]
   },
   {
