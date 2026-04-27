@@ -3,6 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import {
   WagmiProvider,
   useAccount,
+  useBalance,
   useChainId,
   useConnect,
   useDisconnect,
@@ -475,11 +476,12 @@ function normalizeWealthTimelineFloat(payload, viewport = getFloatingTimelineVie
   };
 }
 
-const WEALTH_TASK_BADGES = { subscribe: 'W1', settlement: 'W2' };
-const WEALTH_TASK_TYPES = { subscribe: 1, settlement: 2 };
+const WEALTH_TASK_BADGES = { trade: 'W1', pledge: 'W2', dual: 'W3' };
+const WEALTH_TASK_TYPES = { trade: 1, pledge: 2, dual: 3 };
 const WEALTH_TASK_TOKEN_IDS = {
-  subscribe: WEALTH_TASK_TOKEN_OFFSET + WEALTH_TASK_TYPES.subscribe,
-  settlement: WEALTH_TASK_TOKEN_OFFSET + WEALTH_TASK_TYPES.settlement
+  trade: WEALTH_TASK_TOKEN_OFFSET + WEALTH_TASK_TYPES.trade,
+  pledge: WEALTH_TASK_TOKEN_OFFSET + WEALTH_TASK_TYPES.pledge,
+  dual: WEALTH_TASK_TOKEN_OFFSET + WEALTH_TASK_TYPES.dual
 };
 const WEALTH_RECEIPT_PRODUCT_IDS = {
   'superstate-ustb': 1,
@@ -812,6 +814,17 @@ const wealthVaultAbi = [
     stateMutability: 'nonpayable',
     inputs: [{ name: 'taskId', type: 'uint8' }],
     outputs: []
+  },
+  {
+    type: 'function',
+    name: 'markWealthTaskWithEvidence',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'taskId', type: 'uint8' },
+      { name: 'realizedPnl', type: 'int256' },
+      { name: 'evidenceHash', type: 'bytes32' }
+    ],
+    outputs: []
   }
 ];
 
@@ -880,6 +893,43 @@ function buildLocalReceiptProof({ address, product, amount, shares, receiptMode,
     hash |= 0;
   }
   return Math.abs(hash).toString(16).padStart(16, '0');
+}
+
+function normalizeEvidenceValue(value) {
+  if (Array.isArray(value)) return value.map(normalizeEvidenceValue);
+  if (value && typeof value === 'object') {
+    return Object.keys(value)
+      .sort()
+      .reduce((acc, key) => {
+        const nextValue = value[key];
+        if (typeof nextValue !== 'function' && nextValue !== undefined) {
+          acc[key] = normalizeEvidenceValue(nextValue);
+        }
+        return acc;
+      }, {});
+  }
+  if (typeof value === 'bigint') return value.toString();
+  return value;
+}
+
+function fallbackBytes32Hash(payload) {
+  let hash = 0;
+  for (let index = 0; index < payload.length; index += 1) {
+    hash = (hash << 5) - hash + payload.charCodeAt(index);
+    hash |= 0;
+  }
+  return `0x${Math.abs(hash).toString(16).padStart(64, '0').slice(0, 64)}`;
+}
+
+async function buildWealthTaskEvidenceHash(payload = {}) {
+  const canonicalPayload = JSON.stringify(normalizeEvidenceValue(payload));
+  if (typeof crypto !== 'undefined' && crypto.subtle && typeof TextEncoder !== 'undefined') {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalPayload));
+    return `0x${Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('')}`;
+  }
+  return fallbackBytes32Hash(canonicalPayload);
 }
 
 function formatOnchainTimestamp(value) {
@@ -996,6 +1046,9 @@ function defaultWealthState() {
 function normalizeWealthTaskClaims(value = {}) {
   const claims = value && typeof value === 'object' ? value : {};
   return {
+    trade: Boolean(claims.trade),
+    pledge: Boolean(claims.pledge),
+    dual: Boolean(claims.dual),
     subscribe: Boolean(claims.subscribe),
     settlement: Boolean(claims.settlement)
   };
@@ -1195,7 +1248,7 @@ function WealthWalletModal({
           >
             <MetaMaskIcon className="wallet-option-icon" />
             <div>
-              <div className="wallet-option-title">{isConnected ? 'MetaMask connected' : 'MetaMask'}</div>
+              <div className="wallet-option-title">{isConnected ? walletDisplayName : 'MetaMask'}</div>
               <div className="wallet-option-copy">
                 {isConnected
                   ? `Wallet connected ${walletDisplayName}. Click again to disconnect.`
@@ -1250,10 +1303,10 @@ function WealthWalletModal({
                   ? 'Confirm connection in MetaMask'
                   : 'Connect MetaMask'}
           </div>
-          <div className="wallet-modal-copy">
+          <div className="wallet-modal-copy wealth-wallet-modal-copy">
             {isConnected
               ? `This Wealth page is using wallet ${walletDisplayName}. The wallet-linked positions, receipt balances, and remaining PT all follow this connected address.`
-              : 'Connect MetaMask to keep the Wealth ledger, receipt balances, and Paper carry-over tied to the same wallet on this device.'}
+              : 'Connect MetaMask so Wealth receipts and Paper carry-over stay tied to the same account on this device.'}
           </div>
           {hasMetaMaskInstalled ? (
             <div className="wallet-nickname-panel">
@@ -1621,6 +1674,45 @@ function getLatestWealthActivity(wealthState, types = [], productId = '') {
 
 function hasWealthActivity(wealthState, types = [], productId = '') {
   return Boolean(getLatestWealthActivity(wealthState, types, productId));
+}
+
+function getWealthActivityProduct(entry = {}, products = []) {
+  return products.find((product) => product.id === entry?.productId) || null;
+}
+
+function isDualWealthActivity(entry = {}, products = []) {
+  return Boolean(entry?.isDualInvestment || isDualInvestmentProduct(getWealthActivityProduct(entry, products)));
+}
+
+function getWealthActivityPnl(entry = {}) {
+  const directPnl = Number(entry?.pnl);
+  if (Number.isFinite(directPnl)) return directPnl;
+
+  const amount = Number(entry?.amount);
+  const principal = Number(entry?.principal || entry?.principalReduction);
+  if (Number.isFinite(amount) && Number.isFinite(principal)) {
+    return amount - principal;
+  }
+
+  return 0;
+}
+
+function getLatestPositiveCompletedTradeActivity(wealthState, products = [], { dual = false } = {}) {
+  const activityLog = Array.isArray(wealthState?.activityLog) ? wealthState.activityLog : [];
+  const boughtProductIds = new Set(
+    activityLog
+      .filter((entry) => entry?.type === 'subscribe' && isDualWealthActivity(entry, products) === dual)
+      .map((entry) => entry.productId)
+      .filter(Boolean)
+  );
+
+  return activityLog.find((entry) => {
+    if (!entry || !['settlement', 'redeem'].includes(entry.type)) return false;
+    if (entry.action === 'preview') return false;
+    if (isDualWealthActivity(entry, products) !== dual) return false;
+    if (!boughtProductIds.has(entry.productId)) return false;
+    return getWealthActivityPnl(entry) > 0;
+  }) || null;
 }
 
 function getDualCurrencyFit(product = {}) {
@@ -2110,6 +2202,35 @@ function getAmountPresetRows({ minimumTicket = WEALTH_MIN_SUBSCRIPTION, availabl
       return true;
     })
     .map((row) => ({ ...row, active: Number(currentAmount || 0) === row.value, disabled: row.value <= 0 }));
+}
+
+function getProductMinimumTicket(product = {}) {
+  return Math.max(WEALTH_MIN_SUBSCRIPTION, Number(product?.minSubscription || 0));
+}
+
+function canAffordProductMinimum(product = {}, availableCash = 0) {
+  return Number(availableCash || 0) >= getProductMinimumTicket(product);
+}
+
+function getInsufficientProductCashMessage(product = {}, availableCash = 0) {
+  return `Not enough PT for this product's ${getProductMinimumTicket(product).toLocaleString()} PT min ticket. Available: ${Math.max(0, Math.floor(Number(availableCash || 0))).toLocaleString()} PT.`;
+}
+
+function sortShelfProductsByRecommendationAndAffordability(products = [], availableCash = 0, recommendedProductIds = new Set()) {
+  return products
+    .map((product, index) => ({ product, index }))
+    .sort((left, right) => {
+      const leftAffordable = canAffordProductMinimum(left.product, availableCash);
+      const rightAffordable = canAffordProductMinimum(right.product, availableCash);
+      if (leftAffordable !== rightAffordable) return leftAffordable ? -1 : 1;
+
+      const leftRecommended = recommendedProductIds.has(left.product.id);
+      const rightRecommended = recommendedProductIds.has(right.product.id);
+      if (leftRecommended !== rightRecommended) return leftRecommended ? -1 : 1;
+
+      return left.index - right.index;
+    })
+    .map(({ product }) => product);
 }
 
 function getForwardProjectedNav(product, days) {
@@ -3850,7 +3971,7 @@ function WealthInner() {
   const [liveProducts, setLiveProducts] = useState(() => getInitialLiveProducts());
   const [liveSnapshotState, setLiveSnapshotState] = useState(() => getInitialLiveSnapshotState());
   const [day1BriefState, setDay1BriefState] = useState(() => getInitialDay1BriefState());
-  const [allocationAmount, setAllocationAmount] = useState(1000);
+  const [allocationAmount, setAllocationAmount] = useState(WEALTH_MIN_SUBSCRIPTION);
   const [feedback, setFeedback] = useState('');
   const [hideBalances, setHideBalances] = useState(false);
   const [productNavPeriods, setProductNavPeriods] = useState(() =>
@@ -4051,6 +4172,16 @@ function WealthInner() {
       enabled: Boolean(address) && badgeContractConfigured
     }
   });
+  const { data: walletBadgeOnchain } = useReadContract({
+    address: badgeContractConfigured ? BADGE_CONTRACT_ADDRESS : undefined,
+    abi: welcomeBadgeAbi,
+    functionName: 'hasMintedTask',
+    args: address ? [address, BADGE_TYPES.wallet ?? 0] : undefined,
+    chainId: SEPOLIA_CHAIN_ID,
+    query: {
+      enabled: Boolean(address) && badgeContractConfigured
+    }
+  });
   const { data: riskBadgeOnchain } = useReadContract({
     address: badgeContractConfigured ? BADGE_CONTRACT_ADDRESS : undefined,
     abi: welcomeBadgeAbi,
@@ -4081,6 +4212,24 @@ function WealthInner() {
       enabled: Boolean(address) && badgeContractConfigured
     }
   });
+  const { data: sepoliaBalance } = useBalance({
+    address,
+    chainId: SEPOLIA_CHAIN_ID,
+    query: {
+      enabled: Boolean(address)
+    }
+  });
+  const homeWalletTaskMinted = badgeContractConfigured ? Boolean(walletBadgeOnchain) : Boolean(address);
+  const hasSepoliaEth = hasPositiveOnchainBalance(sepoliaBalance?.value);
+  const wealthSepoliaReceiptGateEnabled = wealthVaultConfigured;
+  const wealthReceiptGateBlocked = wealthSepoliaReceiptGateEnabled && (!homeWalletTaskMinted || !hasSepoliaEth);
+  const wealthReceiptGateMessage = !isConnected || !address
+    ? 'Connect MetaMask before Wealth receipt actions unlock.'
+    : !homeWalletTaskMinted
+      ? 'Complete and mint the Home wallet task first. Wealth receipts stay preview-only until that wallet collectible is detected.'
+      : !hasSepoliaEth
+        ? 'Sepolia receipt mode is staged but not required for the local demo. Add Sepolia ETH only when the vault is configured for deployment.'
+        : '';
   const { data: vaultNavBps } = useReadContract({
     address: wealthVaultConfigured ? WEALTH_VAULT_ADDRESS : undefined,
     abi: wealthVaultAbi,
@@ -4169,7 +4318,7 @@ function WealthInner() {
     address: wealthVaultConfigured ? WEALTH_VAULT_ADDRESS : undefined,
     abi: wealthVaultAbi,
     functionName: 'hasWealthTask',
-    args: address ? [address, WEALTH_TASK_TYPES.subscribe] : undefined,
+    args: address ? [address, WEALTH_TASK_TYPES.trade] : undefined,
     chainId: SEPOLIA_CHAIN_ID,
     query: {
       enabled: wealthVaultConfigured && Boolean(address)
@@ -4182,7 +4331,7 @@ function WealthInner() {
     address: wealthVaultConfigured ? WEALTH_VAULT_ADDRESS : undefined,
     abi: wealthVaultAbi,
     functionName: 'balanceOf',
-    args: address ? [address, WEALTH_TASK_TOKEN_IDS.subscribe] : undefined,
+    args: address ? [address, WEALTH_TASK_TOKEN_IDS.trade] : undefined,
     chainId: SEPOLIA_CHAIN_ID,
     query: {
       enabled: wealthVaultConfigured && Boolean(address)
@@ -4192,7 +4341,7 @@ function WealthInner() {
     address: wealthVaultConfigured ? WEALTH_VAULT_ADDRESS : undefined,
     abi: wealthVaultAbi,
     functionName: 'hasWealthTask',
-    args: address ? [address, WEALTH_TASK_TYPES.settlement] : undefined,
+    args: address ? [address, WEALTH_TASK_TYPES.pledge] : undefined,
     chainId: SEPOLIA_CHAIN_ID,
     query: {
       enabled: wealthVaultConfigured && Boolean(address)
@@ -4205,7 +4354,30 @@ function WealthInner() {
     address: wealthVaultConfigured ? WEALTH_VAULT_ADDRESS : undefined,
     abi: wealthVaultAbi,
     functionName: 'balanceOf',
-    args: address ? [address, WEALTH_TASK_TOKEN_IDS.settlement] : undefined,
+    args: address ? [address, WEALTH_TASK_TOKEN_IDS.pledge] : undefined,
+    chainId: SEPOLIA_CHAIN_ID,
+    query: {
+      enabled: wealthVaultConfigured && Boolean(address)
+    }
+  });
+  const { data: wealthDualTaskOnchain, refetch: refetchWealthDualTask } = useReadContract({
+    address: wealthVaultConfigured ? WEALTH_VAULT_ADDRESS : undefined,
+    abi: wealthVaultAbi,
+    functionName: 'hasWealthTask',
+    args: address ? [address, WEALTH_TASK_TYPES.dual] : undefined,
+    chainId: SEPOLIA_CHAIN_ID,
+    query: {
+      enabled: wealthVaultConfigured && Boolean(address)
+    }
+  });
+  const {
+    data: wealthDualTaskCollectibleBalance,
+    refetch: refetchWealthDualTaskCollectible
+  } = useReadContract({
+    address: wealthVaultConfigured ? WEALTH_VAULT_ADDRESS : undefined,
+    abi: wealthVaultAbi,
+    functionName: 'balanceOf',
+    args: address ? [address, WEALTH_TASK_TOKEN_IDS.dual] : undefined,
     chainId: SEPOLIA_CHAIN_ID,
     query: {
       enabled: wealthVaultConfigured && Boolean(address)
@@ -4241,8 +4413,9 @@ function WealthInner() {
         Number(profileProgress.paperTradesCompleted || 0)
       ),
       wealthTaskClaims: {
-        subscribe: Boolean(storedWealthTaskClaims.subscribe || profileWealthTaskClaims.subscribe),
-        settlement: Boolean(storedWealthTaskClaims.settlement || profileWealthTaskClaims.settlement)
+        trade: Boolean(storedWealthTaskClaims.trade || profileWealthTaskClaims.trade),
+        pledge: Boolean(storedWealthTaskClaims.pledge || profileWealthTaskClaims.pledge),
+        dual: Boolean(storedWealthTaskClaims.dual || profileWealthTaskClaims.dual)
       }
     });
   }, [address, progressStorageKey]);
@@ -4554,60 +4727,75 @@ function WealthInner() {
   const wealthActivityTypes = getActivityTypeSet(displayWealthState);
   const latestSubscribeActivity = getLatestWealthActivity(displayWealthState, ['subscribe']);
   const latestSettlementActivity = getLatestWealthActivity(displayWealthState, WEALTH_SETTLEMENT_ACTIVITY_TYPES);
+  const latestPositiveTradeActivity = getLatestPositiveCompletedTradeActivity(displayWealthState, liveProducts, { dual: false });
+  const latestPledgeActivity = getLatestWealthActivity(displayWealthState, ['collateral']);
+  const latestPositiveDualActivity = getLatestPositiveCompletedTradeActivity(displayWealthState, liveProducts, { dual: true });
   const wealthSubscribeDetailActionDone = hasWealthActivity(displayWealthState, ['subscribe']);
   const wealthSettlementDetailActionDone = hasWealthActivity(displayWealthState, WEALTH_SETTLEMENT_ACTIVITY_TYPES);
   const localWealthTaskClaims = normalizeWealthTaskClaims(progressState.wealthTaskClaims);
-  const wealthSubscribeTaskDone =
-    Object.keys(displayWealthState.positions || {}).length > 0 || wealthActivityTypes.has('subscribe');
-  const wealthSettlementTaskDone =
-    wealthSettlementDetailActionDone ||
-    Object.keys(displayWealthState.collateral || {}).length > 0;
-  const wealthSubscribeTaskCollectibleOwned = hasPositiveOnchainBalance(wealthSubscribeTaskCollectibleBalance);
-  const wealthSettlementTaskCollectibleOwned = hasPositiveOnchainBalance(wealthSettlementTaskCollectibleBalance);
-  const wealthSubscribeTaskClaimedOnchain = Boolean(
-    wealthSubscribeTaskOnchain && wealthSubscribeTaskCollectibleOwned
+  const wealthTradeTaskCollectibleOwned = hasPositiveOnchainBalance(wealthSubscribeTaskCollectibleBalance);
+  const wealthPledgeTaskCollectibleOwned = hasPositiveOnchainBalance(wealthSettlementTaskCollectibleBalance);
+  const wealthDualTaskCollectibleOwned = hasPositiveOnchainBalance(wealthDualTaskCollectibleBalance);
+  const wealthTradeTaskClaimedOnchain = Boolean(wealthSubscribeTaskOnchain && wealthTradeTaskCollectibleOwned);
+  const wealthPledgeTaskClaimedOnchain = Boolean(wealthSettlementTaskOnchain && wealthPledgeTaskCollectibleOwned);
+  const wealthDualTaskClaimedOnchain = Boolean(wealthDualTaskOnchain && wealthDualTaskCollectibleOwned);
+  const wealthTradeTaskClaimed = wealthVaultConfigured
+    ? wealthTradeTaskClaimedOnchain
+    : Boolean(localWealthTaskClaims.trade);
+  const wealthPledgeTaskClaimed = wealthVaultConfigured
+    ? wealthPledgeTaskClaimedOnchain
+    : Boolean(localWealthTaskClaims.pledge);
+  const wealthDualTaskClaimed = wealthVaultConfigured
+    ? wealthDualTaskClaimedOnchain
+    : Boolean(localWealthTaskClaims.dual);
+  const wealthTradeQuestDone = Boolean(
+    wealthTradeTaskClaimed || (isConnected && latestPositiveTradeActivity)
   );
-  const wealthSettlementTaskClaimedOnchain = Boolean(
-    wealthSettlementTaskOnchain && wealthSettlementTaskCollectibleOwned
+  const wealthPledgeQuestDone = Boolean(
+    wealthPledgeTaskClaimed || (isConnected && latestPledgeActivity)
   );
-  const wealthSubscribeTaskClaimed = wealthVaultConfigured
-    ? wealthSubscribeTaskClaimedOnchain
-    : Boolean(localWealthTaskClaims.subscribe);
-  const wealthSettlementTaskClaimed = wealthVaultConfigured
-    ? wealthSettlementTaskClaimedOnchain
-    : Boolean(localWealthTaskClaims.settlement);
-  const wealthSubscribeQuestDone = Boolean(
-    wealthSubscribeTaskClaimed || (isConnected && wealthSubscribeDetailActionDone && wealthSubscribeTaskDone)
-  );
-  const wealthSettlementQuestDone = Boolean(
-    wealthSettlementTaskClaimed || (isConnected && wealthSubscribeTaskDone && wealthSettlementDetailActionDone)
+  const wealthDualQuestDone = Boolean(
+    wealthDualTaskClaimed || (isConnected && latestPositiveDualActivity)
   );
   const wealthQuestRows = [
     {
-      id: 'subscribe',
+      id: 'trade',
       taskNumber: 1,
-      badge: WEALTH_TASK_BADGES.subscribe,
-      activityLabel: 'Receipt record',
-      title: 'Buy one receipt',
-      copy: 'Choose a product, open the lifecycle desk, review the buy flow, then record a local receipt balance in the wealth ledger.',
-      done: wealthSubscribeTaskClaimed,
-      claimed: wealthSubscribeTaskClaimed,
-      readyToClaim: Boolean(wealthSubscribeQuestDone && !wealthSubscribeTaskClaimed),
-      statusLabel: wealthSubscribeTaskClaimed ? 'Minted' : wealthSubscribeQuestDone ? 'Wait to be minted' : 'To do',
-      statusTone: wealthSubscribeTaskClaimed ? 'done' : wealthSubscribeQuestDone ? 'ready' : 'todo'
+      badge: WEALTH_TASK_BADGES.trade,
+      activityLabel: 'Buy + profitable settle',
+      title: 'Complete one profitable trade',
+      copy: 'Buy any non-dual product, then settle or redeem it with positive PT PnL.',
+      done: wealthTradeTaskClaimed,
+      claimed: wealthTradeTaskClaimed,
+      readyToClaim: Boolean(wealthTradeQuestDone && !wealthTradeTaskClaimed),
+      statusLabel: wealthTradeTaskClaimed ? 'Minted' : wealthTradeQuestDone ? 'Wait to be minted' : 'To do',
+      statusTone: wealthTradeTaskClaimed ? 'done' : wealthTradeQuestDone ? 'ready' : 'todo'
     },
     {
-      id: 'settlement',
+      id: 'pledge',
       taskNumber: 2,
-      badge: WEALTH_TASK_BADGES.settlement,
-      activityLabel: 'Settle / pledge',
-      title: 'Simulate settle or pledge',
-      copy: 'Settle means close, redeem, roll, or mature the receipt. Pledge means locking it as route support before release.',
-      done: wealthSettlementTaskClaimed,
-      claimed: wealthSettlementTaskClaimed,
-      readyToClaim: Boolean(wealthSettlementQuestDone && !wealthSettlementTaskClaimed),
-      statusLabel: wealthSettlementTaskClaimed ? 'Minted' : wealthSettlementQuestDone ? 'Wait to be minted' : 'To do',
-      statusTone: wealthSettlementTaskClaimed ? 'done' : wealthSettlementQuestDone ? 'ready' : 'todo'
+      badge: WEALTH_TASK_BADGES.pledge,
+      activityLabel: 'Pledge support',
+      title: 'Complete one pledge',
+      copy: 'Buy a receipt, then pledge it once as route support from the product detail desk.',
+      done: wealthPledgeTaskClaimed,
+      claimed: wealthPledgeTaskClaimed,
+      readyToClaim: Boolean(wealthPledgeQuestDone && !wealthPledgeTaskClaimed),
+      statusLabel: wealthPledgeTaskClaimed ? 'Minted' : wealthPledgeQuestDone ? 'Wait to be minted' : 'To do',
+      statusTone: wealthPledgeTaskClaimed ? 'done' : wealthPledgeQuestDone ? 'ready' : 'todo'
+    },
+    {
+      id: 'dual',
+      taskNumber: 3,
+      badge: WEALTH_TASK_BADGES.dual,
+      activityLabel: 'Dual profit',
+      title: 'Profit on Dual Investment',
+      copy: 'Buy a Dual Investment receipt, then settle it with positive PT PnL.',
+      done: wealthDualTaskClaimed,
+      claimed: wealthDualTaskClaimed,
+      readyToClaim: Boolean(wealthDualQuestDone && !wealthDualTaskClaimed),
+      statusLabel: wealthDualTaskClaimed ? 'Minted' : wealthDualQuestDone ? 'Wait to be minted' : 'To do',
+      statusTone: wealthDualTaskClaimed ? 'done' : wealthDualQuestDone ? 'ready' : 'todo'
     }
   ];
   const wealthTaskCompletedCount = wealthQuestRows.filter((quest) => quest.done).length;
@@ -4834,8 +5022,9 @@ function WealthInner() {
   const walletProfileProgress = walletProfileSnapshot.progress || {};
   const walletProfileWealthTaskClaims = normalizeWealthTaskClaims(walletProfileProgress.wealthTaskClaims);
   const effectiveWealthTaskClaims = {
-    subscribe: Boolean((!wealthVaultConfigured && walletProfileWealthTaskClaims.subscribe) || wealthSubscribeTaskClaimed),
-    settlement: Boolean((!wealthVaultConfigured && walletProfileWealthTaskClaims.settlement) || wealthSettlementTaskClaimed)
+    trade: Boolean((!wealthVaultConfigured && walletProfileWealthTaskClaims.trade) || wealthTradeTaskClaimed),
+    pledge: Boolean((!wealthVaultConfigured && walletProfileWealthTaskClaims.pledge) || wealthPledgeTaskClaimed),
+    dual: Boolean((!wealthVaultConfigured && walletProfileWealthTaskClaims.dual) || wealthDualTaskClaimed)
   };
   const milestoneCount = [
     isConnected,
@@ -4843,12 +5032,21 @@ function WealthInner() {
     guideTaskDone,
     quizTaskDone,
     paperTaskDone,
-    effectiveWealthTaskClaims.subscribe,
-    effectiveWealthTaskClaims.settlement
+    effectiveWealthTaskClaims.trade,
+    effectiveWealthTaskClaims.pledge,
+    effectiveWealthTaskClaims.dual
   ].filter(Boolean).length;
 
   const milestoneBonus = milestoneCount * WEALTH_MILESTONE_BONUS;
   const availableCash = displayWealthState.cash + milestoneBonus;
+  const recommendedProductIdSet = useMemo(
+    () => new Set(recommendedProductsForView.map((product) => product.id)),
+    [recommendedProductsForView]
+  );
+  const visibleShelfProducts = useMemo(
+    () => sortShelfProductsByRecommendationAndAffordability(shelfProducts, availableCash, recommendedProductIdSet),
+    [availableCash, recommendedProductIdSet, shelfProducts]
+  );
   const walletProfileSummary = getWalletProfileSummary({
     ...walletProfileSnapshot,
     progress: {
@@ -4943,7 +5141,7 @@ function WealthInner() {
   const selectedPotentialMaxBorrowValue = roundNumber(selectedPotentialCollateralValue * selectedCollateralAdvanceRate, 2);
   const selectedRemainingBorrowCapacity = roundNumber(Math.max(0, selectedPotentialMaxBorrowValue - selectedBorrowedAmount), 2);
   const selectedCollateralLtv = selectedCollateralValue > 0 ? selectedBorrowedAmount / selectedCollateralValue : 0;
-  const selectedMinimumTicket = Math.max(WEALTH_MIN_SUBSCRIPTION, selectedProduct.minSubscription);
+  const selectedMinimumTicket = getProductMinimumTicket(selectedProduct);
   const selectedSettlementPolicy = getSettlementPolicy(selectedProduct);
   const selectedRedeemAllowed = isRedeemableProduct(selectedProduct);
   const selectedLockStatus = getWealthLockStatus(selectedProduct, selectedPosition, settlementDays);
@@ -4958,6 +5156,10 @@ function WealthInner() {
     availableCash,
     currentAmount: allocationAmountNumber
   });
+
+  useEffect(() => {
+    setAllocationAmount(selectedMinimumTicket);
+  }, [selectedMinimumTicket, selectedProduct.id]);
 
   useEffect(() => {
     setCollateralBorrowInput(selectedBorrowedAmount);
@@ -5327,29 +5529,75 @@ function WealthInner() {
   }
   const collectibleHelperCopy =
     'Beginner note: when a homepage collectible is minted, look for it in the connected wallet collectibles / NFT view. Wealth keeps reading the same wallet-linked progress.';
+  const activityLog = Array.isArray(displayWealthState.activityLog) ? displayWealthState.activityLog : [];
   const firstOwnedProductId = Object.keys(displayWealthState.positions || {})[0] || '';
-  const subscribeTaskProductId = latestSubscribeActivity?.productId || firstOwnedProductId || aiRecommendedProduct.id;
-  const subscribeTaskProduct = getProductByIdFrom(liveProducts, subscribeTaskProductId) || aiRecommendedProduct;
-  const settlementTaskProductId =
-    latestSettlementActivity?.productId || firstOwnedProductId || latestSubscribeActivity?.productId || subscribeTaskProduct.id;
-  const settlementTaskProduct = getProductByIdFrom(liveProducts, settlementTaskProductId) || subscribeTaskProduct;
-  const subscribeTaskReceiptMinted =
-    Boolean(displayWealthState.positions?.[subscribeTaskProduct.id]?.shares) || Boolean(latestSubscribeActivity);
-  const settlementTaskReceiptAvailable =
-    Boolean(displayWealthState.positions?.[settlementTaskProduct.id]?.shares) ||
-    Boolean(latestSettlementActivity) ||
-    wealthSubscribeTaskDone;
-  const subscribeTaskReadyToClaim = Boolean(isConnected && wealthSubscribeDetailActionDone && subscribeTaskReceiptMinted);
-  const settlementTaskReadyToClaim = Boolean(isConnected && settlementTaskReceiptAvailable && wealthSettlementDetailActionDone);
+  const firstNonDualOwnedProductId =
+    Object.keys(displayWealthState.positions || {}).find((productId) => !isDualInvestmentProduct(getProductByIdFrom(liveProducts, productId))) || '';
+  const latestNormalSubscribeActivity = activityLog.find(
+    (entry) => entry?.type === 'subscribe' && !isDualWealthActivity(entry, liveProducts)
+  ) || null;
+  const latestDualSubscribeActivity = activityLog.find(
+    (entry) => entry?.type === 'subscribe' && isDualWealthActivity(entry, liveProducts)
+  ) || null;
+  const firstDualProduct = liveProducts.find(isDualInvestmentProduct) || selectedProduct;
+  const tradeTaskProductId =
+    latestPositiveTradeActivity?.productId ||
+    latestNormalSubscribeActivity?.productId ||
+    firstNonDualOwnedProductId ||
+    (isDualInvestmentProduct(aiRecommendedProduct) ? DEFAULT_WEALTH_PRODUCT_ID : aiRecommendedProduct.id);
+  const tradeTaskProduct = getProductByIdFrom(liveProducts, tradeTaskProductId) || aiRecommendedProduct;
+  const pledgeTaskProductId =
+    latestPledgeActivity?.productId ||
+    Object.keys(displayWealthState.collateral || {})[0] ||
+    firstOwnedProductId ||
+    tradeTaskProduct.id;
+  const pledgeTaskProduct = getProductByIdFrom(liveProducts, pledgeTaskProductId) || tradeTaskProduct;
+  const dualTaskProductId = latestPositiveDualActivity?.productId || latestDualSubscribeActivity?.productId || firstDualProduct?.id;
+  const dualTaskProduct = getProductByIdFrom(liveProducts, dualTaskProductId) || firstDualProduct || selectedProduct;
+  const tradeTaskBought = Boolean(latestNormalSubscribeActivity || displayWealthState.positions?.[tradeTaskProduct.id]?.shares);
+  const pledgeTaskReceiptAvailable =
+    Boolean(displayWealthState.positions?.[pledgeTaskProduct.id]?.shares) ||
+    Boolean(latestPledgeActivity) ||
+    Boolean(latestSubscribeActivity);
+  const dualTaskBought = Boolean(latestDualSubscribeActivity || displayWealthState.positions?.[dualTaskProduct.id]?.shares);
+  const tradeTaskReadyToClaim = Boolean(isConnected && latestPositiveTradeActivity);
+  const pledgeTaskReadyToClaim = Boolean(isConnected && latestPledgeActivity);
+  const dualTaskReadyToClaim = Boolean(isConnected && latestPositiveDualActivity);
   const wealthTaskReadyToClaimById = {
-    subscribe: subscribeTaskReadyToClaim,
-    settlement: settlementTaskReadyToClaim
+    trade: tradeTaskReadyToClaim,
+    pledge: pledgeTaskReadyToClaim,
+    dual: dualTaskReadyToClaim
+  };
+  const wealthTaskEvidenceActivityById = {
+    trade: latestPositiveTradeActivity,
+    pledge: latestPledgeActivity,
+    dual: latestPositiveDualActivity
+  };
+  const wealthTaskClaimedById = {
+    trade: wealthTradeTaskClaimed,
+    pledge: wealthPledgeTaskClaimed,
+    dual: wealthDualTaskClaimed
+  };
+  const wealthTaskOnchainById = {
+    trade: Boolean(wealthSubscribeTaskOnchain),
+    pledge: Boolean(wealthSettlementTaskOnchain),
+    dual: Boolean(wealthDualTaskOnchain)
+  };
+  const wealthTaskCollectibleOwnedById = {
+    trade: wealthTradeTaskCollectibleOwned,
+    pledge: wealthPledgeTaskCollectibleOwned,
+    dual: wealthDualTaskCollectibleOwned
+  };
+  const wealthTaskClaimedOnchainById = {
+    trade: wealthTradeTaskClaimedOnchain,
+    pledge: wealthPledgeTaskClaimedOnchain,
+    dual: wealthDualTaskClaimedOnchain
   };
   const wealthTaskDetailMap = {
-    subscribe: {
+    trade: {
       eyebrow: 'Task detail',
-      title: 'Mint the first wealth receipt',
-      copy: `This path starts from ${subscribeTaskProduct.name}. Open that product detail, then use the buy action inside the lifecycle desk so the receipt is detected from activity, not from a navigation click.`,
+      title: 'Complete one profitable trade',
+      copy: `Start from ${tradeTaskProduct.name}. Buy a non-dual product, then settle or redeem it only when the recorded PT PnL is positive.`,
       checklistItems: [
         {
           id: 'wallet',
@@ -5361,79 +5609,121 @@ function WealthInner() {
         },
         {
           id: 'detail',
-          title: 'Buy from product detail',
-          done: wealthSubscribeDetailActionDone,
-          copy: wealthSubscribeDetailActionDone
-            ? `Detected a signed buy action for ${subscribeTaskProduct.name}.`
-            : expandedProductId === subscribeTaskProduct.id && selectedDetailTopics.includes('flow')
-              ? 'This is the right detail desk. Confirm the signed subscription here to complete the step.'
-              : `Open ${subscribeTaskProduct.name} detail first; the step completes only after the buy action is signed.`,
+          title: 'Buy a normal product',
+          done: tradeTaskBought,
+          copy: tradeTaskBought
+            ? `Detected a signed buy action for ${tradeTaskProduct.name}.`
+            : expandedProductId === tradeTaskProduct.id && selectedDetailTopics.includes('flow')
+              ? 'This is the right desk. Use Review and buy here, then settle only after the preview is positive.'
+              : `Open ${tradeTaskProduct.name} detail first; Dual Investment buys do not count for this task.`,
           interactive: true,
           onClick: () =>
-            focusProduct(subscribeTaskProduct.id, {
+            focusProduct(tradeTaskProduct.id, {
               topic: 'flow',
-              categoryId: getCategoryIdForProduct(subscribeTaskProduct)
+              categoryId: getCategoryIdForProduct(tradeTaskProduct)
             })
         },
         {
           id: 'receipt',
-          title: 'Receipt recorded',
-          done: subscribeTaskReceiptMinted,
-          copy: subscribeTaskReceiptMinted
-            ? `A wallet-linked ${subscribeTaskProduct.shareToken} receipt is recorded in the Wealth ledger.`
-            : 'Confirm a signed subscription in that product detail so Wealth can detect the receipt automatically.'
+          title: 'Settle with positive PnL',
+          done: Boolean(latestPositiveTradeActivity),
+          copy: latestPositiveTradeActivity
+            ? `${latestPositiveTradeActivity.productName || tradeTaskProduct.name} settled with +${Number(getWealthActivityPnl(latestPositiveTradeActivity)).toLocaleString()} PT PnL.`
+            : 'Use Settle or Redeem after the projected gain is positive. Preview-only actions do not count.'
         }
       ],
       ctaLabel: 'Open product detail',
-      ctaProductId: subscribeTaskProduct.id,
-      ctaCategoryId: getCategoryIdForProduct(subscribeTaskProduct),
-      claimTitle: 'Claim wealth receipt collectible',
-      claimCopy: `Claim only after this reads 3/3 completed. The collectible claim then runs the onchain markWealthTask step when the Wealth vault is configured.`
+      ctaProductId: tradeTaskProduct.id,
+      ctaCategoryId: getCategoryIdForProduct(tradeTaskProduct),
+      claimTitle: 'Anchor profitable trade task',
+      claimCopy: 'Claim only after this reads 3/3 completed. Sepolia receives the realized PnL and a task evidence hash; the collectible badge stays in the wallet set but is not shown here.'
     },
-    settlement: {
+    pledge: {
       eyebrow: 'Task detail',
-      title: 'Practice settle, roll, or pledge',
-      copy: `After a receipt exists, use ${settlementTaskProduct.name}'s detail desk for an actual settlement, redeem, pledge, or release action. Opening the panel alone no longer clears the task.`,
+      title: 'Complete one pledge',
+      copy: `Use ${pledgeTaskProduct.name}'s detail desk to pledge an owned receipt as route support. Releasing support does not complete this task by itself.`,
       checklistItems: [
         {
           id: 'owned-receipt',
           title: 'Owned receipt found',
-          done: settlementTaskReceiptAvailable,
-          copy: settlementTaskReceiptAvailable
-            ? `The wallet has a receipt history for ${settlementTaskProduct.name}.`
-            : 'Buy one receipt first; settlement and pledge need something to act on.'
+          done: pledgeTaskReceiptAvailable,
+          copy: pledgeTaskReceiptAvailable
+            ? `The wallet has a receipt history for ${pledgeTaskProduct.name}.`
+            : 'Buy one receipt first; pledge needs something to lock as support.'
         },
         {
           id: 'lifecycle-detail',
-          title: 'Use lifecycle action',
-          done: wealthSettlementDetailActionDone,
-          copy: wealthSettlementDetailActionDone
-            ? `Detected a settle, redeem, pledge, or release action for ${settlementTaskProduct.name}.`
-            : expandedProductId === settlementTaskProduct.id && selectedDetailTopics.includes('flow')
-              ? 'This is the right detail desk. Use Settle, Roll, Transfer, Pledge, or Release here to complete the step.'
-              : 'Open the receipt product detail, then complete one lifecycle action inside that desk.',
+          title: 'Open pledge desk',
+          done: expandedProductId === pledgeTaskProduct.id && selectedDetailTopics.includes('flow'),
+          copy: expandedProductId === pledgeTaskProduct.id && selectedDetailTopics.includes('flow')
+            ? 'This is the right detail desk. Use Pledge support here to complete the task.'
+            : 'Open the receipt product detail, then use Pledge support inside that desk.',
           interactive: true,
           onClick: () => {
-            focusProduct(settlementTaskProduct.id, {
+            focusProduct(pledgeTaskProduct.id, {
               topic: 'flow',
-              categoryId: getCategoryIdForProduct(settlementTaskProduct)
+              categoryId: getCategoryIdForProduct(pledgeTaskProduct)
             });
           }
         },
         {
           id: 'settlement-action',
-          title: 'Settle or pledge practiced',
-          done: wealthSettlementDetailActionDone,
-          copy: wealthSettlementDetailActionDone
-            ? 'Wealth detected a settlement, redeem, pledge, or release action in the wallet activity.'
-            : 'Use Settle / Roll / Transfer / Pledge in the detail desk; the row turns OK from activity, not manual marking.'
+          title: 'Pledge recorded',
+          done: Boolean(latestPledgeActivity),
+          copy: latestPledgeActivity
+            ? `Detected pledged support on ${latestPledgeActivity.productName || pledgeTaskProduct.name}.`
+            : 'Use Pledge support in the detail desk; release actions do not count as the pledge task.'
         }
       ],
-      ctaLabel: 'Open lifecycle desk',
-      ctaProductId: settlementTaskProduct.id,
-      ctaCategoryId: getCategoryIdForProduct(settlementTaskProduct),
-      claimTitle: 'Claim lifecycle collectible',
-      claimCopy: `Claim only after the lifecycle checklist reaches 3/3. The reward adds +${WEALTH_MILESTONE_BONUS.toLocaleString()} PT after the local or Sepolia claim is recorded.`
+      ctaLabel: 'Open pledge desk',
+      ctaProductId: pledgeTaskProduct.id,
+      ctaCategoryId: getCategoryIdForProduct(pledgeTaskProduct),
+      claimTitle: 'Anchor pledge task',
+      claimCopy: 'Claim only after one pledge is recorded. Sepolia receives a pledge evidence hash so the task is wallet-verifiable.'
+    },
+    dual: {
+      eyebrow: 'Task detail',
+      title: 'Profit on Dual Investment',
+      copy: `Use ${dualTaskProduct.name}'s Dual Investment order board, then settle the receipt with positive PT PnL.`,
+      checklistItems: [
+        {
+          id: 'wallet',
+          title: 'Wallet connected',
+          done: isConnected,
+          copy: isConnected
+            ? `Dual receipt activity will stay attached to ${walletDisplayName}.`
+            : 'Connect the same wallet before buying a Dual Investment receipt.'
+        },
+        {
+          id: 'dual-buy',
+          title: 'Buy Dual Investment',
+          done: dualTaskBought,
+          copy: dualTaskBought
+            ? `Detected a Dual Investment buy for ${dualTaskProduct.name}.`
+            : expandedProductId === dualTaskProduct.id && selectedDetailTopics.includes('flow')
+              ? 'This is the Dual Investment board. Review and buy the receipt first.'
+              : 'Open a Dual Investment detail board and buy one receipt.',
+          interactive: true,
+          onClick: () =>
+            focusProduct(dualTaskProduct.id, {
+              topic: 'flow',
+              categoryId: getCategoryIdForProduct(dualTaskProduct)
+            })
+        },
+        {
+          id: 'dual-profit',
+          title: 'Settle with profit',
+          done: Boolean(latestPositiveDualActivity),
+          copy: latestPositiveDualActivity
+            ? `${latestPositiveDualActivity.productName || dualTaskProduct.name} settled with +${Number(getWealthActivityPnl(latestPositiveDualActivity)).toLocaleString()} PT PnL.`
+            : 'Use Settle after the Dual Investment outcome is positive. Preview-only rows do not count.'
+        }
+      ],
+      ctaLabel: 'Open Dual Investment',
+      ctaProductId: dualTaskProduct.id,
+      ctaCategoryId: getCategoryIdForProduct(dualTaskProduct),
+      claimTitle: 'Anchor dual-profit task',
+      claimCopy: 'Claim only after the dual receipt is bought and settled with positive PT PnL. Sepolia receives the dual PnL and task evidence hash.'
     }
   };
   const selectedWealthTaskDetail = wealthTaskDetailMap[selectedWealthTask.id] || wealthTaskDetailMap.subscribe;
@@ -5449,18 +5739,11 @@ function WealthInner() {
   const selectedWealthTaskCompletedChecklistCount = selectedWealthTaskChecklistItems.filter((item) => item.done).length;
   const selectedWealthTaskChecklistTotal = selectedWealthTaskChecklistItems.length;
   const selectedWealthTaskReadyToClaim = Boolean(wealthTaskReadyToClaimById[selectedWealthTask.id]);
-  const selectedWealthTaskClaimed =
-    selectedWealthTask.id === 'settlement' ? wealthSettlementTaskClaimed : wealthSubscribeTaskClaimed;
-  const selectedWealthTaskFlagOnchain =
-    selectedWealthTask.id === 'settlement' ? Boolean(wealthSettlementTaskOnchain) : Boolean(wealthSubscribeTaskOnchain);
-  const selectedWealthTaskCollectibleOwned =
-    selectedWealthTask.id === 'settlement'
-      ? wealthSettlementTaskCollectibleOwned
-      : wealthSubscribeTaskCollectibleOwned;
-  const selectedWealthTaskTokenId =
-    selectedWealthTask.id === 'settlement' ? WEALTH_TASK_TOKEN_IDS.settlement : WEALTH_TASK_TOKEN_IDS.subscribe;
-  const selectedWealthTaskClaimedOnchain =
-    selectedWealthTask.id === 'settlement' ? wealthSettlementTaskClaimedOnchain : wealthSubscribeTaskClaimedOnchain;
+  const selectedWealthTaskClaimed = Boolean(wealthTaskClaimedById[selectedWealthTask.id]);
+  const selectedWealthTaskFlagOnchain = Boolean(wealthTaskOnchainById[selectedWealthTask.id]);
+  const selectedWealthTaskCollectibleOwned = Boolean(wealthTaskCollectibleOwnedById[selectedWealthTask.id]);
+  const selectedWealthTaskTokenId = WEALTH_TASK_TOKEN_IDS[selectedWealthTask.id] || 0;
+  const selectedWealthTaskClaimedOnchain = Boolean(wealthTaskClaimedOnchainById[selectedWealthTask.id]);
   const selectedWealthTaskClaiming =
     wealthClaimTaskId === selectedWealthTask.id &&
     (isWealthTaskClaimSubmitting ||
@@ -5472,8 +5755,8 @@ function WealthInner() {
         tone: 'done',
         text: 'Claimed',
         copy: selectedWealthTaskClaimedOnchain
-          ? `Sepolia collectible token #${selectedWealthTaskTokenId} is confirmed in this wallet. +${WEALTH_MILESTONE_BONUS.toLocaleString()} PT is included in shared wallet buying power.`
-          : `Local collectible claimed. +${WEALTH_MILESTONE_BONUS.toLocaleString()} PT is included in shared wallet buying power.`,
+          ? `Sepolia task is confirmed for this wallet. +${WEALTH_MILESTONE_BONUS.toLocaleString()} PT is included in shared wallet buying power.`
+          : `Local task reward claimed. +${WEALTH_MILESTONE_BONUS.toLocaleString()} PT is included in shared wallet buying power.`,
         actionLabel: 'Already claimed',
         actionDisabled: true
       }
@@ -5482,15 +5765,15 @@ function WealthInner() {
           tone: 'ready',
           text: '3/3 ready',
           copy: wealthVaultConfigured
-            ? `3/3 detail actions are detected. Claim submits markWealthTask on Sepolia, then Wealth waits until token #${selectedWealthTaskTokenId} appears in the wallet collectible balance.`
+            ? '3/3 detail actions are detected. Claim writes the task evidence hash and realized PnL to Sepolia, then Wealth watches the onchain task status.'
             : '3/3 detail actions are detected. This build can record the local reward; configure the Wealth vault address to require a Sepolia claim.',
-          actionLabel: wealthVaultConfigured ? 'Claim Sepolia collectible + PT' : 'Get local collectible + PT',
+          actionLabel: wealthVaultConfigured ? 'Claim Sepolia task + PT' : 'Get local task + PT',
           actionDisabled: selectedWealthTaskClaiming
         }
       : {
           tone: 'todo',
           text: 'To do',
-          copy: 'Complete all 3 detected steps first. Wealth watches receipt, settlement, and pledge activity automatically.',
+          copy: 'Complete all 3 detected steps first. Wealth watches profitable settlement, pledge, and dual-profit activity automatically.',
           actionLabel: 'Complete task first',
           actionDisabled: true
         };
@@ -5551,6 +5834,21 @@ function WealthInner() {
     minimumTicket: selectedMinimumTicket,
     availableCash
   });
+  const selectedProductUnaffordable = !canAffordProductMinimum(selectedProduct, availableCash);
+  const selectedProductCashMessage = selectedProductUnaffordable
+    ? getInsufficientProductCashMessage(selectedProduct, availableCash)
+    : '';
+  const selectedSubscribeBlockMessage =
+    wealthReceiptGateBlocked
+      ? wealthReceiptGateMessage
+      : selectedProductCashMessage || subscriptionValidationMessage || '';
+  const selectedSubscribeDisabled = Boolean(
+    selectedProductLocked ||
+      wealthWalletActionPending ||
+      wealthReceiptGateBlocked ||
+      selectedProductCashMessage ||
+      subscriptionValidationMessage
+  );
   const accessChecklist = getAccessChecklist(selectedProduct, {
     isConnected,
     guideTaskDone,
@@ -5683,7 +5981,7 @@ function WealthInner() {
       : 'Loading live snapshot';
   const leaderboardRows = useMemo(
     () =>
-      shelfProducts
+      visibleShelfProducts
         .map((product) => {
           const metrics = shelfMetricsMap.get(product.id);
           if (!metrics) return null;
@@ -5708,7 +6006,7 @@ function WealthInner() {
         .filter(Boolean)
         .sort((left, right) => right.returnSortRate - left.returnSortRate || right.score - left.score)
         .slice(0, LEADERBOARD_LIMIT),
-    [shelfMetricsMap, shelfProducts]
+    [shelfMetricsMap, visibleShelfProducts]
   );
 
   useEffect(() => {
@@ -5763,8 +6061,7 @@ function WealthInner() {
       return;
     }
 
-    const onchainCollectibleConfirmed =
-      wealthClaimTaskId === 'settlement' ? wealthSettlementTaskClaimedOnchain : wealthSubscribeTaskClaimedOnchain;
+    const onchainCollectibleConfirmed = Boolean(wealthTaskClaimedOnchainById[wealthClaimTaskId]);
     if (onchainCollectibleConfirmed) {
       recordWealthTaskClaim(wealthClaimTaskId, 'onchain');
       setWealthClaimTaskId('');
@@ -5774,11 +6071,17 @@ function WealthInner() {
     }
 
     const refetchTask =
-      wealthClaimTaskId === 'settlement' ? refetchWealthSettlementTask : refetchWealthSubscribeTask;
+      wealthClaimTaskId === 'dual'
+        ? refetchWealthDualTask
+        : wealthClaimTaskId === 'pledge'
+          ? refetchWealthSettlementTask
+          : refetchWealthSubscribeTask;
     const refetchCollectible =
-      wealthClaimTaskId === 'settlement'
-        ? refetchWealthSettlementTaskCollectible
-        : refetchWealthSubscribeTaskCollectible;
+      wealthClaimTaskId === 'dual'
+        ? refetchWealthDualTaskCollectible
+        : wealthClaimTaskId === 'pledge'
+          ? refetchWealthSettlementTaskCollectible
+          : refetchWealthSubscribeTaskCollectible;
 
     let cancelled = false;
 
@@ -5820,14 +6123,17 @@ function WealthInner() {
     };
   }, [
     address,
+    refetchWealthDualTaskCollectible,
+    refetchWealthDualTask,
     refetchWealthSettlementTaskCollectible,
     refetchWealthSettlementTask,
     refetchWealthSubscribeTaskCollectible,
     refetchWealthSubscribeTask,
     wealthClaimRecipientKey,
     wealthClaimTaskId,
-    wealthSettlementTaskClaimedOnchain,
-    wealthSubscribeTaskClaimedOnchain,
+    wealthDualTaskClaimedOnchain,
+    wealthPledgeTaskClaimedOnchain,
+    wealthTradeTaskClaimedOnchain,
     wealthTaskClaimConfirmed,
     wealthVaultConfigured
   ]);
@@ -5836,7 +6142,12 @@ function WealthInner() {
     if (!WEALTH_TASK_TYPES[taskId]) return;
 
     const taskClaimsPatch = { [taskId]: true };
-    const taskLabel = taskId === 'settlement' ? 'settlement / pledge' : 'receipt';
+    const taskLabel =
+      taskId === 'dual'
+        ? 'dual-profit'
+        : taskId === 'pledge'
+          ? 'pledge'
+          : 'profitable trade';
 
     setProgressState((current) => ({
       ...current,
@@ -5970,12 +6281,12 @@ function WealthInner() {
 
   async function handleClaimWealthTaskBadge(taskId) {
     const quest = wealthQuestRows.find((item) => item.id === taskId);
-    const alreadyClaimed = taskId === 'settlement' ? wealthSettlementTaskClaimed : wealthSubscribeTaskClaimed;
+    const alreadyClaimed = Boolean(wealthTaskClaimedById[taskId]);
 
     if (!quest) return;
 
     if (!isConnected || !address) {
-      setFeedback('Connect MetaMask first so the Wealth task collectible and PT reward stay mapped to one wallet.');
+      setFeedback('Connect MetaMask first so the Wealth task and PT reward stay mapped to one wallet.');
       return;
     }
 
@@ -5997,7 +6308,26 @@ function WealthInner() {
     }
 
     try {
-      setFeedback(`Open MetaMask to claim Sepolia collectible token #${WEALTH_TASK_TOKEN_IDS[taskId]}.`);
+      const evidenceActivity = wealthTaskEvidenceActivityById[taskId] || {};
+      const realizedPnlNumber =
+        taskId === 'pledge'
+          ? 0
+          : Math.max(1, Math.round(Number(getWealthActivityPnl(evidenceActivity) || 0)));
+      const evidenceHash = await buildWealthTaskEvidenceHash({
+        kind: 'risklens.wealth-task-evidence.v2',
+        address: String(address).toLowerCase(),
+        taskId,
+        taskType: WEALTH_TASK_TYPES[taskId],
+        badge: quest.badge,
+        productId: evidenceActivity.productId || '',
+        productName: evidenceActivity.productName || '',
+        activityType: evidenceActivity.type || '',
+        activityAt: evidenceActivity.timestamp || evidenceActivity.createdAt || evidenceActivity.date || '',
+        realizedPnl: realizedPnlNumber,
+        claimedAt: new Date().toISOString()
+      });
+
+      setFeedback(`Open MetaMask to anchor ${quest.badge} evidence on Sepolia.`);
       setWealthTaskClaimHash(undefined);
       setWealthClaimRecipientKey(String(address).toLowerCase());
 
@@ -6009,10 +6339,10 @@ function WealthInner() {
       const claimHash = await writeWealthTaskContractAsync({
         address: WEALTH_VAULT_ADDRESS,
         abi: wealthVaultAbi,
-        functionName: 'markWealthTask',
-        args: [WEALTH_TASK_TYPES[taskId]],
+        functionName: 'markWealthTaskWithEvidence',
+        args: [WEALTH_TASK_TYPES[taskId], BigInt(realizedPnlNumber), evidenceHash],
         chainId: SEPOLIA_CHAIN_ID,
-        gas: 220000n
+        gas: 260000n
       });
       setWealthTaskClaimHash(claimHash);
     } catch (claimError) {
@@ -6020,7 +6350,7 @@ function WealthInner() {
       setWealthTaskClaimHash(undefined);
       setWealthClaimRecipientKey('');
       const message = String(claimError?.shortMessage || claimError?.message || claimError || '');
-      setFeedback(message.toLowerCase().includes('rejected') ? 'Wealth collectible claim was cancelled in MetaMask.' : message);
+      setFeedback(message.toLowerCase().includes('rejected') ? 'Wealth task claim was cancelled in MetaMask.' : message);
     }
   }
 
@@ -6244,7 +6574,7 @@ function WealthInner() {
       isLocked: Boolean(unlockCopy),
       unlockCopy,
       requestedAmount,
-      minimumTicket: Math.max(WEALTH_MIN_SUBSCRIPTION, product.minSubscription),
+      minimumTicket: getProductMinimumTicket(product),
       availableCash
     });
   }
@@ -6252,14 +6582,21 @@ function WealthInner() {
   function handleOpenSubscribeModal(productOverride = selectedProduct, event) {
     event?.stopPropagation?.();
     const product = productOverride || selectedProduct;
-    const requestedAmount = Number(allocationAmount);
+    if (wealthReceiptGateBlocked) {
+      setFeedback(wealthReceiptGateMessage);
+      return;
+    }
+    const currentAmount = Number(allocationAmount);
+    const productMinimumTicket = getProductMinimumTicket(product);
+    const requestedAmount =
+      product.id === selectedProduct.id && Number.isFinite(currentAmount) ? currentAmount : productMinimumTicket;
     const validationMessage = getProductSubscriptionValidation(product, requestedAmount);
 
     setSelectedProductId(product.id);
     setExpandedProductId(product.id);
     setSelectedDetailTopics(['flow']);
     queueProductScroll(product.id, 'detail');
-    setAllocationAmount(Number.isFinite(requestedAmount) ? requestedAmount : 0);
+    setAllocationAmount(Number.isFinite(requestedAmount) ? requestedAmount : productMinimumTicket);
 
     if (validationMessage) {
       setFeedback(validationMessage);
@@ -6451,6 +6788,7 @@ function WealthInner() {
         productName: selectedProduct.name,
         amount: requestedAmount,
         shares: sharesMinted,
+        isDualInvestment: isDualInvestmentProduct(selectedProduct),
         receiptProofMode: wantsOnchainReceipt ? 'onchain' : 'local',
         receiptProofHash,
         receiptTokenId,
@@ -6480,6 +6818,11 @@ function WealthInner() {
 
     if (!isConnected || !address) {
       setFeedback('Connect MetaMask first so the pledged receipt and support line stay mapped to one wallet.');
+      return;
+    }
+
+    if (wealthReceiptGateBlocked) {
+      setFeedback(wealthReceiptGateMessage);
       return;
     }
 
@@ -6557,7 +6900,8 @@ function WealthInner() {
         productId: selectedProduct.id,
         productName: selectedProduct.name,
         amount: nextBorrowTarget,
-        shares: collateralShares
+        shares: collateralShares,
+        isDualInvestment: isDualInvestmentProduct(selectedProduct)
       });
     });
 
@@ -6574,6 +6918,11 @@ function WealthInner() {
 
     if (!selectedPledgedShares || !selectedBorrowedAmount) {
       setFeedback(`No pledged ${selectedProduct.shareToken} receipt is active for this wallet right now.`);
+      return;
+    }
+
+    if (wealthReceiptGateBlocked) {
+      setFeedback(wealthReceiptGateMessage);
       return;
     }
 
@@ -6612,7 +6961,8 @@ function WealthInner() {
         productId: selectedProduct.id,
         productName: selectedProduct.name,
         amount: selectedBorrowedAmount,
-        shares: selectedPledgedShares
+        shares: selectedPledgedShares,
+        isDualInvestment: isDualInvestmentProduct(selectedProduct)
       });
     });
 
@@ -6662,6 +7012,7 @@ function WealthInner() {
     const remainingShares = roundNumber(Math.max(0, selectedPosition.shares - sharesToBurn), 6);
     const ratio = selectedPosition.shares > 0 ? Math.min(1, sharesToBurn / selectedPosition.shares) : 0;
     const principalReduction = roundNumber(selectedPosition.principal * ratio, 2);
+    const realizedPnl = roundNumber(redeemValue - principalReduction, 2);
     const signed = await ensureWealthActionSignature({
       action: 'redeem',
       amount: redeemValue,
@@ -6713,7 +7064,10 @@ function WealthInner() {
         productId: selectedProduct.id,
         productName: selectedProduct.name,
         amount: redeemValue,
-        shares: sharesToBurn
+        shares: sharesToBurn,
+        principal: principalReduction,
+        pnl: realizedPnl,
+        isDualInvestment: isDualInvestmentProduct(selectedProduct)
       });
     });
 
@@ -6728,6 +7082,11 @@ function WealthInner() {
   async function handleSimulateSettlement() {
     if (!isConnected || !address) {
       setFeedback('Connect MetaMask first so maturity, roll, transfer, or exit simulation is signed by the receipt wallet.');
+      return;
+    }
+
+    if (wealthReceiptGateBlocked) {
+      setFeedback(wealthReceiptGateMessage);
       return;
     }
 
@@ -6761,6 +7120,7 @@ function WealthInner() {
     const valueToSettle = roundNumber(sharesToSettle * settlementProjectedNav, 2);
     const ratio = selectedPosition.shares > 0 ? Math.min(1, sharesToSettle / selectedPosition.shares) : 0;
     const principalReduction = roundNumber(selectedPosition.principal * ratio, 2);
+    const settlementPnl = roundNumber(valueToSettle - principalReduction, 2);
     const actionLabel = settlementActionMeta.label.toLowerCase();
     const signed = await ensureWealthActionSignature({
       action: `settlement ${settlementAction}`,
@@ -6843,7 +7203,10 @@ function WealthInner() {
           productName: selectedProduct.name,
           action: settlementAction,
           amount: valueToSettle,
-          shares: sharesToSettle
+          shares: sharesToSettle,
+          principal: principalReduction,
+          pnl: settlementPnl,
+          isDualInvestment: isDualInvestmentProduct(selectedProduct)
         });
       }
 
@@ -6910,7 +7273,10 @@ function WealthInner() {
           action: settlementAction,
           amount: valueToSettle,
           shares: sharesToSettle,
-          targetProductId: settlementAction === 'transfer' ? settlementTransferProduct?.id : ''
+          principal: principalReduction,
+          pnl: settlementPnl,
+          targetProductId: settlementAction === 'transfer' ? settlementTransferProduct?.id : '',
+          isDualInvestment: isDualInvestmentProduct(selectedProduct)
         }
       );
     });
@@ -7194,10 +7560,12 @@ function WealthInner() {
                 <span>Subscription amount</span>
                 <input
                   type="number"
-                  min="0"
+                  min={selectedMinimumTicket}
                   step="100"
                   value={allocationAmount}
                   onChange={(event) => setAllocationAmount(Number(event.target.value))}
+                  disabled={selectedProductUnaffordable}
+                  title={selectedProductCashMessage || undefined}
                   aria-label="Dual Investment PT subscription amount"
                 />
               </label>
@@ -7207,6 +7575,8 @@ function WealthInner() {
                 onClick={() => {
                   setAllocationAmount(String(Math.max(0, roundNumber(availableCash, 2))));
                 }}
+                disabled={selectedProductUnaffordable}
+                title={selectedProductCashMessage || undefined}
               >
                 Max
               </button>
@@ -7218,7 +7588,8 @@ function WealthInner() {
                   type="button"
                   className={`ghost-btn compact ${Number(allocationAmount) === preset ? 'active-toggle' : ''}`}
                   onClick={() => setAllocationAmount(preset)}
-                  disabled={availableCash > 0 && preset > availableCash}
+                  disabled={selectedProductUnaffordable || preset > availableCash}
+                  title={selectedProductCashMessage || undefined}
                 >
                   {preset.toLocaleString()}
                 </button>
@@ -7391,6 +7762,15 @@ function WealthInner() {
             const productPosition = displayWealthState.positions?.[product.id] || { shares: 0, principal: 0 };
             const productReceiptValue = roundNumber(Number(productPosition.shares || 0) * Number(product.nav || 0), 2);
             const hasPosition = Number(productPosition.shares || 0) > 0;
+            const productMinimumTicket = getProductMinimumTicket(product);
+            const productCashMessage = !canAffordProductMinimum(product, availableCash)
+              ? getInsufficientProductCashMessage(product, availableCash)
+              : '';
+            const productBuyBlockMessage =
+              wealthReceiptGateBlocked
+                ? wealthReceiptGateMessage
+                : productCashMessage || getProductSubscriptionValidation(product, productMinimumTicket);
+            const productBuyDisabled = Boolean(wealthWalletActionPending || wealthReceiptGateBlocked || productBuyBlockMessage);
 
             return (
               <div className="wealth-dual-action-row" key={`${product.id}-actions`}>
@@ -7409,7 +7789,8 @@ function WealthInner() {
                   <button
                     className="primary-btn compact"
                     onClick={(event) => handleOpenSubscribeModal(product, event)}
-                    disabled={wealthWalletActionPending}
+                    disabled={productBuyDisabled}
+                    title={productBuyBlockMessage || undefined}
                   >
                     Buy
                   </button>
@@ -7910,10 +8291,12 @@ function WealthInner() {
           Subscribe amount
           <input
             type="number"
-            min={Math.max(WEALTH_MIN_SUBSCRIPTION, selectedProduct.minSubscription)}
+            min={selectedMinimumTicket}
             step="100"
             value={allocationAmount}
             onChange={(event) => setAllocationAmount(Number(event.target.value))}
+            disabled={selectedProductUnaffordable}
+            title={selectedProductCashMessage || undefined}
           />
         </label>
 
@@ -7924,7 +8307,8 @@ function WealthInner() {
               type="button"
               className={`ghost-btn compact ${preset.active ? 'active-toggle' : ''}`}
               onClick={() => setAllocationAmount(preset.value)}
-              disabled={preset.disabled}
+              disabled={preset.disabled || selectedProductUnaffordable}
+              title={selectedProductCashMessage || undefined}
             >
               {preset.label}
             </button>
@@ -7978,8 +8362,19 @@ function WealthInner() {
 
         <ReceiptLifecycleDiagram product={selectedProduct} compact />
 
+        {wealthReceiptGateBlocked ? (
+          <div className="wealth-inline-note paper-inline-note receipt-gate-note">
+            <strong>Preview only.</strong> {wealthReceiptGateMessage}
+          </div>
+        ) : null}
+
         <div className="toolbar wealth-action-toolbar">
-          <button className="primary-btn" onClick={handleOpenSubscribeModal} disabled={selectedProductLocked || wealthWalletActionPending}>
+          <button
+            className="primary-btn"
+            onClick={handleOpenSubscribeModal}
+            disabled={selectedSubscribeDisabled}
+            title={selectedSubscribeBlockMessage || undefined}
+          >
             {wealthWalletActionPending ? 'Await wallet' : 'Review and buy'}
           </button>
         </div>
@@ -8081,7 +8476,7 @@ function WealthInner() {
           )}
 
           <div className="toolbar">
-            <button className="primary-btn" onClick={handleSimulateSettlement} disabled={wealthWalletActionPending || !selectedPosition.shares}>
+            <button className="primary-btn" onClick={handleSimulateSettlement} disabled={wealthWalletActionPending || wealthReceiptGateBlocked || !selectedPosition.shares}>
               {wealthWalletActionPending ? 'Await wallet' : 'Sign settlement action'}
             </button>
           </div>
@@ -8194,10 +8589,10 @@ function WealthInner() {
               </div>
 
               <div className="toolbar">
-                <button className="primary-btn" onClick={handleUseAsCollateral} disabled={wealthWalletActionPending}>
+                <button className="primary-btn" onClick={handleUseAsCollateral} disabled={wealthWalletActionPending || wealthReceiptGateBlocked}>
                   {wealthWalletActionPending ? 'Await wallet' : `Open support line on ${selectedProduct.shareToken}`}
                 </button>
-                <button className="secondary-btn" onClick={handleReleaseCollateral} disabled={wealthWalletActionPending || selectedPledgeLockStatus.isLocked}>
+                <button className="secondary-btn" onClick={handleReleaseCollateral} disabled={wealthWalletActionPending || wealthReceiptGateBlocked || selectedPledgeLockStatus.isLocked}>
                   Release support
                 </button>
               </div>
@@ -8761,10 +9156,12 @@ function WealthInner() {
                       Subscribe amount
                       <input
                         type="number"
-                        min={Math.max(WEALTH_MIN_SUBSCRIPTION, selectedProduct.minSubscription)}
+                        min={selectedMinimumTicket}
                         step="100"
                         value={allocationAmount}
                         onChange={(event) => setAllocationAmount(Number(event.target.value))}
+                        disabled={selectedProductUnaffordable}
+                        title={selectedProductCashMessage || undefined}
                       />
                     </label>
                     {subscriptionAmountWarning ? (
@@ -8780,7 +9177,8 @@ function WealthInner() {
                           type="button"
                           className={`ghost-btn compact ${preset.active ? 'active-toggle' : ''}`}
                           onClick={() => setAllocationAmount(preset.value)}
-                          disabled={preset.disabled}
+                          disabled={preset.disabled || selectedProductUnaffordable}
+                          title={selectedProductCashMessage || undefined}
                         >
                           {preset.label}
                         </button>
@@ -8832,8 +9230,19 @@ function WealthInner() {
                       <span className={`pill ${selectedSettlementPolicy.tone}`}>{selectedSettlementPolicy.label}</span>
                     </div>
 
+                    {wealthReceiptGateBlocked ? (
+                      <div className="wealth-inline-note paper-inline-note receipt-gate-note">
+                        <strong>Preview only.</strong> {wealthReceiptGateMessage}
+                      </div>
+                    ) : null}
+
                     <div className="toolbar wealth-action-toolbar">
-                      <button className="primary-btn" onClick={() => handleOpenSubscribeModal()} disabled={selectedProductLocked || wealthWalletActionPending}>
+                      <button
+                        className="primary-btn"
+                        onClick={() => handleOpenSubscribeModal()}
+                        disabled={selectedSubscribeDisabled}
+                        title={selectedSubscribeBlockMessage || undefined}
+                      >
                         {wealthWalletActionPending ? 'Await wallet' : 'Review and buy'}
                       </button>
                       <button className="ghost-btn compact" onClick={handleResetPortfolio} disabled={wealthWalletActionPending}>
@@ -8939,7 +9348,7 @@ function WealthInner() {
                 )}
 
                 <div className="toolbar">
-                  <button className="primary-btn" onClick={handleSimulateSettlement} disabled={wealthWalletActionPending || !selectedPosition.shares}>
+                  <button className="primary-btn" onClick={handleSimulateSettlement} disabled={wealthWalletActionPending || wealthReceiptGateBlocked || !selectedPosition.shares}>
                     {wealthWalletActionPending ? 'Await wallet' : 'Sign settlement action'}
                   </button>
                 </div>
@@ -9014,10 +9423,10 @@ function WealthInner() {
                   </div>
 
                   <div className="toolbar">
-                    <button className="primary-btn" onClick={handleUseAsCollateral} disabled={wealthWalletActionPending}>
+                    <button className="primary-btn" onClick={handleUseAsCollateral} disabled={wealthWalletActionPending || wealthReceiptGateBlocked}>
                       {wealthWalletActionPending ? 'Await wallet' : `Open support line on ${selectedProduct.shareToken}`}
                     </button>
-                    <button className="secondary-btn" onClick={handleReleaseCollateral} disabled={wealthWalletActionPending || selectedPledgeLockStatus.isLocked}>
+                    <button className="secondary-btn" onClick={handleReleaseCollateral} disabled={wealthWalletActionPending || wealthReceiptGateBlocked || selectedPledgeLockStatus.isLocked}>
                       Release support
                     </button>
                   </div>
@@ -9165,7 +9574,7 @@ function WealthInner() {
                 </div>
               </div>
 
-              <div className="wealth-rights-grid" style={{ marginTop: 16 }}>
+              <div className="wealth-rights-grid wealth-diligence-compare-points" style={{ marginTop: 16 }}>
                 {selectedDiligenceModel.breakdown.map((item) => (
                   <div className="wealth-signal-row" key={item.label}>
                     <div className="product-top">
@@ -9183,7 +9592,7 @@ function WealthInner() {
                 ))}
               </div>
 
-              <div className="wealth-rights-grid" style={{ marginTop: 16 }}>
+              <div className="wealth-rights-grid wealth-diligence-compare-points" style={{ marginTop: 16 }}>
                 {selectedDiligenceModel.signalRows.map((item) => (
                   <div className="wealth-signal-row" key={item.label}>
                     <div className="product-top">
@@ -9603,7 +10012,7 @@ function WealthInner() {
 
               {shelfProducts.length ? (
                 <div className="wealth-product-row">
-                  {shelfProducts.map((product) => {
+                  {visibleShelfProducts.map((product) => {
                   const unlockCopy = getUnlockCopy(product, unlockProgress);
                   const isLocked = Boolean(unlockCopy);
                   const productNavPeriod = productNavPeriods[product.id] || '30d';
@@ -9618,6 +10027,12 @@ function WealthInner() {
                   const productCollateral = displayWealthState.collateral?.[product.id] || { pledgedShares: 0, borrowedAmount: 0 };
                   const productReceiptValue = roundNumber((productPosition.shares || 0) * product.nav, 2);
                   const productDifficulty = getProductDifficulty(product);
+                  const productUnaffordable = !canAffordProductMinimum(product, availableCash);
+                  const productMinimumTicket = getProductMinimumTicket(product);
+                  const productSubscribeBlockMessage =
+                    wealthReceiptGateBlocked
+                      ? wealthReceiptGateMessage
+                      : getProductSubscriptionValidation(product, productMinimumTicket);
 
                   return (
                     <div className="wealth-product-stack" key={product.id}>
@@ -9629,8 +10044,9 @@ function WealthInner() {
                             productCardRefs.current.delete(product.id);
                           }
                         }}
-                        className={`product-card wealth-product-card ${expandedProductId === product.id ? 'active' : ''}`}
+                        className={`product-card wealth-product-card ${expandedProductId === product.id ? 'active' : ''} ${productUnaffordable ? 'unaffordable' : ''} ${productSubscribeBlockMessage ? 'buy-blocked' : ''}`}
                         data-wealth-product-card={product.id}
+                        title={productSubscribeBlockMessage || undefined}
                         onClick={() => handleToggleProduct(product.id)}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter' || event.key === ' ') {
@@ -9642,6 +10058,12 @@ function WealthInner() {
                         tabIndex={0}
                         aria-expanded={isExpanded}
                       >
+                        {productSubscribeBlockMessage ? (
+                          <div className="wealth-product-block-tooltip">
+                            <strong>Blocked</strong>
+                            <span>{productSubscribeBlockMessage}</span>
+                          </div>
+                        ) : null}
                         <div className="product-top">
                           <div>
                             <div className="product-title">{product.name}</div>
@@ -10075,8 +10497,7 @@ function WealthInner() {
                           <span className={`pill ${selectedSettlementPolicy.tone}`}>{selectedSettlementPolicy.label}</span>
                         </div>
 
-                        <ReceiptLifecycleDiagram product={selectedProduct} />
-                        <DualInvestmentVisual product={selectedProduct} />
+                        {!selectedProductIsDual ? <ReceiptLifecycleDiagram product={selectedProduct} /> : null}
 
                         <div className="starter-reasons" style={{ marginTop: 14 }}>
                           <div className="reason-card">
@@ -10117,10 +10538,12 @@ function WealthInner() {
                           Subscribe amount
                           <input
                             type="number"
-                            min={Math.max(WEALTH_MIN_SUBSCRIPTION, selectedProduct.minSubscription)}
+                            min={selectedMinimumTicket}
                             step="100"
                             value={allocationAmount}
                             onChange={(event) => setAllocationAmount(Number(event.target.value))}
+                            disabled={selectedProductUnaffordable}
+                            title={selectedProductCashMessage || undefined}
                           />
                         </label>
 
@@ -10131,7 +10554,8 @@ function WealthInner() {
                               type="button"
                               className={`ghost-btn compact ${preset.active ? 'active-toggle' : ''}`}
                               onClick={() => setAllocationAmount(preset.value)}
-                              disabled={preset.disabled}
+                              disabled={preset.disabled || selectedProductUnaffordable}
+                              title={selectedProductCashMessage || undefined}
                             >
                               {preset.label}
                             </button>
@@ -10164,7 +10588,7 @@ function WealthInner() {
                           <span className={`pill ${selectedSettlementPolicy.tone}`}>{selectedSettlementPolicy.label}</span>
                         </div>
 
-                        <ReceiptLifecycleDiagram product={selectedProduct} compact />
+                        {!selectedProductIsDual ? <ReceiptLifecycleDiagram product={selectedProduct} compact /> : null}
 
                         {isDualInvestmentProduct(selectedProduct) ? (
                           <>
@@ -10193,7 +10617,8 @@ function WealthInner() {
                               <button
                                 className="primary-btn"
                                 onClick={handleOpenSubscribeModal}
-                                disabled={selectedProductLocked || wealthWalletActionPending}
+                                disabled={selectedSubscribeDisabled}
+                                title={selectedSubscribeBlockMessage || undefined}
                               >
                                 {wealthWalletActionPending ? 'Await wallet' : 'Review and buy'}
                               </button>
@@ -10205,7 +10630,8 @@ function WealthInner() {
                               <button
                                 className="primary-btn"
                                 onClick={handleOpenSubscribeModal}
-                                disabled={selectedProductLocked || wealthWalletActionPending}
+                                disabled={selectedSubscribeDisabled}
+                                title={selectedSubscribeBlockMessage || undefined}
                               >
                                 {wealthWalletActionPending ? 'Await wallet' : 'Review and buy'}
                               </button>

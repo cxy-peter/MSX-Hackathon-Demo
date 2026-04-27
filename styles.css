@@ -113,7 +113,9 @@ button, input, select { font: inherit; color: inherit; }
 
 .header-admin-row {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px;
   width: 100%;
 }
 
@@ -1083,7 +1085,7 @@ label {
 
 .learn-quest-core-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -2716,6 +2718,7 @@ label {
 }
 
 .wealth-product-card {
+  position: relative;
   text-align: left;
   background: rgba(255,255,255,0.025);
   cursor: pointer;
@@ -2733,6 +2736,50 @@ label {
 .wealth-product-card.active {
   border-color: rgba(122,166,255,0.24);
   box-shadow: inset 0 0 0 1px rgba(122,166,255,0.1);
+}
+
+.wealth-product-card.buy-blocked:not(.active) {
+  border-color: rgba(255, 242, 0, 0.24);
+}
+
+.wealth-product-block-tooltip {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 6;
+  display: grid;
+  gap: 3px;
+  max-width: min(320px, calc(100% - 24px));
+  padding: 9px 11px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 242, 0, 0.36);
+  background: rgba(8, 13, 18, 0.96);
+  color: var(--text);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.34);
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.wealth-product-block-tooltip strong {
+  color: var(--yellow);
+  font-size: 11px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.wealth-product-block-tooltip span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.wealth-product-card.buy-blocked:not(.active):hover .wealth-product-block-tooltip,
+.wealth-product-card.buy-blocked:not(.active):focus-visible .wealth-product-block-tooltip {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .paper-trading-shell .wealth-product-card.active {
@@ -10458,16 +10505,16 @@ label {
 
 .wealth-task-guide-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .wealth-task-card {
   appearance: none;
   display: grid;
   gap: 9px;
-  min-height: 182px;
-  padding: 16px;
+  min-height: 196px;
+  padding: 18px;
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 18px;
   background: rgba(255,255,255,0.03);
@@ -10548,7 +10595,7 @@ label {
 
 .wealth-task-card strong {
   color: var(--text);
-  font-size: 16px;
+  font-size: 18px;
   line-height: 1.22;
 }
 
@@ -11602,18 +11649,18 @@ label {
 
 .checklist-status-badge.ready,
 .wealth-task-status.ready {
-  background: rgba(255, 177, 66, 0.16);
+  background: transparent;
   color: #ffbd59;
   border-color: rgba(255, 177, 66, 0.44);
 }
 
 /* Header nickname and compact floating labels */
 .header-admin-row {
-  gap: 10px;
+  gap: 8px;
 }
 
 .header-admin-row .wallet-nickname-top-btn {
-  margin-right: auto;
+  margin-right: 0;
 }
 
 .header-admin-row .github-project-link {
@@ -11722,12 +11769,17 @@ label {
 }
 
 .checklist-status-badge.todo,
-.checklist-status-badge.ready,
-.wealth-task-status.todo,
-.wealth-task-status.ready {
+.wealth-task-status.todo {
   color: #ffe29a;
   border-color: rgba(244, 207, 107, 0.5);
   background: rgba(244, 207, 107, 0.12);
+}
+
+.checklist-status-badge.ready,
+.wealth-task-status.ready {
+  color: #ffbd59;
+  border-color: rgba(255, 177, 66, 0.38);
+  background: transparent;
 }
 
 @keyframes taskCardYellowBorderPulse {
@@ -11764,15 +11816,10 @@ label {
 }
 
 /* Brighter pending / action-needed task treatment */
-.risk-medium,
-.pill.risk-medium,
 .quest-status-badge.todo,
 .tile-status-badge.todo,
-.tile-status-badge.ready,
 .checklist-status-badge.todo,
-.checklist-status-badge.ready,
 .wealth-task-status.todo,
-.wealth-task-status.ready,
 .wealth-check-badge.todo,
 [class*='action-needed'],
 [class*='actionneeded'] {
@@ -11781,13 +11828,27 @@ label {
   background: rgba(255, 242, 0, 0.14) !important;
 }
 
+.risk-medium,
+.paper-trading-shell .risk-medium {
+  color: var(--yellow) !important;
+  background: transparent !important;
+}
+
+.pill.risk-medium {
+  background: transparent !important;
+}
+
 .tile-status-badge.todo::before,
-.tile-status-badge.ready::before,
 .checklist-status-badge.todo::before,
-.checklist-status-badge.ready::before,
 .quest-status-badge.todo::before {
   background: #fff200 !important;
   box-shadow: 0 0 0 rgba(255, 242, 0, 0.72) !important;
+}
+
+.tile-status-badge.ready::before,
+.checklist-status-badge.ready::before {
+  background: rgba(255, 255, 255, 0.46) !important;
+  box-shadow: none !important;
 }
 
 .learn-quest-tile:not(.done),
@@ -11864,6 +11925,27 @@ label {
 .paper-shelf-risk-pill {
   white-space: nowrap;
   min-width: max-content;
+}
+
+.paper-trading-shell {
+  padding-bottom: 8px;
+}
+
+.paper-trading-shell main > section:last-of-type {
+  margin-bottom: 8px;
+}
+
+.wealth-diligence-summary-only .wealth-diligence-compare-points {
+  width: min(560px, 52%);
+  margin-left: auto;
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 1180px) {
+  .wealth-diligence-summary-only .wealth-diligence-compare-points {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 
 /* Dual Investment: RiskLens/MSX color refresh */

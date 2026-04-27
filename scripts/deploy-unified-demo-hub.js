@@ -22,9 +22,10 @@ const WEALTH_RECEIPT_LABELS = [
   'OpenAI Private Growth',
   'RiskLens ETH Protected Growth',
   'RiskLens BTC Premium Income',
+  'RiskLens BTC/USDT Dual Investment',
   'RiskLens BTC/USDC Dual Investment',
+  'RiskLens ETH/USDT Dual Investment',
   'RiskLens ETH/USDC Dual Investment',
-  'RiskLens SOL/USDT Dual Investment',
   'RiskLens Index Auto-Call Yield'
 ];
 
@@ -50,10 +51,69 @@ const WEALTH_RECEIPT_DETAILS = [
   'Private growth receipt; NAV and transfer windows apply',
   'Defined-outcome ETH receipt; observation and maturity rules apply',
   'Monthly premium-income BTC receipt; option cycle settlement applies',
+  'BTC/USDT dual investment; target-price settlement applies',
   'BTC/USDC dual investment; target-price settlement applies',
+  'ETH/USDT dual investment; target-price settlement applies',
   'ETH/USDC dual investment; target-price settlement applies',
-  'SOL/USDT dual investment; target-price settlement applies',
   'Auto-call receipt; observation dates and coupon barriers apply'
+];
+
+const WEALTH_RECEIPT_TYPES = [
+  'Cash and Treasury',
+  'Cash and Treasury',
+  'Money market',
+  'Treasury fund',
+  'Cash and Treasury',
+  'Treasury bill',
+  'Qualified fund share',
+  'Carry receipt',
+  'Private credit',
+  'Private credit',
+  'Quant strategy',
+  'Quant strategy',
+  'Public wrapper',
+  'Private market access',
+  'Secondary market',
+  'Pre-IPO secondary',
+  'Private growth',
+  'Secondary market',
+  'Private growth',
+  'Defined outcome',
+  'Premium income',
+  'Dual Investment',
+  'Dual Investment',
+  'Dual Investment',
+  'Dual Investment',
+  'Auto-call'
+];
+
+const WEALTH_RECEIPT_MATURITIES = [
+  'Market day / T+1',
+  'Daily route',
+  'Broker settlement window',
+  'Subscription window',
+  '24/7 issuer route',
+  'T-bill maturity ladder',
+  'Fund-specific',
+  'Carry period',
+  'Interval window',
+  'Term credit window',
+  'Monthly rebalance',
+  'Term rebalance',
+  'Market day',
+  'SPV window',
+  'Secondary window',
+  'Transfer window',
+  'NAV window',
+  'Secondary window',
+  'NAV window',
+  'Observation date',
+  'Monthly option cycle',
+  '2026-04-28 demo cycle',
+  '2026-04-28 demo cycle',
+  '2026-04-29 demo cycle',
+  '2026-04-29 demo cycle',
+  'Observation schedule'
 ];
 
 async function main() {
@@ -81,8 +141,14 @@ async function main() {
     await tx.wait();
     const detailTx = await hub.setProductReceiptDetail(productId, WEALTH_RECEIPT_DETAILS[index] || 'RiskLens Wealth receipt detail');
     await detailTx.wait();
+    const metadataTx = await hub.setProductReceiptMetadata(
+      productId,
+      WEALTH_RECEIPT_TYPES[index] || 'Wealth receipt',
+      WEALTH_RECEIPT_MATURITIES[index] || 'Product-specific'
+    );
+    await metadataTx.wait();
   }
-  console.log(`Configured ${WEALTH_RECEIPT_LABELS.length} Wealth receipt labels and details.`);
+  console.log(`Configured ${WEALTH_RECEIPT_LABELS.length} Wealth receipt labels, details, types, and maturities.`);
 
   console.log('');
   console.log('Use the same address for the public Vite env vars:');

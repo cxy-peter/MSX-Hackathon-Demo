@@ -15,8 +15,9 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
     uint8 public constant HOME_QUIZ = 4;
     uint8 public constant HOME_PAPER = 5;
 
-    uint8 public constant WEALTH_BUY_RECEIPT = 1;
-    uint8 public constant WEALTH_SETTLE_OR_PLEDGE = 2;
+    uint8 public constant WEALTH_PROFITABLE_TRADE = 1;
+    uint8 public constant WEALTH_PLEDGE = 2;
+    uint8 public constant WEALTH_DUAL_PROFIT = 3;
 
     uint256 public constant PAPER_BASE_CHECK = 6;
     uint256 public constant PAPER_LEADERBOARD = 7;
@@ -53,6 +54,10 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
     mapping(address => mapping(uint16 => uint256)) public wealthReceiptShares;
     mapping(uint16 => string) public productReceiptLabel;
     mapping(uint16 => string) public productReceiptDetail;
+    mapping(uint16 => string) public productReceiptType;
+    mapping(uint16 => string) public productReceiptMaturity;
+    mapping(address => mapping(uint8 => bytes32)) public wealthTaskEvidenceHash;
+    mapping(address => mapping(uint8 => int256)) public wealthTaskRealizedPnl;
     address[] private scoredAccounts;
 
     struct ReplayScore {
@@ -116,6 +121,8 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
     );
     event ProductReceiptLabelUpdated(uint16 indexed productId, string label);
     event ProductReceiptDetailUpdated(uint16 indexed productId, string detail);
+    event ProductReceiptMetadataUpdated(uint16 indexed productId, string productType, string maturity);
+    event WealthTaskEvidenceRecorded(address indexed account, uint8 indexed taskId, int256 realizedPnl, bytes32 evidenceHash);
 
     constructor(string memory baseUri) ERC1155(baseUri) Ownable() {
         vaultLabel = "RiskLens Unified Demo Vault";
@@ -233,6 +240,17 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
         emit ProductReceiptDetailUpdated(productId, detail);
     }
 
+    function setProductReceiptMetadata(
+        uint16 productId,
+        string calldata productType,
+        string calldata maturity
+    ) external onlyOwner {
+        require(productId > 0, "Invalid product");
+        productReceiptType[productId] = productType;
+        productReceiptMaturity[productId] = maturity;
+        emit ProductReceiptMetadataUpdated(productId, productType, maturity);
+    }
+
     function setInvestorEligibility(address investor, bool allowed, uint8 tier) external onlyOwner {
         eligibleInvestor[investor] = allowed;
         riskTier[investor] = tier;
@@ -310,7 +328,6 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
             mintedAmount = _subscribeProduct(msg.sender, toProductId, mintAmount);
         }
 
-        _completeWealthTask(msg.sender, WEALTH_SETTLE_OR_PLEDGE);
         emit ProductReceiptSettled(msg.sender, fromProductId, toProductId, burnAmount, mintAmount);
     }
 
@@ -340,8 +357,6 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
             purchasedAt: block.timestamp,
             productDetail: _receiptDetail(productId)
         });
-        _completeWealthTask(investor, WEALTH_BUY_RECEIPT);
-
         emit Subscribed(investor, assetAmount, shareAmount);
         emit ProductReceiptSubscribed(investor, productId, tokenId, assetAmount, shareAmount, block.timestamp, _receiptDetail(productId));
     }
@@ -367,7 +382,21 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
     function markWealthTask(uint8 taskId) external {
         require(_isSupportedWealthTask(taskId), "Invalid wealth task");
         require(balanceOf(msg.sender, _wealthTokenTypeId(taskId)) == 0, "Already claimed");
-        _completeWealthTask(msg.sender, taskId);
+        _completeWealthTask(msg.sender, taskId, 0, bytes32(0));
+    }
+
+    function markWealthTaskWithEvidence(
+        uint8 taskId,
+        int256 realizedPnl,
+        bytes32 evidenceHash
+    ) external {
+        require(_isSupportedWealthTask(taskId), "Invalid wealth task");
+        require(balanceOf(msg.sender, _wealthTokenTypeId(taskId)) == 0, "Already claimed");
+        require(evidenceHash != bytes32(0), "Missing evidence");
+        if (taskId == WEALTH_PROFITABLE_TRADE || taskId == WEALTH_DUAL_PROFIT) {
+            require(realizedPnl > 0, "Positive PnL required");
+        }
+        _completeWealthTask(msg.sender, taskId, realizedPnl, evidenceHash);
     }
 
     function hasWealthTask(address holder, uint8 taskId) external view returns (bool) {
@@ -406,8 +435,9 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
         }
         if (_isSupportedWealthTaskToken(tokenId)) {
             uint8 taskId = _wealthTaskType(tokenId);
-            if (taskId == WEALTH_BUY_RECEIPT) return "RiskLens Wealth Receipt Badge";
-            return "RiskLens Wealth Lifecycle Badge";
+            if (taskId == WEALTH_PROFITABLE_TRADE) return "RiskLens Wealth Profitable Trade Badge";
+            if (taskId == WEALTH_PLEDGE) return "RiskLens Wealth Pledge Badge";
+            return "RiskLens Wealth Dual Profit Badge";
         }
         if (_isSupportedPaperAchievement(tokenId)) {
             if (tokenId == PAPER_BASE_CHECK) return "RiskLens Paper Base Check";
@@ -432,6 +462,10 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
                     _receiptLabel(_receiptProductId(tokenId)),
                     ". Product detail: ",
                     _receiptDetail(_receiptProductId(tokenId)),
+                    ". Product type: ",
+                    _receiptType(_receiptProductId(tokenId)),
+                    ". Maturity: ",
+                    _receiptMaturity(_receiptProductId(tokenId)),
                     ". Purchase date is the block timestamp emitted by ProductReceiptSubscribed."
                 )
             );
@@ -465,6 +499,10 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
                     _receiptLabel(productId),
                     '"},{"trait_type":"Product detail","value":"',
                     _receiptDetail(productId),
+                    '"},{"trait_type":"Product type","value":"',
+                    _receiptType(productId),
+                    '"},{"trait_type":"Maturity","value":"',
+                    _receiptMaturity(productId),
                     '"},{"trait_type":"Purchase date","value":"ProductReceiptSubscribed block timestamp"}'
                 )
             );
@@ -518,7 +556,10 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
             return string(abi.encodePacked("RECEIPT #", uint256(_receiptProductId(tokenId)).toString()));
         }
         if (_isSupportedWealthTaskToken(tokenId)) {
-            return _wealthTaskType(tokenId) == WEALTH_BUY_RECEIPT ? "RECEIPT BADGE" : "LIFECYCLE BADGE";
+            uint8 taskId = _wealthTaskType(tokenId);
+            if (taskId == WEALTH_PROFITABLE_TRADE) return "PROFIT BADGE";
+            if (taskId == WEALTH_PLEDGE) return "PLEDGE BADGE";
+            return "DUAL BADGE";
         }
         if (_isSupportedPaperAchievement(tokenId)) {
             if (tokenId == PAPER_BASE_CHECK) return "BASE CHECK";
@@ -580,12 +621,24 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
         return "Settlement terms recorded in the RiskLens Wealth detail page";
     }
 
+    function _receiptType(uint16 productId) internal view returns (string memory) {
+        string memory productType = productReceiptType[productId];
+        if (bytes(productType).length > 0) return productType;
+        return "Wealth receipt";
+    }
+
+    function _receiptMaturity(uint16 productId) internal view returns (string memory) {
+        string memory maturity = productReceiptMaturity[productId];
+        if (bytes(maturity).length > 0) return maturity;
+        return "Product-specific";
+    }
+
     function _isSupportedHomeToken(uint256 tokenId) internal pure returns (bool) {
         return tokenId > HOME_TOKEN_OFFSET && tokenId <= HOME_TOKEN_OFFSET + HOME_PAPER;
     }
 
     function _isSupportedWealthTaskToken(uint256 tokenId) internal pure returns (bool) {
-        return tokenId > WEALTH_TOKEN_OFFSET && tokenId <= WEALTH_TOKEN_OFFSET + WEALTH_SETTLE_OR_PLEDGE;
+        return tokenId > WEALTH_TOKEN_OFFSET && tokenId <= WEALTH_TOKEN_OFFSET + WEALTH_DUAL_PROFIT;
     }
 
     function _isSupportedWealthReceiptToken(uint256 tokenId) internal pure returns (bool) {
@@ -604,13 +657,16 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
         return uint16(tokenId - WEALTH_RECEIPT_TOKEN_OFFSET);
     }
 
-    function _completeWealthTask(address account, uint8 taskId) internal {
+    function _completeWealthTask(address account, uint8 taskId, int256 realizedPnl, bytes32 evidenceHash) internal {
         wealthTaskCompleted[account][taskId] = true;
+        wealthTaskRealizedPnl[account][taskId] = realizedPnl;
+        wealthTaskEvidenceHash[account][taskId] = evidenceHash;
         uint256 tokenId = _wealthTokenTypeId(taskId);
 
         if (balanceOf(account, tokenId) == 0) {
             _mint(account, tokenId, 1, "");
             emit WealthTaskCompleted(account, taskId);
+            emit WealthTaskEvidenceRecorded(account, taskId, realizedPnl, evidenceHash);
         }
     }
 
@@ -619,7 +675,7 @@ contract MSXUnifiedDemoHub is ERC1155, Ownable {
     }
 
     function _isSupportedWealthTask(uint8 taskId) internal pure returns (bool) {
-        return taskId == WEALTH_BUY_RECEIPT || taskId == WEALTH_SETTLE_OR_PLEDGE;
+        return taskId >= WEALTH_PROFITABLE_TRADE && taskId <= WEALTH_DUAL_PROFIT;
     }
 
     function _isSupportedPaperAchievement(uint256 achievementId) internal pure returns (bool) {

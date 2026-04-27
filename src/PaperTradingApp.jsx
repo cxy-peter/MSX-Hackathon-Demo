@@ -32,6 +32,13 @@ import { PAPER_PRODUCT_INSIGHTS } from './productInsightMeta';
 import { buildDiligenceReport } from './diligence/report';
 import { LanguageToggle, useDomTranslation, useUiLanguage } from './uiLanguage';
 import {
+  calculateTutorialRoute,
+  emptyPaperBackendLeaderboards,
+  fetchPaperLeaderboards,
+  storeProfilePointer,
+  submitPaperLeaderboardEntry
+} from './risklensBackendClient';
+import {
   getWalletDisplayName,
   normalizeWalletNickname,
   readWalletNickname,
@@ -40,6 +47,7 @@ import {
 } from './walletNickname';
 import { queryClient, wagmiConfig } from './wagmiSetup';
 import {
+  buildProfileStorageRecord,
   getWealthSpendableCash,
   getWalletProfilePointerKey,
   getWalletProfileSummary,
@@ -970,7 +978,7 @@ function WalletModal({
           >
             <MetaMaskIcon className="wallet-option-icon" />
             <div>
-              <div className="wallet-option-title">{isConnected ? 'MetaMask connected' : 'MetaMask'}</div>
+              <div className="wallet-option-title">{isConnected ? walletDisplayName : 'MetaMask'}</div>
               <div className="wallet-option-copy">
                 {isConnected
                   ? `Wallet connected ${walletDisplayName}. Click again to disconnect.`
@@ -2369,7 +2377,9 @@ function normalizeReplayScoreSubmission(payload, fallbackWalletAddress = '') {
     productLabel: payload.productLabel || 'Replay desk',
     status,
     txHash: String(payload.txHash || ''),
-    hallOfFame: Boolean(payload.hallOfFame)
+    hallOfFame: Boolean(payload.hallOfFame),
+    walletDisplayName: payload.walletDisplayName || '',
+    userStorage: payload.userStorage || null
   };
 }
 
@@ -5419,13 +5429,15 @@ function normalizeStrategyTemplateLeaderboardEntry(entry) {
     variantLabel: String(entry.variantLabel || '').trim(),
     dateRange: String(entry.dateRange || '').trim(),
     walletAddress: String(entry.walletAddress || 'guest').toLowerCase(),
+    walletDisplayName: String(entry.walletDisplayName || '').trim(),
     submittedAt,
     features,
     allocation,
     winRate: clampNumber(Number(entry.winRate || 0), 0, 100),
     expectedReturnPct: clampNumber(Number(entry.expectedReturnPct || 0), -100, 200),
     maxDrawdownPct: clampNumber(Number(entry.maxDrawdownPct || 0), 0, 100),
-    templateScore: clampNumber(Number(entry.templateScore || 0), 0, 100)
+    templateScore: clampNumber(Number(entry.templateScore || 0), 0, 100),
+    userStorage: entry.userStorage || null
   };
 }
 
@@ -7858,6 +7870,9 @@ function PaperTradingInner() {
   const [replayClaimCache, setReplayClaimCache] = useState(() => defaultReplayClaimCache(address));
   const [scoreSubmissionLog, setScoreSubmissionLog] = useState(defaultReplayScoreLog());
   const [replayLeaderboardArchive, setReplayLeaderboardArchive] = useState(defaultReplayLeaderboardArchive());
+  const [paperBackendLeaderboards, setPaperBackendLeaderboards] = useState(() => emptyPaperBackendLeaderboards());
+  const [paperBackendStatus, setPaperBackendStatus] = useState('Backend sync: local preview until API responds.');
+  const [backendRoutePreview, setBackendRoutePreview] = useState(null);
   const [wealthDeskState, setWealthDeskState] = useState(() => readStoredWealthDeskState(address));
   const walletAnchorRef = useRef(null);
   const productLanesRef = useRef(null);
@@ -8399,6 +8414,35 @@ function PaperTradingInner() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadPaperBackendLeaderboards() {
+      try {
+        const payload = await fetchPaperLeaderboards();
+        if (cancelled) return;
+        setPaperBackendLeaderboards({
+          ...emptyPaperBackendLeaderboards(),
+          ...payload,
+          replay: { entries: Array.isArray(payload?.replay?.entries) ? payload.replay.entries : [] },
+          strategy: { entries: Array.isArray(payload?.strategy?.entries) ? payload.strategy.entries : [] }
+        });
+        setPaperBackendStatus(
+          `Backend sync: ${payload?.storage?.persisted ? 'KV persisted' : 'API memory fallback'} / user data is CID-pointer only.`
+        );
+      } catch {
+        if (!cancelled) {
+          setPaperBackendStatus('Backend sync: offline, using local replay boards only.');
+        }
+      }
+    }
+
+    void loadPaperBackendLeaderboards();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (typeof window === 'undefined') return undefined;
 
     function refreshReplayLeaderboardFromStorage(event) {
@@ -8933,10 +8977,11 @@ function PaperTradingInner() {
   const replayAccountLeaderboardRows = useMemo(() => {
     return mergeReplayLeaderboardSubmissions(
       readAllReplayScoreLogs(),
-      replayLeaderboardArchive.entries
+      replayLeaderboardArchive.entries,
+      paperBackendLeaderboards.replay?.entries || []
     ).map((submission) => ({
       walletAddress: submission.walletAddress,
-      displayAddress: shortAddressWithNickname(submission.walletAddress),
+      displayAddress: submission.walletDisplayName || shortAddressWithNickname(submission.walletAddress),
       submittedAt: submission.submittedAt,
       netPnl: submission.netPnl,
       pnlPercent: submission.pnlPercent,
@@ -8947,7 +8992,7 @@ function PaperTradingInner() {
       status: submission.status,
       hallOfFame: Boolean(submission.hallOfFame)
     }));
-  }, [address, replayLeaderboardArchive, scoreSubmissionLog, walletNickname]);
+  }, [address, paperBackendLeaderboards, replayLeaderboardArchive, scoreSubmissionLog, walletNickname]);
   const topReplayAccountLeaderboardRows = replayAccountLeaderboardRows.slice(0, 8);
   const baseTradeSummary = buildReplayTradeSummary(firstReplayTrade);
   const leaderboardCoverSnapshot = latestScoreSubmission || buildReplayScoreSnapshot({
@@ -11585,6 +11630,7 @@ function PaperTradingInner() {
           ...current.submissions.filter((submission) => submission.txHash !== nextSnapshot.txHash)
         ].slice(0, 12)
       }));
+      void syncReplayScoreToBackend(nextSnapshot, { silent: true });
       pendingScoreSnapshotRef.current = null;
     }
     void refetchReplayScoreState();
@@ -11758,14 +11804,107 @@ function PaperTradingInner() {
     });
   }
 
+  async function refreshPaperBackendLeaderboards(announce = false) {
+    try {
+      const payload = await fetchPaperLeaderboards();
+      setPaperBackendLeaderboards({
+        ...emptyPaperBackendLeaderboards(),
+        ...payload,
+        replay: { entries: Array.isArray(payload?.replay?.entries) ? payload.replay.entries : [] },
+        strategy: { entries: Array.isArray(payload?.strategy?.entries) ? payload.strategy.entries : [] }
+      });
+      setPaperBackendStatus(
+        `Backend sync: ${payload?.storage?.persisted ? 'KV persisted' : 'API memory fallback'} / user data is CID-pointer only.`
+      );
+      if (announce) {
+        setFeedback('Backend leaderboard refreshed. Wallet profile data stayed off-server; only CID pointers were loaded.');
+      }
+      return payload;
+    } catch {
+      setPaperBackendStatus('Backend sync: offline, using local replay boards only.');
+      return null;
+    }
+  }
+
+  async function buildLeaderboardUserPointer() {
+    const walletAddress = address || 'guest';
+    const profile = readWalletProfile(walletAddress);
+    const record = await buildProfileStorageRecord(walletAddress, profile);
+    const pointer = {
+      address: walletAddress,
+      cid: record.cidReadyPointer,
+      contentHash: record.contentHash,
+      network: 'IPFS/Filecoin-ready pointer'
+    };
+    void storeProfilePointer(pointer).catch(() => null);
+    return pointer;
+  }
+
+  async function syncReplayScoreToBackend(entry, { silent = false } = {}) {
+    if (!entry) return null;
+    try {
+      const userPointer = await buildLeaderboardUserPointer();
+      const payload = await submitPaperLeaderboardEntry({
+        board: 'replay',
+        entry: {
+          ...entry,
+          walletDisplayName
+        },
+        userPointer
+      });
+      setPaperBackendLeaderboards({
+        ...emptyPaperBackendLeaderboards(),
+        ...payload,
+        replay: { entries: Array.isArray(payload?.replay?.entries) ? payload.replay.entries : [] },
+        strategy: { entries: Array.isArray(payload?.strategy?.entries) ? payload.strategy.entries : [] }
+      });
+      setPaperBackendStatus(
+        `Backend sync: ${payload?.storage?.persisted ? 'KV persisted' : 'API memory fallback'} / replay row uses CID pointer ${userPointer.cid}.`
+      );
+      if (!silent) {
+        setScoreFeedback('Replay score synced to the backend leaderboard. User profile data stayed in decentralized-pointer form.');
+      }
+      return payload;
+    } catch (error) {
+      if (!silent) {
+        setScoreFeedback(error.message || 'Replay score stayed local because the backend leaderboard is offline.');
+      }
+      setPaperBackendStatus('Backend sync: offline, using local replay boards only.');
+      return null;
+    }
+  }
+
+  async function syncStrategyEntryToBackend(entry, label = 'strategy / combo') {
+    if (!entry) return null;
+    try {
+      const userPointer = await buildLeaderboardUserPointer();
+      const payload = await submitPaperLeaderboardEntry({
+        board: 'strategy',
+        entry: {
+          ...entry,
+          walletDisplayName
+        },
+        userPointer
+      });
+      setPaperBackendLeaderboards({
+        ...emptyPaperBackendLeaderboards(),
+        ...payload,
+        replay: { entries: Array.isArray(payload?.replay?.entries) ? payload.replay.entries : [] },
+        strategy: { entries: Array.isArray(payload?.strategy?.entries) ? payload.strategy.entries : [] }
+      });
+      setPaperBackendStatus(
+        `Backend sync: ${payload?.storage?.persisted ? 'KV persisted' : 'API memory fallback'} / ${label} uses CID pointer ${userPointer.cid}.`
+      );
+      return payload;
+    } catch {
+      setPaperBackendStatus('Backend sync: offline, strategy board remains local for now.');
+      return null;
+    }
+  }
+
   function handleSubmitReplayScore() {
     if (!isConnected || !address) {
       setScoreFeedback('Connect MetaMask first so the replay score stays tied to the same wallet.');
-      return;
-    }
-
-    if (!replayBadgeContractConfigured) {
-      setScoreFeedback('Onchain replay score submission is not switched on in this demo yet. Users do not need to write code; the project owner still needs to connect the replay badge contract.');
       return;
     }
 
@@ -11779,12 +11918,28 @@ function PaperTradingInner() {
       return;
     }
 
-    pendingScoreSnapshotRef.current = buildReplayScoreSnapshot({
+    const scoreSnapshot = buildReplayScoreSnapshot({
       trades: paperState.trades,
       netPnl: replayScoreValue,
       accountValue: strategyAccountValue,
       walletAddress: address
     });
+
+    if (!replayBadgeContractConfigured) {
+      const backendOnlySnapshot = {
+        ...scoreSnapshot,
+        status: 'confirmed',
+        txHash: 'backend-cid-pointer'
+      };
+      setScoreSubmissionLog((current) => ({
+        submissions: [backendOnlySnapshot, ...current.submissions].slice(0, 12)
+      }));
+      void syncReplayScoreToBackend(backendOnlySnapshot);
+      setScoreFeedback('Replay score saved to the backend leaderboard. Onchain score contract is not configured, so this row uses the signed profile CID pointer instead.');
+      return;
+    }
+
+    pendingScoreSnapshotRef.current = scoreSnapshot;
     setScoreFeedback('Opening MetaMask to submit the current replay score on Sepolia...');
     writeReplayScore({
       address: REPLAY_BADGE_CONTRACT_ADDRESS,
@@ -13858,6 +14013,7 @@ function PaperTradingInner() {
       const rawDiligenceBreakdown = (paperDiligenceReport?.productQuality?.rows || [])
         .filter((item) => ['structure', 'underlying', 'pricing', 'liquidity'].includes(item.dimensionId))
         .slice(0, 4);
+      const diligenceComparisonLabels = rawDiligenceBreakdown.map((item) => item.title).join(', ');
       const diligenceAverageScore =
         rawDiligenceBreakdown.length > 0
           ? Math.round(
@@ -13865,6 +14021,15 @@ function PaperTradingInner() {
                 rawDiligenceBreakdown.length
             )
           : 0;
+      const buildDiligenceBenchmarkDetail = (item, delta) => {
+        const direction =
+          Math.abs(delta) <= 1
+            ? 'near the average'
+            : delta > 0
+              ? `${delta} weighted points above the average`
+              : `${Math.abs(delta)} weighted points below the average`;
+        return `${item.label}: ${item.score} weighted points, ${direction}. Compared against ${diligenceComparisonLabels || 'the visible diligence dimensions'}; visible average is ${diligenceAverageScore}.`;
+      };
       const diligenceBreakdown = rawDiligenceBreakdown
         .map((item) => ({
           label: item.title,
@@ -13881,6 +14046,7 @@ function PaperTradingInner() {
                 : delta > 0
                   ? `${delta} above avg`
                   : `${Math.abs(delta)} below avg`,
+            benchmarkDetail: buildDiligenceBenchmarkDetail(item, delta),
             benchmarkTone: delta > 0 ? 'risk-low' : delta < 0 ? 'risk-medium' : ''
           };
         });
@@ -13938,7 +14104,7 @@ function PaperTradingInner() {
             <>
               <div className="paper-side-score-grid">
                 {diligenceBreakdown.map((item) => (
-                  <div className="paper-side-score-card" key={item.label}>
+                  <div className="paper-side-score-card" key={item.label} title={item.benchmarkDetail}>
                     <div className="paper-side-score-top">
                       <span>{item.label}</span>
                       <div className="paper-side-score-value">
@@ -13954,7 +14120,11 @@ function PaperTradingInner() {
               {paperEvidenceRows.length ? (
                 <div className="paper-asset-list">
                   {paperEvidenceRows.map((row) => (
-                    <div className="paper-asset-row paper-side-row-wide" key={row.id}>
+                    <div
+                      className="paper-asset-row paper-side-row-wide"
+                      key={row.id}
+                      title={`${row.question}: ${row.finding} Confidence: ${row.confidence}.`}
+                    >
                       <div className="paper-side-row-title">{row.question}</div>
                       <div className="paper-side-row-meta">
                         <strong>{row.confidence}</strong>
@@ -14577,7 +14747,12 @@ function PaperTradingInner() {
   const portfolioComboManualMetrics = portfolioComboAnalysis.manual;
   const portfolioComboResult = portfolioComboAnalysis.result || {};
   const portfolioComboComparisonRows = (portfolioComboResult.productResults || []).filter((result) => result?.comparison);
-  const strategyTemplateLeaderboardRows = strategyTemplateLeaderboard.entries || [];
+  const strategyTemplateLeaderboardRows = normalizeStrategyTemplateLeaderboard({
+    entries: [
+      ...(strategyTemplateLeaderboard.entries || []),
+      ...(paperBackendLeaderboards.strategy?.entries || [])
+    ]
+  }).entries;
   const strategyTemplateUploadedForCurrentPrompt = strategyTemplateLeaderboardRows.some(
     (entry) =>
       entry.prompt === strategyAiTemplate.prompt &&
@@ -14693,6 +14868,7 @@ function PaperTradingInner() {
       writeStorageJson(STRATEGY_TEMPLATE_LEADERBOARD_STORAGE_KEY, next);
       return next;
     });
+    void syncStrategyEntryToBackend(entry, 'AI strategy template');
     mergeProgressUpdate({
       strategyLessonCompleted: true,
       ...(strategyRouteActive && optionStrategyPreview
@@ -14824,6 +15000,7 @@ function PaperTradingInner() {
       writeStorageJson(STRATEGY_TEMPLATE_LEADERBOARD_STORAGE_KEY, next);
       return next;
     });
+    void syncStrategyEntryToBackend(entry, 'portfolio combo');
     mergeProgressUpdate({
       strategyLessonCompleted: true,
       strategyExampleCompleted: true,
@@ -15159,6 +15336,63 @@ function PaperTradingInner() {
               : `Auto-sell in ${timedExitRequestedDays}D`;
   const hedgeStatCards = hedgeFocusProfile?.statCards || [];
 
+  useEffect(() => {
+    if (!selectedProduct || !replayFocus?.bar) {
+      setBackendRoutePreview(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const entryBar = replayFocus.lockedBar || replayFocus.bar;
+      const targetBar = timedExitTargetBar || replayFocus.hoveredBar || replayFocus.bar;
+      void calculateTutorialRoute({
+        routeId: selectedAdvancedRoute,
+        focusId: selectedRouteFocusConfig?.id || '',
+        product: {
+          id: selectedProduct.id,
+          ticker: selectedProduct.ticker,
+          name: selectedProduct.name,
+          lane: selectedProduct.lane
+        },
+        amount: Number(tradeAmount || MIN_PAPER_TRADE),
+        entryPrice: Number(entryBar?.close || 0),
+        exitPrice: Number(targetBar?.close || entryBar?.close || 0),
+        holdingDays: Number(simulationHoldingDays || timedExitRequestedDays || 1),
+        leverage: Number(routeLeverageMultiple || 1),
+        hedgeRatio: Number(hedgeRatio || 0)
+      })
+        .then((payload) => {
+          if (!cancelled) setBackendRoutePreview(payload?.result || null);
+        })
+        .catch(() => {
+          if (!cancelled) setBackendRoutePreview(null);
+        });
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    hedgeRatio,
+    replayFocus?.bar?.close,
+    replayFocus?.bar?.ts,
+    replayFocus?.hoveredBar?.close,
+    replayFocus?.hoveredBar?.ts,
+    replayFocus?.lockedBar?.close,
+    replayFocus?.lockedBar?.ts,
+    routeLeverageMultiple,
+    selectedAdvancedRoute,
+    selectedProduct,
+    selectedRouteFocusConfig?.id,
+    simulationHoldingDays,
+    timedExitRequestedDays,
+    timedExitTargetBar?.close,
+    timedExitTargetBar?.ts,
+    tradeAmount
+  ]);
+
   function renderStrategyTemplateLeaderboardCard({
     className = '',
     title = 'Strategy / combo leaderboard',
@@ -15172,6 +15406,7 @@ function PaperTradingInner() {
             <span>{title}</span>
             <strong>{strategyTemplateLeaderboardRows.length} entr{strategyTemplateLeaderboardRows.length === 1 ? 'y' : 'ies'}</strong>
           </div>
+          <div className="paper-backend-sync-note compact">{paperBackendStatus}</div>
           {strategyTemplateLeaderboardRows.length ? (
             <div className="paper-strategy-board-list">
               {strategyTemplateLeaderboardRows.slice(0, limit).map((entry, index) => (
@@ -17106,6 +17341,7 @@ function PaperTradingInner() {
         {!compact ? (
           <div className="paper-leaderboard-copy">
             Ranked by total replay return. Each wallet appears once using its best recorded result, and every confirmed local submission is merged into a device-local archive so other wallets stay on this board.
+            <div className="paper-backend-sync-note">{paperBackendStatus}</div>
           </div>
         ) : null}
 
@@ -17517,7 +17753,9 @@ function PaperTradingInner() {
                 ? 'Submitting score...'
                 : scoreSubmissionSlotsLeft <= 0
                   ? 'Daily limit reached'
-                  : 'Submit score on Sepolia'}
+                  : replayBadgeContractConfigured
+                    ? 'Submit score on Sepolia'
+                    : 'Submit score to backend'}
             </button>
           </div>
         </div>
@@ -17717,6 +17955,27 @@ function PaperTradingInner() {
           </div>
           <span className="pill risk-low">{selectedRouteUi.actionTag}</span>
         </div>
+
+        {backendRoutePreview?.metrics ? (
+          <div className="paper-backend-route-strip">
+            <div>
+              <span>API route calc</span>
+              <strong>{backendRoutePreview.routeLabel}</strong>
+            </div>
+            <div>
+              <span>Net PnL</span>
+              <strong>{formatSigned(backendRoutePreview.metrics.netPnl)} PT</strong>
+            </div>
+            <div>
+              <span>Reward preview</span>
+              <strong>{formatNotional(backendRoutePreview.metrics.rewardPT)} PT</strong>
+            </div>
+            <div>
+              <span>Storage</span>
+              <strong>stateless</strong>
+            </div>
+          </div>
+        ) : null}
 
         <div className="paper-shelf-learning-case-plan paper-shelf-learning-case-plan-sidebar">
           {(routeLearningStepRows.length
@@ -18141,6 +18400,10 @@ function PaperTradingInner() {
               </div>
             ) : null}
           </div>
+        </section>
+
+        <section className="card paper-replay-leaderboard-section">
+          {renderReplayLeaderboardCard(false)}
         </section>
 
         <section className="card" ref={productLanesRef}>

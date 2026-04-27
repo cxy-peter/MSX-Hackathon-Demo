@@ -1185,9 +1185,6 @@ function ProfileBackupCard({
           <button type="button" className="ghost-btn compact" onClick={() => onSign?.()} disabled={isSigning || actionsDisabled}>
             {isSigning ? 'Await wallet' : profileBackupConfigured ? signReadyLabel : signIdleLabel}
           </button>
-          <button type="button" className="secondary-btn compact" onClick={() => onRecover?.()} disabled={!profileBackupRecoverable || actionsDisabled}>
-            Recover saved demo state
-          </button>
         </div>
         <div className="profile-backup-history">
           <label>
@@ -1306,7 +1303,7 @@ function WalletModal({
           >
             <MetaMaskIcon className="wallet-option-icon" />
             <div>
-              <div className="wallet-option-title">{isConnected ? 'MetaMask connected' : 'MetaMask'}</div>
+              <div className="wallet-option-title">{isConnected ? walletDisplayName : 'MetaMask'}</div>
               <div className="wallet-option-copy">
                 {isConnected
                   ? `Wallet connected ${walletDisplayName}. Click again to disconnect.`
@@ -1403,7 +1400,7 @@ function WalletModal({
               footnote={isConnected
                 ? 'The signed pointer can later be pinned to IPFS, Filecoin, Ceramic, or Arweave. Recovery here restores the saved demo state for this wallet address on this device.'
                 : 'Backup stores demo state only. It never stores private keys and cannot impersonate a wallet connection.'}
-              accountLabel={isConnected ? shortAddress(address) : 'connect first'}
+              accountLabel={isConnected ? walletDisplayName : 'connect first'}
               summaryText={profileBackupSummaryText}
               walletProfileSummary={walletProfileSummary}
               profileBackupConfigured={profileBackupConfigured}
@@ -1498,6 +1495,7 @@ export default function App() {
   const developerSessionSnapshotRef = useRef(null);
   const previousTaskCompletionRef = useRef({
     addressKey: '',
+    nickname: false,
     welcome: false,
     risk: false,
     quiz: false,
@@ -1971,6 +1969,7 @@ export default function App() {
   const mintForCurrentAccountBusy = Boolean(activeMintTaskKey) && (isMinting || isConfirmingMint || mintConfirmed);
   const badgeMintCompleted = Boolean(address) && Boolean(hasMintedBadgeOnchain);
   const walletQuestDone = isConnected;
+  const nicknameTaskDone = Boolean(walletNickname);
   const welcomeGateCompleted = badgeContractConfigured ? badgeMintCompleted : walletQuestDone;
   const walletTaskBadgeMinted = Boolean(address) && Boolean(walletBadgeOnchain);
   const riskTaskBadgeMinted = Boolean(address) && Boolean(riskBadgeOnchain);
@@ -2133,6 +2132,7 @@ export default function App() {
   );
   const completedTaskCount = [
     walletQuestDone,
+    nicknameTaskDone,
     welcomeGateCompleted,
     riskTaskDone,
     quizTaskDone,
@@ -2233,45 +2233,22 @@ export default function App() {
       id: 'clicks',
       label: 'Click-through',
       kicker: 'Analytics',
-      title: 'Module click-through map',
-      copy: analyticsSnapshot.total
-        ? `This browser has ${analyticsSnapshot.total} tracked clicks across ${developerTrackedSectionCount} section groups.`
-        : 'No click-through data is stored yet; start by opening wallet, quest, wealth, or paper flows.',
-      rows: developerClickthroughTiles
+      title: 'Click-through',
+      rows: []
     },
     {
       id: 'profile',
       label: 'Wallet profile',
-      kicker: selectedDeveloperWalletDisplayName,
-      title: selectedDeveloperWalletLearningProfile.title,
-      copy: selectedDeveloperWalletLearningProfile.copy,
-      rows: developerWalletSummaryRows
-    },
-    {
-      id: 'controls',
-      label: 'PT + gates',
-      kicker: 'Developer switch',
-      title: 'Unlimited PT edits and full local gate unlock',
-      copy: 'When the developer account is signed in, the admin controls below can write the same wallet-linked PT cash and feature override that the older developer panel exposed.',
-      rows: [
-        { label: 'Feature override', value: adminUnlockedForCurrentAccount ? 'Already on' : 'Ready', copy: 'Enable onboarding, quiz, paper unlock, and admin override for the connected wallet.' },
-        { label: 'PT amount box', value: `${Number(devModePtAmount || 0).toLocaleString()} PT`, copy: 'Add to or set the Home and Paper cash stores for the connected account.' },
-        { label: 'Connected write target', value: address ? shortAddress(address) : 'None', copy: 'Inspection can switch accounts on the left; writes still require the currently connected wallet.' },
-        { label: 'Exit policy', value: developerSessionDirty ? 'Review changes' : 'Snapshot ready', copy: 'Close can keep changes or roll back the pre-session wallet state.' }
-      ]
+      kicker: 'Replay-ready wallet',
+      title: 'Wallet profile',
+      rows: []
     },
     {
       id: 'exchange',
-      label: 'Design preference',
-      kicker: selectedDeveloperWalletDisplayName,
-      title: selectedDeveloperDesignTitle,
-      copy: 'This view changes with the selected wallet account. It reads local behavior, task progress, and signed profile metadata so the developer can see which route the product should emphasize for that wallet.',
-      rows: [
-        { label: 'Arrival mindset', value: selectedDeveloperOrigin === 'unknown' ? 'Unknown' : selectedDeveloperOrigin.toUpperCase(), copy: `Stored intent: ${selectedDeveloperIntent || 'not set'}.` },
-        { label: 'Most common action', value: selectedDeveloperTopBehavior ? selectedDeveloperTopBehavior.label : 'No behavior yet', copy: selectedDeveloperTopBehavior ? `${selectedDeveloperTopBehavior.count} clicks in ${selectedDeveloperTopBehavior.section}.` : 'Actions will appear here after this wallet uses Home routes.' },
-        { label: 'Replay stance', value: selectedDeveloperPaperUnlocked ? 'Open replay' : 'Guide first', copy: selectedDeveloperPaperUnlocked ? 'Paper trading can open because at least one task is complete.' : 'Route through a first task before replay.' },
-        { label: 'Storage read form', value: selectedDeveloperStorageMode, copy: selectedDeveloperWalletSummary?.contentHash ? `Readable profile pointer ${selectedDeveloperWalletSummary.contentHash.slice(0, 12)}...` : selectedDeveloperBehaviorPointer ? `Readable behavior snapshot ${selectedDeveloperBehaviorPointer.slice(0, 12)}...` : 'No storage pointer yet; use this wallet once or sign a profile backup to create a readable record.' }
-      ]
+      label: 'Guided task-first preference',
+      kicker: 'Design preference',
+      title: 'Guided task-first preference',
+      rows: []
     }
   ];
   const activeDeveloperDetailPanel =
@@ -2374,6 +2351,22 @@ export default function App() {
       coverKicker: 'RiskLens Starter Task',
       coverTitle: walletTaskBadgeMinted ? 'Wallet task' : 'Connect wallet',
       coverSubtitle: 'Open the guided wallet path first so every later collectible and PT reward stays tied to one account.'
+    },
+    {
+      id: 'nickname',
+      title: nicknameTaskDone ? 'Nickname set' : 'Set wallet nickname',
+      status: nicknameTaskDone ? 'Done' : walletQuestDone ? 'To do' : 'Requires wallet',
+      reward: 'Wallet profile',
+      label: 'Wallet profile',
+      hint: nicknameTaskDone
+        ? `Saved as ${walletNickname}.`
+        : walletQuestDone
+          ? 'Name this wallet so Wealth and Paper state is easier to recognize after reconnect.'
+          : 'Connect first, then save a readable wallet nickname.',
+      coverAccent: 'green',
+      coverKicker: 'Wallet Profile Task',
+      coverTitle: 'Set nickname',
+      coverSubtitle: 'Give this wallet a readable label before demo state starts moving across Wealth and Paper.'
     },
     {
       id: 'mint',
@@ -2498,7 +2491,7 @@ export default function App() {
   const firstPendingLearnQuest =
     learnQuestCards.find((item) => item.status === 'Done' || item.status === 'To do' || item.status === 'Requires wallet' || item.status === 'Checking' || item.status.includes('/3'))?.id || 'wallet';
   useEffect(() => {
-    if (activeCoreQuest !== null && !['wallet', 'mint'].includes(activeCoreQuest)) {
+    if (activeCoreQuest !== null && !['wallet', 'nickname', 'mint'].includes(activeCoreQuest)) {
       setActiveCoreQuest('wallet');
     }
   }, [activeCoreQuest]);
@@ -2529,7 +2522,7 @@ export default function App() {
   }
 
   function focusLearnQuest(questId) {
-    if (questId === 'wallet' || questId === 'mint') {
+    if (questId === 'wallet' || questId === 'nickname' || questId === 'mint') {
       setActiveCoreQuest(questId);
       scrollQuestDetailIntoView('learnQuestDetail');
       return;
@@ -2652,6 +2645,7 @@ export default function App() {
     if (!isConnected) {
       previousTaskCompletionRef.current = {
         addressKey: '',
+        nickname: false,
         welcome: false,
         risk: false,
         quiz: false,
@@ -2662,6 +2656,7 @@ export default function App() {
 
     const currentStates = {
       addressKey: connectedAddressKey,
+      nickname: nicknameTaskDone,
       welcome: badgeContractConfigured ? welcomeGateCompleted : false,
       risk: riskTaskDone,
       quiz: quizTaskDone,
@@ -2674,6 +2669,10 @@ export default function App() {
         setTaskCompletionNotice('Congrats - welcome collectible finished. The wallet collectible mint is open now.');
         setTaskCompletionNoticeTarget('core');
         focusLearnQuest('wallet');
+      } else if (!previousStates.nickname && currentStates.nickname) {
+        setTaskCompletionNotice('Nickname saved. We opened the wallet profile task so the demo state is easier to recognize later.');
+        setTaskCompletionNoticeTarget('core');
+        focusLearnQuest('nickname');
       } else if (!previousStates.risk && currentStates.risk) {
         setTaskCompletionNotice(
           currentStates.paper && !previousStates.paper
@@ -2697,6 +2696,7 @@ export default function App() {
   }, [
     isConnected,
     connectedAddressKey,
+    nicknameTaskDone,
     welcomeGateCompleted,
     riskTaskDone,
     quizTaskDone,
@@ -2758,7 +2758,7 @@ export default function App() {
 
   function openLearnQuest(questId) {
     recordAnalytics(`module_${questId}`);
-    if (questId === 'wallet' || questId === 'mint') {
+    if (questId === 'wallet' || questId === 'nickname' || questId === 'mint') {
       if (activeCoreQuest === questId) {
         setActiveCoreQuest(null);
         setOptionalQuestNotice('');
@@ -3534,7 +3534,7 @@ export default function App() {
             </div>
             <div className="learn-quest-wall">
               <div className="learn-quest-core-row">
-                {learnQuestCards.slice(0, 2).map((quest, index) => (
+                {learnQuestCards.slice(0, 3).map((quest, index) => (
                   <button
                     key={quest.id}
                     className={`learn-quest-tile core ${activeCoreQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' ? 'done' : ''} ${quest.status === 'Done' || quest.status === 'Unlocked' ? 'ready' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}
@@ -3606,6 +3606,44 @@ export default function App() {
                                 ? 'Finish welcome mint first'
                                 : 'Mint wallet collectible'}
                         </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                ) : null}
+
+                {visibleCoreQuest === 'nickname' ? (
+                <div className={`quest-detail-panel ${nicknameTaskDone ? 'completed' : ''}`}>
+                  <div className="quest-side-panel">
+                    <div className="quest-panel-title">{nicknameTaskDone ? 'Wallet nickname saved' : 'Set wallet nickname'}</div>
+                    <div className="muted">
+                      Save a readable label for this wallet so Wealth positions, Paper state, and developer review can show the same human-friendly name after reconnect.
+                    </div>
+                    <button className="secondary-btn" onClick={openWalletModal} disabled={!walletQuestDone}>
+                      {nicknameTaskDone ? 'Edit nickname' : walletQuestDone ? 'Open nickname settings' : 'Connect wallet first'}
+                    </button>
+                    <div className="checklist-list">
+                      <div className={`checklist-item ${walletQuestDone ? 'done' : ''}`}>
+                        <div className="check-indicator">{walletQuestDone ? 'OK' : 'TODO'}</div>
+                        <div className="checklist-copy">
+                          <div>
+                            <div className="check-title">Connect wallet</div>
+                            <div className="muted">{walletQuestDone ? `Connected ${walletDisplayName}.` : 'Connect MetaMask before saving a nickname.'}</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className={`checklist-item ${nicknameTaskDone ? 'done' : ''}`}>
+                        <div className="check-indicator">{nicknameTaskDone ? 'OK' : 'TODO'}</div>
+                        <div className="checklist-copy">
+                          <div>
+                            <div className="check-title">Save nickname</div>
+                            <div className="muted">
+                              {nicknameTaskDone
+                                ? `${walletNickname} is saved locally for this wallet.`
+                                : 'Use the wallet panel to save a nickname for this account.'}
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -3693,7 +3731,7 @@ export default function App() {
                       title="Save demo state for this wallet, not the wallet key"
                       description="This signature backs up paper cash, fills, hedge progress, and wealth context for the connected address."
                       footnote="Decentralized storage here means a signed, content-hashed snapshot that can later be pinned to IPFS, Filecoin, Ceramic, or Arweave by the project owner."
-                      accountLabel={isConnected ? shortAddress(address) : 'not connected'}
+                      accountLabel={isConnected ? walletDisplayName : 'not connected'}
                       summaryText={profileBackupSummaryText}
                       walletProfileSummary={walletProfileSummary}
                       profileBackupConfigured={profileBackupConfigured}
@@ -3732,9 +3770,11 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className={`env-hint ${badgeContractConfigured ? 'contract-live' : 'contract-demo'}`}>
-                      <strong>{badgeContractConfigured ? 'Judge signal:' : 'Deployment note:'}</strong> {badgeDeploymentHelper}
-                    </div>
+                    {!badgeContractConfigured ? (
+                      <div className="env-hint contract-demo">
+                        <strong>Deployment note:</strong> {badgeDeploymentHelper}
+                      </div>
+                    ) : null}
 
                     {mintHash ? (
                       <div className="env-hint">
@@ -3753,7 +3793,7 @@ export default function App() {
             </div>
 
             <div className="learn-quest-optional-row">
-              {learnQuestCards.slice(2).map((quest) => (
+              {learnQuestCards.slice(3).map((quest) => (
                 <button
                   key={quest.id}
                 className={`learn-quest-tile ${activeOptionalQuest === quest.id ? 'active' : ''} ${quest.status === 'Completed' ? 'done' : ''} ${quest.status === 'Done' || quest.status === 'Unlocked' ? 'ready' : ''} ${quest.status === 'Requires wallet' ? 'gated' : ''}`}
@@ -4194,11 +4234,13 @@ export default function App() {
                   </div>
                 </div>
                   <div className="toolbar" style={{ marginTop: 14 }}>
-                    {paperTradingUnlocked ? (
-                      <a className="primary-btn" href="./paper-trading.html" onClick={() => recordAnalytics('paper_trading_page_open')}>Open replay lab</a>
-                    ) : (
-                      <button className="secondary-btn" disabled>Complete any task to unlock</button>
-                    )}
+                    <a
+                      className={paperTradingUnlocked ? 'primary-btn' : 'secondary-btn'}
+                      href="./paper-trading.html"
+                      onClick={() => recordAnalytics('paper_trading_page_open')}
+                    >
+                      {paperTradingUnlocked ? 'Open replay lab' : 'Preview replay lab'}
+                    </a>
                   </div>
                   <div className="mint-action-box inline-mint-action task-badge-mint-box">
                     <div>
@@ -4333,22 +4375,6 @@ export default function App() {
               ) : (
                 <div className="developer-analytics">
                   <div className="wallet-modal-status">Admin controls</div>
-                  <div className="paper-balance-strip">
-                    <div className="paper-balance-box">
-                      <div className="label">Tracked clicks</div>
-                      <div className="value">{analyticsSnapshot.total}</div>
-                    </div>
-                    <div className="paper-balance-box">
-                      <div className="label">Top event</div>
-                      <div className="value">{developerTopAnalyticsRow ? developerTopAnalyticsRow.count : 0}</div>
-                      <div className="muted">{developerTopAnalyticsRow ? developerTopAnalyticsRow.label : 'No click data yet'}</div>
-                    </div>
-                    <div className="paper-balance-box">
-                      <div className="label">Sections touched</div>
-                      <div className="value">{developerTrackedSectionCount}</div>
-                      <div className="muted">{analyticsSnapshot.total ? `${(developerOnboardingShare * 100).toFixed(1)}% onboarding share` : 'No clicks tracked yet'}</div>
-                    </div>
-                  </div>
                   <div className="developer-detail-tabs" aria-label="Developer detail views">
                     {developerDetailPanels.map((panel) => (
                       <button
@@ -4372,16 +4398,18 @@ export default function App() {
                         {devModeAuthed ? 'Signed in' : 'Login required'}
                       </span>
                     </div>
-                    <p className="muted">{activeDeveloperDetailPanel.copy}</p>
-                    <div className="developer-detail-grid">
-                      {activeDeveloperDetailPanel.rows.map((row) => (
-                        <div className="developer-detail-row" key={row.label}>
-                          <span>{row.label}</span>
-                          <strong>{row.value}</strong>
-                          {row.copy ? <em>{row.copy}</em> : null}
-                        </div>
-                      ))}
-                    </div>
+                    {activeDeveloperDetailPanel.copy ? <p className="muted">{activeDeveloperDetailPanel.copy}</p> : null}
+                    {activeDeveloperDetailPanel.rows.length ? (
+                      <div className="developer-detail-grid">
+                        {activeDeveloperDetailPanel.rows.map((row) => (
+                          <div className="developer-detail-row" key={row.label}>
+                            <span>{row.label}</span>
+                            <strong>{row.value}</strong>
+                            {row.copy ? <em>{row.copy}</em> : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="developer-admin-grid">
                     <div className="developer-admin-card">
@@ -4414,63 +4442,8 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                  <div className="developer-profile-card">
-                    <div className="section-head compact">
-                      <div>
-                        <div className="eyebrow">Wallet profile</div>
-                        <h3>{selectedDeveloperWalletDisplayName}</h3>
-                      </div>
-                      <span className="pill risk-low">{selectedDeveloperWalletLearningProfile.title}</span>
-                    </div>
-                    <div className="muted">{selectedDeveloperWalletLearningProfile.copy}</div>
-                    <div className="env-hint developer-storage-hint">
-                      <strong>Storage read form:</strong>{' '}
-                      {selectedDeveloperWalletSummary?.contentHash
-                        ? `Signed profile snapshot ${selectedDeveloperWalletSummary.contentHash.slice(0, 16)}... can be read from the local mutable pointer and is CID-ready for IPFS/Filecoin, Ceramic, or Arweave pinning.`
-                        : selectedDeveloperBehaviorPointer
-                          ? `Behavior snapshot ${selectedDeveloperBehaviorPointer.slice(0, 16)}... is written per wallet as a content-addressed local record and can be pinned by a storage endpoint later.`
-                          : 'No signed profile or behavior snapshot yet. Use the wallet once or sign a profile backup to create a content-addressed record for this account.'}
-                    </div>
-                    <div className="developer-profile-grid">
-                      {developerWalletSummaryRows.map((row) => (
-                        <div className="developer-profile-item" key={row.label}>
-                          <span>{row.label}</span>
-                          <strong>{row.value}</strong>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
                   {devModeNotice ? <div className="env-hint">{devModeNotice}</div> : null}
                   {devModeError ? <div className="env-hint quiz-error">{devModeError}</div> : null}
-                  <div className="wallet-modal-status">Module click-through</div>
-                  {developerAnalyticsRows.length ? (
-                    <div className="developer-table-wrap">
-                      <table className="developer-table">
-                        <thead>
-                          <tr>
-                            <th>Event</th>
-                            <th>Section</th>
-                            <th>Clicks</th>
-                            <th>Share</th>
-                            <th>What it tells us</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {developerAnalyticsRows.map((row) => (
-                            <tr key={row.name}>
-                              <td>{row.label}</td>
-                              <td>{row.section}</td>
-                              <td>{row.count}</td>
-                              <td>{analyticsSnapshot.total ? `${row.share.toFixed(1)}%` : '0%'}</td>
-                              <td>{row.takeaway}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <div className="route-highlight">No click-through data is stored yet for this browser session.</div>
-                  )}
                   {developerExitPromptOpen ? (
                     <div className="developer-exit-card">
                       <div className="wallet-modal-status">Leave developer mode?</div>
